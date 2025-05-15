@@ -13,7 +13,10 @@ cudnn.banchmark = True
 import torchvision.transforms as transforms
 from torchvision import datasets
 from torch.utils.data import DataLoader, Dataset
+from torchvision.datasets import ImageFolder
 from options import args_parser
+
+from isic_dataset import ISICDataset
 
 class DatasetSplit(Dataset):
 
@@ -303,6 +306,8 @@ def get_dataset(dataset_root, dataset, args):
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_mnist(dataset_root, args)
     elif dataset == 'cifar10':
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_cifar10(dataset_root, args)
+    elif dataset == 'fed-isic2019':
+        train_loaders, test_loaders, v_train_loader, v_test_loader = get_isic(dataset_root, args)
     elif dataset == 'femnist':
         raise ValueError('CODING ERROR: FEMNIST dataset should not use this file')
     else:
@@ -331,7 +336,6 @@ def get_mnist(dataset_root, args):
     v_test_loader = DataLoader(test, batch_size = args.batch_size * args.num_clients,
                                 shuffle = False, **kwargs)
     return  train_loaders, test_loaders, v_train_loader, v_test_loader
-
 
 def get_cifar10(dataset_root, args):
     is_cuda = args.cuda
@@ -371,6 +375,34 @@ def get_cifar10(dataset_root, args):
     train_loaders = split_data(train, args, kwargs, is_shuffle = True)
     test_loaders = split_data(test,  args, kwargs, is_shuffle = False)
     return  train_loaders, test_loaders, v_train_loader, v_test_loader
+
+def get_isic(dataset_root, args):
+    is_cuda = args.cuda
+    kwargs = {'num_workers': 1, 'pin_memory': True} if is_cuda else {}
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))  # or use ImageNet mean/std for pretrained models
+    ])
+
+    dataset_root = '/data/ISIC/'
+
+    train_dir = os.path.join(dataset_root, 'Train')
+    test_dir = os.path.join(dataset_root, 'Test')
+
+    train_dataset = ImageFolder(root=train_dir, transform=transform)
+    test_dataset = ImageFolder(root=test_dir, transform=transform)
+
+    train_loaders = split_data(train_dataset, args, kwargs, is_shuffle=True)
+    test_loaders = split_data(test_dataset, args, kwargs, is_shuffle=False)
+
+    v_train_loader = DataLoader(train_dataset, batch_size=args.batch_size * args.num_clients,
+                                shuffle=True, **kwargs)
+    v_test_loader = DataLoader(test_dataset, batch_size=args.batch_size * args.num_clients,
+                               shuffle=False, **kwargs)
+
+    return train_loaders, test_loaders, v_train_loader, v_test_loader
 
 def show_distribution(dataloader, args):
     """
