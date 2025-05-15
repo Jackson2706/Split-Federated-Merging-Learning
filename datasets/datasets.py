@@ -386,7 +386,7 @@ def get_isic(dataset_root, args):
         transforms.Normalize((0.5,), (0.5,))  # or use ImageNet mean/std for pretrained models
     ])
 
-    dataset_root = '/data/ISIC/'
+    dataset_root = '/mnt/Data/Skin cancer ISIC The International Skin Imaging Collaboration'
 
     train_dir = os.path.join(dataset_root, 'Train')
     test_dir = os.path.join(dataset_root, 'Test')
