@@ -9,22 +9,10 @@ pip install -r requirements.txt
 ```
 
 ## Centralized Learning
+Run this command inside the `Centralized` directory
 
-For centralized learning (single client with all data), use these optimized commands for each dataset:
-
-### MNIST
 ```bash
-python main.py --dataset mnist --model cnn --input_channels 1 --output_channels 10 --batch_size 128 --num_clients 1 --lr 0.01 --num_communication 100 --momentum 0.9
-```
-
-### CIFAR-10
-```bash
-python main.py --dataset cifar10 --model cnn_complex --input_channels 3 --output_channels 10 --batch_size 128 --num_clients 1 --lr 0.01 --num_communication 200 --momentum 0.9 --weight_decay 5e-4
-```
-
-### ISIC
-```bash
-python main.py --dataset isic --model cnn --input_channels 3 --output_channels 9 --batch_size 32 --num_clients 1 --lr 0.001 --num_communication 100 --momentum 0.9 --weight_decay 1e-4 --isic_image_size 224
+python main.py --config configs/isic_centralized.yaml
 ```
 
 ## Federated Learning
