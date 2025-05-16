@@ -100,34 +100,97 @@ def iid_nesize_split(dataset, args, kwargs, is_shuffle = True):
 
 def niid_esize_split(dataset, args, kwargs, is_shuffle = True):
     data_loaders = [0] * args.num_clients
-    # each client has only two classes of the network
-    num_shards = 2* args.num_clients
-    # the number of images in one shard
-    num_imgs = int(len(dataset) / num_shards)
-    idx_shard = [i for i in range(num_shards)]
-    dict_users = {i: np.array([]) for i in range(args.num_clients)}
-    idxs = np.arange(num_shards * num_imgs)
-    # is_shuffle is used to differentiate between train and test
-    if is_shuffle:
-        labels = dataset.train_labels
+    
+    # Get labels
+    if hasattr(dataset, 'train_labels'):  # MNIST/CIFAR10 style
+        if is_shuffle:
+            labels = dataset.train_labels
+        else:
+            labels = dataset.test_labels
+    elif isinstance(dataset, ImageFolder):  # ImageFolder style
+        labels = np.array(dataset.targets)
     else:
-        labels = dataset.test_labels
-    idxs_labels = np.vstack((idxs, labels))
-    idxs_labels = idxs_labels[:, idxs_labels[1,:].argsort()]
-    # sort the data according to their label
-    idxs = idxs_labels[0,:]
-    idxs = idxs.astype(int)
+        raise ValueError(f"Dataset type {type(dataset)} not supported")
 
-    #divide and assign
+    # Create index array for all samples
+    all_idxs = np.arange(len(dataset))
+    unique_labels = np.unique(labels)
+    num_classes = len(unique_labels)
+    
+    # Group indices by label
+    label_indices = {label: all_idxs[labels == label] for label in unique_labels}
+    
+    # Print distribution information
+    print("\nClass distribution in dataset:")
+    for label in unique_labels:
+        print(f"Class {label}: {len(label_indices[label])} samples")
+    
+    # Ensure we can assign at least 2 classes per client
+    if num_classes < 2:
+        raise ValueError("Need at least 2 classes for non-IID distribution")
+    
+    # Calculate how many clients should get each class
+    # Each client needs 2 classes, so each class needs to go to (2 * num_clients) / num_classes clients
+    clients_per_class = (2 * args.num_clients) // num_classes
+    if clients_per_class == 0:
+        clients_per_class = 1
+    
+    # Create class assignments for each client
+    client_class_assignments = []
     for i in range(args.num_clients):
-        rand_set = set(np.random.choice(idx_shard, 2, replace= False))
-        idx_shard = list(set(idx_shard) - rand_set)
-        for rand in rand_set:
-            dict_users[i] = np.concatenate((dict_users[i], idxs[rand * num_imgs: (rand + 1) * num_imgs]), axis=0)
-            dict_users[i] = dict_users[i].astype(int)
-        data_loaders[i] = DataLoader(DatasetSplit(dataset, dict_users[i]),
-                                    batch_size = args.batch_size,
-                                    shuffle = is_shuffle, **kwargs)
+        # Select 2 different classes for this client
+        available_classes = list(unique_labels)
+        class1 = np.random.choice(available_classes)
+        available_classes.remove(class1)
+        class2 = np.random.choice(available_classes)
+        client_class_assignments.append((class1, class2))
+    
+    # Calculate samples per class per client
+    min_samples_per_class = min(len(indices) for indices in label_indices.values())
+    samples_per_class_per_client = min_samples_per_class // clients_per_class
+    
+    # Keep track of how many times each class has been assigned
+    class_assignment_counts = {label: 0 for label in unique_labels}
+    
+    # Create data loaders for each client
+    for i in range(args.num_clients):
+        class1, class2 = client_class_assignments[i]
+        
+        # Get indices for both classes
+        indices1 = label_indices[class1]
+        indices2 = label_indices[class2]
+        
+        # Calculate start and end indices for each class
+        start1 = class_assignment_counts[class1] * samples_per_class_per_client
+        end1 = start1 + samples_per_class_per_client
+        start2 = class_assignment_counts[class2] * samples_per_class_per_client
+        end2 = start2 + samples_per_class_per_client
+        
+        # Update assignment counts
+        class_assignment_counts[class1] += 1
+        class_assignment_counts[class2] += 1
+        
+        # Combine indices from both classes
+        client_indices = np.concatenate([
+            indices1[start1:end1],
+            indices2[start2:end2]
+        ])
+        
+        # Create dataloader
+        data_loaders[i] = DataLoader(
+            DatasetSplit(dataset, client_indices),
+            batch_size=args.batch_size,
+            shuffle=is_shuffle,
+            **kwargs
+        )
+        
+        # Print distribution for this client
+        client_labels = labels[client_indices]
+        unique, counts = np.unique(client_labels, return_counts=True)
+        print(f"\nClient {i} distribution:")
+        for u, c in zip(unique, counts):
+            print(f"Class {u}: {c} samples")
+    
     return data_loaders
 
 def niid_esize_split_train(dataset, args, kwargs, is_shuffle = True):
@@ -256,32 +319,54 @@ def niid_esize_split_test_large(dataset, args, kwargs, split_pattern, is_shuffle
 
 def niid_esize_split_oneclass(dataset, args, kwargs, is_shuffle = True):
     data_loaders = [0] * args.num_clients
-    #one class perclients
-    #any requirements on the number of clients?
-    num_shards = args.num_clients
-    num_imgs = int(len(dataset) / num_shards)
-    idx_shard = [i for i in range(num_shards)]
-    dict_users = {i: np.array([]) for i in range(args.num_clients)}
-    idxs = np.arange(num_shards * num_imgs)
-    if is_shuffle:
-        labels = dataset.train_labels
+    
+    # Get labels
+    if hasattr(dataset, 'train_labels'):  # MNIST/CIFAR10 style
+        if is_shuffle:
+            labels = dataset.train_labels
+        else:
+            labels = dataset.test_labels
+    elif isinstance(dataset, ImageFolder):  # ImageFolder style
+        labels = np.array(dataset.targets)
     else:
-        labels = dataset.test_labels
-    idxs_labels = np.vstack((idxs, labels))
-    idxs_labels = idxs_labels[:, idxs_labels[1,:].argsort()]
-    idxs = idxs_labels[0,:]
-    idxs = idxs.astype(int)
+        raise ValueError(f"Dataset type {type(dataset)} not supported")
 
-    #divide and assign
+    # Create index array for all samples
+    all_idxs = np.arange(len(dataset))
+    
+    # Group indices by label
+    label_indices = {label: all_idxs[labels == label] for label in np.unique(labels)}
+    
+    # Calculate samples per client to ensure even distribution
+    min_samples = min(len(indices) for indices in label_indices.values())
+    samples_per_client = min_samples // (args.num_clients // len(label_indices))
+    
+    # Create shards (one per client)
+    shards = []
+    for label, indices in label_indices.items():
+        # Shuffle indices for this label
+        np.random.shuffle(indices)
+        # Split into roughly equal shards
+        n_clients_for_label = args.num_clients // len(label_indices)
+        for i in range(n_clients_for_label):
+            start_idx = i * samples_per_client
+            end_idx = start_idx + samples_per_client
+            shards.append((label, indices[start_idx:end_idx]))
+    
+    # Shuffle shards
+    np.random.shuffle(shards)
+    
+    # Assign shards to clients
     for i in range(args.num_clients):
-        rand_set = set(np.random.choice(idx_shard, 1, replace = False))
-        idx_shard = list(set(idx_shard) - rand_set)
-        for rand in rand_set:
-            dict_users[i] = np.concatenate((dict_users[i], idxs[rand * num_imgs: (rand+1)*num_imgs]), axis = 0)
-            dict_users[i] = dict_users[i].astype(int)
-        data_loaders[i] = DataLoader(DatasetSplit(dataset, dict_users[i]),
-                            batch_size = args.batch_size,
-                            shuffle = is_shuffle, **kwargs)
+        label, indices = shards[i]
+        # Create dataloader for this client
+        data_loaders[i] = DataLoader(
+            DatasetSplit(dataset, indices),
+            batch_size=args.batch_size,
+            shuffle=is_shuffle,
+            **kwargs
+        )
+    
     return data_loaders
 
 def split_data(dataset, args, kwargs, is_shuffle = True):
@@ -380,12 +465,16 @@ def get_isic(dataset_root, args):
     is_cuda = args.cuda
     kwargs = {'num_workers': 1, 'pin_memory': True} if is_cuda else {}
 
+    # Construct full path to ISIC dataset
+    isic_path = os.path.join(dataset_root, args.isic_dirname)
+    print(f'Looking for ISIC dataset in: {isic_path}')
+
     # Check if dataset exists
-    train_dir = os.path.join(args.isic_path, 'Train')
-    test_dir = os.path.join(args.isic_path, 'Test')
+    train_dir = os.path.join(isic_path, 'Train')
+    test_dir = os.path.join(isic_path, 'Test')
 
     if not os.path.exists(train_dir) or not os.path.exists(test_dir):
-        raise ValueError(f'ISIC dataset not found at {args.isic_path}. Please ensure the dataset is properly organized with Train and Test folders.')
+        raise ValueError(f'ISIC dataset not found at {isic_path}. Please ensure the dataset is properly organized with Train and Test folders.')
 
     # Define normalization stats
     if args.use_imagenet_stats:
@@ -396,7 +485,7 @@ def get_isic(dataset_root, args):
         print('Calculating dataset-specific normalization statistics...')
         # Create temporary dataset to compute statistics
         transform_initial = transforms.Compose([
-            transforms.Resize((args.image_size, args.image_size)),
+            transforms.Resize((args.isic_image_size, args.isic_image_size)) if hasattr(args, 'isic_image_size') else transforms.Compose([]),
             transforms.ToTensor(),
         ])
         temp_dataset = ImageFolder(root=train_dir, transform=transform_initial)
@@ -407,7 +496,7 @@ def get_isic(dataset_root, args):
 
     # Define transforms with selected normalization stats
     transform_train = transforms.Compose([
-        transforms.Resize((args.image_size, args.image_size)),
+        transforms.Resize((args.isic_image_size, args.isic_image_size)),
         transforms.RandomHorizontalFlip(),
         transforms.RandomVerticalFlip(),
         transforms.RandomRotation(20),
@@ -417,7 +506,7 @@ def get_isic(dataset_root, args):
     ])
 
     transform_test = transforms.Compose([
-        transforms.Resize((args.image_size, args.image_size)),
+        transforms.Resize((args.isic_image_size, args.isic_image_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=norm_mean, std=norm_std)
     ])
@@ -455,20 +544,20 @@ def show_distribution(dataloader, args):
         except:
             print(f"Using test_labels")
             labels = dataloader.dataset.dataset.test_labels.numpy()
-        # labels = dataloader.dataset.dataset.train_labels.numpy()
     elif args.dataset == 'cifar10':
         try:
             labels = dataloader.dataset.dataset.train_labels
         except:
             print(f"Using test_labels")
             labels = dataloader.dataset.dataset.test_labels
-        # labels = dataloader.dataset.dataset.train_labels
-    elif args.dataset == 'fsdd':
+    elif isinstance(dataloader.dataset.dataset, ImageFolder):  # ImageFolder style
+        labels = np.array(dataloader.dataset.dataset.targets)
+    elif hasattr(dataloader.dataset, 'labels'):  # FSDD style
         labels = dataloader.dataset.labels
     else:
-        raise ValueError("`{}` dataset not included".format(args.dataset))
+        raise ValueError(f"Dataset type not supported for distribution visualization")
+
     num_samples = len(dataloader.dataset)
-    # print(num_samples)
     idxs = [i for i in range(num_samples)]
     labels = np.array(labels)
     unique_labels = np.unique(labels)
