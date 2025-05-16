@@ -306,7 +306,7 @@ def get_dataset(dataset_root, dataset, args):
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_mnist(dataset_root, args)
     elif dataset == 'cifar10':
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_cifar10(dataset_root, args)
-    elif dataset == 'fed-isic2019':
+    elif dataset == 'isic':
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_isic(dataset_root, args)
     elif dataset == 'femnist':
         raise ValueError('CODING ERROR: FEMNIST dataset should not use this file')
@@ -380,27 +380,66 @@ def get_isic(dataset_root, args):
     is_cuda = args.cuda
     kwargs = {'num_workers': 1, 'pin_memory': True} if is_cuda else {}
 
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
+    # Check if dataset exists
+    train_dir = os.path.join(args.isic_path, 'Train')
+    test_dir = os.path.join(args.isic_path, 'Test')
+
+    if not os.path.exists(train_dir) or not os.path.exists(test_dir):
+        raise ValueError(f'ISIC dataset not found at {args.isic_path}. Please ensure the dataset is properly organized with Train and Test folders.')
+
+    # Define normalization stats
+    if args.use_imagenet_stats:
+        print('Using ImageNet normalization statistics')
+        norm_mean = [0.485, 0.456, 0.406]
+        norm_std = [0.229, 0.224, 0.225]
+    else:
+        print('Calculating dataset-specific normalization statistics...')
+        # Create temporary dataset to compute statistics
+        transform_initial = transforms.Compose([
+            transforms.Resize((args.image_size, args.image_size)),
+            transforms.ToTensor(),
+        ])
+        temp_dataset = ImageFolder(root=train_dir, transform=transform_initial)
+        mean, std = get_mean_and_std(temp_dataset)
+        norm_mean = mean.tolist()
+        norm_std = std.tolist()
+        print(f'Dataset statistics - Mean: {norm_mean}, Std: {norm_std}')
+
+    # Define transforms with selected normalization stats
+    transform_train = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomVerticalFlip(),
+        transforms.RandomRotation(20),
+        transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.1),
         transforms.ToTensor(),
-        transforms.Normalize((0.5,), (0.5,))  # or use ImageNet mean/std for pretrained models
+        transforms.Normalize(mean=norm_mean, std=norm_std)
     ])
 
-    dataset_root = '/mnt/Data/Skin cancer ISIC The International Skin Imaging Collaboration'
+    transform_test = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=norm_mean, std=norm_std)
+    ])
 
-    train_dir = os.path.join(dataset_root, 'Train')
-    test_dir = os.path.join(dataset_root, 'Test')
+    # Load the datasets
+    train_dataset = ImageFolder(root=train_dir, transform=transform_train)
+    test_dataset = ImageFolder(root=test_dir, transform=transform_test)
 
-    train_dataset = ImageFolder(root=train_dir, transform=transform)
-    test_dataset = ImageFolder(root=test_dir, transform=transform)
+    # Update output channels based on number of classes
+    args.output_channels = len(train_dataset.classes)
+    print(f'ISIC dataset loaded with {len(train_dataset.classes)} classes')
+    print(f'Class mapping: {train_dataset.class_to_idx}')
 
+    # Split data for federated learning
     train_loaders = split_data(train_dataset, args, kwargs, is_shuffle=True)
     test_loaders = split_data(test_dataset, args, kwargs, is_shuffle=False)
 
-    v_train_loader = DataLoader(train_dataset, batch_size=args.batch_size * args.num_clients,
-                                shuffle=True, **kwargs)
-    v_test_loader = DataLoader(test_dataset, batch_size=args.batch_size * args.num_clients,
-                               shuffle=False, **kwargs)
+    # Create validation loaders
+    v_train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                              shuffle=True, **kwargs)
+    v_test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
+                             shuffle=False, **kwargs)
 
     return train_loaders, test_loaders, v_train_loader, v_test_loader
 
