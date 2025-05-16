@@ -369,19 +369,28 @@ def niid_esize_split_oneclass(dataset, args, kwargs, is_shuffle = True):
 
 def split_data(dataset, args, kwargs, is_shuffle = True):
     """
-    return dataloaders
+    Split dataset according to the specified distribution type
+    Args:
+        dataset: The dataset to split
+        args: Arguments containing iid, num_clients, etc.
+        kwargs: Additional arguments for DataLoader
+        is_shuffle: Whether to shuffle the data within each client's dataset
+    Returns:
+        List of DataLoaders, one for each client
     """
-    if args.iid == 1:
-        data_loaders = iid_esize_split(dataset, args, kwargs, is_shuffle)
-    elif args.iid == 0:
-        data_loaders = niid_esize_split(dataset, args, kwargs, is_shuffle)
-    elif args.iid == -1:
-        data_loaders = iid_nesize_split(dataset, args, kwargs, is_shuffle)
-    elif args.iid == -2:
-        data_loaders = niid_esize_split_oneclass(dataset, args, kwargs, is_shuffle)
-    else :
-        raise ValueError('Data Distribution pattern `{}` not implemented '.format(args.iid))
-    return data_loaders
+    if args.iid == 1:  # IID with equal size
+        return iid_esize_split(dataset, args, kwargs, is_shuffle)
+    elif args.iid == 0:  # Non-IID with balanced classes
+        return niid_esize_split(dataset, args, kwargs, is_shuffle)
+    elif args.iid == -1:  # Non-IID with unbalanced classes
+        return niid_esize_split_train(dataset, args, kwargs, is_shuffle)
+    elif args.iid == -2:  # One class per client
+        if args.edgeiid == 1:  # IID within edges
+            return niid_esize_split_oneclass(dataset, args, kwargs, is_shuffle)
+        else:  # Non-IID within edges
+            return niid_esize_split_train_large(dataset, args, kwargs, is_shuffle)
+    else:
+        raise ValueError(f"Invalid iid value: {args.iid}. Must be one of: 1 (IID), 0 (Non-IID balanced), -1 (Non-IID unbalanced), -2 (One-class)")
 
 def get_dataset(dataset_root, dataset, args):
     trains, train_loaders, tests, test_loaders = {}, {}, {}, {}

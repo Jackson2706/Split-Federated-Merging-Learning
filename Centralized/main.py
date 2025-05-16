@@ -66,6 +66,20 @@ def main():
     _, _, train_loader, test_loader = get_dataset(args.dataset_root, args.dataset, args)
     print(f'Dataset: {args.dataset}')
     
+    # Print data distribution settings
+    print(f'\nData Distribution Settings:')
+    if args.iid == 1:
+        print(f'Distribution: IID with equal size')
+    elif args.iid == 0:
+        print(f'Distribution: Non-IID with balanced classes ({args.classes_per_client} classes per client)')
+    elif args.iid == -1:
+        print(f'Distribution: Non-IID with unbalanced classes')
+    elif args.iid == -2:
+        print(f'Distribution: One class per client')
+        print(f'Edge Distribution: {"IID" if args.edgeiid == 1 else "Non-IID"}')
+    print(f'Number of clients: {args.num_clients}')
+    print(f'Fraction of clients used: {args.frac}\n')
+    
     # Initialize model
     model = cnn_3conv(args.input_channels, args.output_channels).to(device)
     print(f'Model architecture:\n{model}')
@@ -114,6 +128,13 @@ def main():
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_acc': train_acc,
                 'test_acc': test_acc,
+                'data_distribution': {
+                    'iid': args.iid,
+                    'edgeiid': args.edgeiid,
+                    'num_clients': args.num_clients,
+                    'frac': args.frac,
+                    'classes_per_client': args.classes_per_client
+                }
             }, save_path)
             print(f'New best model saved with accuracy: {best_acc:.2f}%')
     
