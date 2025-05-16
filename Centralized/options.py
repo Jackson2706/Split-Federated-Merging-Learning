@@ -93,32 +93,32 @@ def args_parser():
     parser.add_argument(
         '--iid',
         type = int,
-        default = 0,
-        help = 'distribution of the data, 1,0, -2(one-class)'
+        default = 1,
+        help = 'Data distribution type: 1 (IID), 0 (Non-IID balanced), -1 (Non-IID unbalanced), -2 (One-class)'
     )
     parser.add_argument(
         '--edgeiid',
         type=int,
-        default=0,
-        help='distribution of the data under edges, 1 (edgeiid),0 (edgeniid) (used only when iid = -2)'
+        default=1,
+        help='Edge data distribution type: 1 (IID), 0 (Non-IID) (only used when iid = -2)'
     )
     parser.add_argument(
         '--frac',
         type = float,
-        default = 1,
-        help = 'fraction of participated clients'
+        default = 1.0,
+        help = 'Fraction of clients to use (between 0 and 1)'
     )
     parser.add_argument(
         '--num_clients',
         type = int,
-        default = 10,
-        help = 'number of all available clients'
+        default = 1,
+        help = 'Number of clients for data distribution (default is 1 for centralized learning)'
     )
     parser.add_argument(
         '--num_edges',
         type = int,
         default= 1,
-        help= 'number of edges'
+        help= 'Number of edge servers (default: 1)'
     )
     parser.add_argument(
         '--seed',
@@ -154,7 +154,7 @@ def args_parser():
         '--classes_per_client',
         type=int,
         default = 2,
-        help='under artificial non-iid distribution, the classes per client'
+        help='Number of classes per client for Non-IID distribution (default: 2)'
     )
     parser.add_argument(
         '--gpu',
