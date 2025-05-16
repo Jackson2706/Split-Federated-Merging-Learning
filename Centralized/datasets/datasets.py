@@ -16,8 +16,6 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import ImageFolder
 from options import args_parser
 
-# from isic_dataset import ISICDataset
-
 class DatasetSplit(Dataset):
 
     def __init__(self, dataset, idxs):
@@ -520,15 +518,15 @@ def get_isic(dataset_root, args):
     print(f'ISIC dataset loaded with {len(train_dataset.classes)} classes')
     print(f'Class mapping: {train_dataset.class_to_idx}')
 
-    # Split data for federated learning
-    train_loaders = split_data(train_dataset, args, kwargs, is_shuffle=True)
-    test_loaders = split_data(test_dataset, args, kwargs, is_shuffle=False)
-
-    # Create validation loaders
+    # Create main dataloaders with same batch size pattern as CIFAR10/MNIST
     v_train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, **kwargs)
     v_test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
                              shuffle=False, **kwargs)
+
+    # Split data for federated learning
+    train_loaders = split_data(train_dataset, args, kwargs, is_shuffle=True)
+    test_loaders = split_data(test_dataset, args, kwargs, is_shuffle=False)
 
     return train_loaders, test_loaders, v_train_loader, v_test_loader
 
