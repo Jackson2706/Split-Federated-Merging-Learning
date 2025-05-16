@@ -8,25 +8,25 @@ def args_parser():
         '--dataset',
         type = str,
         default = 'cifar10',
-        help = 'name of the dataset: mnist, cifar10'
+        help = 'name of the dataset: mnist, cifar10, isic'
     )
     parser.add_argument(
         '--model',
         type = str,
         default = 'cnn',
-        help='name of model. mnist: logistic, lenet; cifar10: cnn_tutorial, cnn_complex'
+        help='name of model. mnist: logistic, lenet; cifar10: cnn_tutorial, cnn_complex; isic: cnn'
     )
     parser.add_argument(
         '--input_channels',
         type = int,
         default = 3,
-        help = 'input channels. mnist:1, cifar10 :3'
+        help = 'input channels. mnist:1, cifar10:3, isic:3'
     )
     parser.add_argument(
         '--output_channels',
         type = int,
         default = 10,
-        help = 'output channels'
+        help = 'output channels (number of classes). mnist:10, cifar10:10, isic:9'
     )
     #nn training hyper parameter
     parser.add_argument(
@@ -167,6 +167,24 @@ def args_parser():
         type=int
     )
 
+    parser.add_argument(
+        '--isic_path',
+        type = str,
+        default = 'data/Skin cancer ISIC The International Skin Imaging Collaboration',
+        help = 'path to ISIC dataset'
+    )
+    parser.add_argument(
+        '--image_size',
+        type = int,
+        default = 224,
+        help = 'size to resize images to (isic dataset)'
+    )
+    parser.add_argument(
+        '--use_imagenet_stats',
+        type = int,
+        default = 1,
+        help = 'whether to use ImageNet normalization stats (1) or calculate dataset-specific stats (0)'
+    )
 
     args = parser.parse_args()
     args.cuda = torch.cuda.is_available()
