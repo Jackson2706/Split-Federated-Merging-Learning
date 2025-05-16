@@ -133,6 +133,18 @@ def args_parser():
         help = 'dataset root folder'
     )
     parser.add_argument(
+        '--isic_dirname',
+        type = str,
+        default = 'Skin cancer ISIC The International Skin Imaging Collaboration',
+        help = 'ISIC dataset directory name under dataset_root'
+    )
+    parser.add_argument(
+        '--isic_image_size',
+        type = int,
+        default = 224,
+        help = 'size to resize ISIC dataset images (default: 224)'
+    )
+    parser.add_argument(
         '--show_dis',
         type= int,
         default= 0,
@@ -167,18 +179,6 @@ def args_parser():
         type=int
     )
 
-    parser.add_argument(
-        '--isic_path',
-        type = str,
-        default = 'data/Skin cancer ISIC The International Skin Imaging Collaboration',
-        help = 'path to ISIC dataset'
-    )
-    parser.add_argument(
-        '--image_size',
-        type = int,
-        default = 224,
-        help = 'size to resize images to (isic dataset)'
-    )
     parser.add_argument(
         '--use_imagenet_stats',
         type = int,
