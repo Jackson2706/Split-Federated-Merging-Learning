@@ -1,5 +1,5 @@
+import torch
 import torch.nn as nn
-
 
 class cnn_3conv(nn.Module):
     """CNN."""
@@ -9,9 +9,8 @@ class cnn_3conv(nn.Module):
         super(cnn_3conv, self).__init__()
 
         self.conv_layer = nn.Sequential(
-
             # Conv Layer block 1
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
@@ -36,37 +35,46 @@ class cnn_3conv(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
         )
 
+        # Placeholder for fc_layer - will be initialized in forward pass
+        self.fc_layer = None
+        self.output_channels = output_channels
+
+    def _initialize_fc_layer(self, conv_output_size):
+        """Initialize the fully connected layer based on conv output size."""
         self.fc_layer = nn.Sequential(
             nn.Dropout(p=0.1),
-            nn.Linear(4096, 1024),
+            nn.Linear(conv_output_size, 1024),
             nn.ReLU(inplace=True),
             nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.1),
-            nn.Linear(512, 10)
-        )
+            nn.Linear(512, self.output_channels)
+        ).to(next(self.conv_layer.parameters()).device)  # Move to same device as conv_layer
 
     def forward(self, x):
         """Perform forward."""
-
         # conv layers
         x = self.conv_layer(x)
-
+        
+        # Initialize fc_layer if not done yet
+        if self.fc_layer is None:
+            # Get flattened size
+            conv_output_size = x.view(x.size(0), -1).shape[1]
+            self._initialize_fc_layer(conv_output_size)
+        
         # flatten
         x = x.view(x.size(0), -1)
-
         # fc layer
         x = self.fc_layer(x)
-
         return x
+
 
 class cnn_3conv_shared(nn.Module):
     def __init__(self, input_channels):
         super(cnn_3conv_shared, self).__init__()
         self.conv_layer = nn.Sequential(
-
             # Conv Layer block 1
-            nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1),
@@ -91,30 +99,35 @@ class cnn_3conv_shared(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=2),
         )
 
+        self._feature_dim = None
+
     def forward(self, x):
         """Perform forward."""
-
         # conv layers
         x = self.conv_layer(x)
-
         # flatten
         x = x.view(x.size(0), -1)
+        if self._feature_dim is None:
+            self._feature_dim = x.shape[1]
         return x
 
     def feature_out_dim(self):
-        return 4096
+        if self._feature_dim is None:
+            raise RuntimeError("Run forward pass first to determine feature dimension")
+        return self._feature_dim
+
 
 class cnn_3conv_specific(nn.Module):
-    def __init__(self, input_channels, output_channels):
+    def __init__(self, input_dim, output_channels):
         super(cnn_3conv_specific, self).__init__()
         self.fc_layer = nn.Sequential(
             nn.Dropout(p=0.1),
-            nn.Linear(4096, 1024),
+            nn.Linear(input_dim, 1024),
             nn.ReLU(inplace=True),
             nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.1),
-            nn.Linear(512, 10)
+            nn.Linear(512, output_channels)
         )
 
     def forward(self, x):
