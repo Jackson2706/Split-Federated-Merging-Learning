@@ -82,8 +82,8 @@ def main():
         torch.cuda.manual_seed(config.seed)
     
     # Load dataset
-    train_dataset, test_dataset, train_loader, test_loader = get_dataset(config.dataset_root, config.dataset, config)
     print(f'Dataset: {config.dataset}')
+    train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader = get_dataset(config.dataset_root, config.dataset, config)
     
     # Print data distribution settings
     print(f'\nData Distribution Settings:')
@@ -124,16 +124,16 @@ def main():
         run_id += f"_edges{config.num_edges}_edgeiid{config.edgeiid}"
     
     # Training loop
-    best_acc = 0
+    best_val_acc = 0
     epochs = config.num_communication*config.num_clients
     print(f'Starting training for {epochs} epochs...')
     
     for epoch in range(epochs):
         # Train
-        train_loss, train_acc = train(model, train_loader, optimizer, criterion, device)
+        train_loss, train_acc = train(model, v_train_loader, optimizer, criterion, device)
         
-        # Test
-        test_loss, test_acc = test(model, test_loader, criterion, device)
+        # Validate
+        val_loss, val_acc = test(model, v_val_loader, criterion, device)
         
         # Learning rate decay
         if (epoch + 1) % config.lr_decay_epoch == 0:
@@ -142,13 +142,13 @@ def main():
                 print(f'Learning rate decayed to: {param_group["lr"]}')
         
         # Print metrics
-        print(f'Epoch: {epoch+1}/{config.num_communication}')
+        print(f'Epoch: {epoch+1}/{epochs}')
         print(f'Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%')
-        print(f'Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%')
+        print(f'Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%')
         
-        # Save best model with dataset-specific path and run identifier
-        if test_acc > best_acc:
-            best_acc = test_acc
+        # Save best model based on validation accuracy
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
             save_path = os.path.join(checkpoint_dir, f'best_model_{run_id}.pth')
             
             # Save model checkpoint
@@ -157,12 +157,12 @@ def main():
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_acc': train_acc,
-                'test_acc': test_acc,
+                'val_acc': val_acc,
                 'config': config.config  # Save full configuration
             }
             
             torch.save(checkpoint, save_path)
-            print(f'New best model saved with accuracy: {best_acc:.2f}%')
+            print(f'New best model saved with validation accuracy: {best_val_acc:.2f}%')
             print(f'Saved to: {save_path}')
             
             # Also save the configuration separately
@@ -170,7 +170,14 @@ def main():
             config.save(config_save_path)
     
     print(f'\nTraining completed!')
-    print(f'Best Test Accuracy: {best_acc:.2f}%')
+    print(f'Best Validation Accuracy: {best_val_acc:.2f}%')
+    
+    # Load best model and evaluate on test set
+    print('\nEvaluating best model on test set...')
+    checkpoint = torch.load(save_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    test_loss, test_acc = test(model, v_test_loader, criterion, device)
+    print(f'Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%')
 
 if __name__ == '__main__':
     main() 

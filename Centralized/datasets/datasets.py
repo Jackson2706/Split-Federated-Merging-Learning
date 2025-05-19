@@ -396,15 +396,21 @@ def get_dataset(dataset_root, dataset, args):
     trains, train_loaders, tests, test_loaders = {}, {}, {}, {}
     if dataset == 'mnist':
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_mnist(dataset_root, args)
+        # Create empty validation loaders for MNIST to maintain compatibility
+        val_loaders = []
+        v_val_loader = None
     elif dataset == 'cifar10':
         train_loaders, test_loaders, v_train_loader, v_test_loader = get_cifar10(dataset_root, args)
+        # Create empty validation loaders for CIFAR10 to maintain compatibility
+        val_loaders = []
+        v_val_loader = None
     elif dataset == 'isic':
-        train_loaders, test_loaders, v_train_loader, v_test_loader = get_isic(dataset_root, args)
+        train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader = get_isic(dataset_root, args)
     elif dataset == 'femnist':
         raise ValueError('CODING ERROR: FEMNIST dataset should not use this file')
     else:
         raise ValueError('Dataset `{}` not found'.format(dataset))
-    return train_loaders, test_loaders, v_train_loader, v_test_loader
+    return train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader
 
 def get_mnist(dataset_root, args):
     is_cuda = args.cuda
@@ -417,17 +423,25 @@ def get_mnist(dataset_root, args):
                             download = True, transform = transform)
     test =  datasets.MNIST(os.path.join(dataset_root, 'mnist'), train = False,
                             download = True, transform = transform)
-    #note: is_shuffle here also is a flag for differentiating train and test
-    train_loaders = split_data(train, args, kwargs, is_shuffle = True)
-    test_loaders = split_data(test,  args, kwargs, is_shuffle = False)
-    #the actual batch_size may need to change.... Depend on the actual gradient...
-    #originally written to get the gradient of the whole dataset
-    #but now it seems to be able to improve speed of getting accuracy of virtual sequence
-    v_train_loader = DataLoader(train, batch_size = args.batch_size * args.num_clients,
+    
+    # Split training data into train and validation sets (80% train, 20% validation)
+    train_size = int(0.8 * len(train))
+    val_size = len(train) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(train, [train_size, val_size])
+    
+    # Create dataloaders
+    train_loaders = split_data(train_dataset, args, kwargs, is_shuffle = True)
+    val_loaders = split_data(val_dataset, args, kwargs, is_shuffle = False)
+    test_loaders = split_data(test, args, kwargs, is_shuffle = False)
+    
+    # Create virtual dataloaders
+    v_train_loader = DataLoader(train_dataset, batch_size = args.batch_size * args.num_clients,
                                 shuffle = True, **kwargs)
+    v_val_loader = DataLoader(val_dataset, batch_size = args.batch_size * args.num_clients,
+                            shuffle = False, **kwargs)
     v_test_loader = DataLoader(test, batch_size = args.batch_size * args.num_clients,
                                 shuffle = False, **kwargs)
-    return  train_loaders, test_loaders, v_train_loader, v_test_loader
+    return train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader
 
 def get_cifar10(dataset_root, args):
     is_cuda = args.cuda
@@ -436,6 +450,10 @@ def get_cifar10(dataset_root, args):
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
+        transform_val = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
@@ -450,23 +468,44 @@ def get_cifar10(dataset_root, args):
                         transforms.ToTensor(),
                         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
+        transform_val = transforms.Compose([
+                        transforms.ToTensor(),
+                        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ])
         transform_test = transforms.Compose([
                         transforms.ToTensor(),
                         transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
     else:
         raise ValueError("this nn for cifar10 not implemented")
-    train = datasets.CIFAR10(os.path.join(dataset_root, 'cifar10'), train = True,
+    
+    # Load full training dataset
+    full_train = datasets.CIFAR10(os.path.join(dataset_root, 'cifar10'), train = True,
                         download = True, transform = transform_train)
     test = datasets.CIFAR10(os.path.join(dataset_root,'cifar10'), train = False,
                         download = True, transform = transform_test)
-    v_train_loader = DataLoader(train, batch_size = args.batch_size,
+    
+    # Split training data into train and validation sets (80% train, 20% validation)
+    train_size = int(0.8 * len(full_train))
+    val_size = len(full_train) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(full_train, [train_size, val_size])
+    
+    # Apply validation transforms to validation set
+    val_dataset.dataset.transform = transform_val
+    
+    # Create dataloaders
+    train_loaders = split_data(train_dataset, args, kwargs, is_shuffle = True)
+    val_loaders = split_data(val_dataset, args, kwargs, is_shuffle = False)
+    test_loaders = split_data(test, args, kwargs, is_shuffle = False)
+    
+    # Create virtual dataloaders
+    v_train_loader = DataLoader(train_dataset, batch_size = args.batch_size,
                                 shuffle = True, **kwargs)
+    v_val_loader = DataLoader(val_dataset, batch_size = args.batch_size,
+                            shuffle = False, **kwargs)
     v_test_loader = DataLoader(test, batch_size = args.batch_size,
                                 shuffle = False, **kwargs)
-    train_loaders = split_data(train, args, kwargs, is_shuffle = True)
-    test_loaders = split_data(test,  args, kwargs, is_shuffle = False)
-    return  train_loaders, test_loaders, v_train_loader, v_test_loader
+    return train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader
 
 def get_isic(dataset_root, args):
     is_cuda = args.cuda
@@ -512,32 +551,54 @@ def get_isic(dataset_root, args):
         transforms.Normalize(mean=norm_mean, std=norm_std)
     ])
 
+    transform_val = transforms.Compose([
+        transforms.Resize((args.isic_image_size, args.isic_image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=norm_mean, std=norm_std)
+    ])
+
     transform_test = transforms.Compose([
         transforms.Resize((args.isic_image_size, args.isic_image_size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=norm_mean, std=norm_std)
     ])
 
-    # Load the datasets
-    train_dataset = ImageFolder(root=train_dir, transform=transform_train)
+    # Load the full training dataset
+    full_train_dataset = ImageFolder(root=train_dir, transform=transform_train)
+    
+    # Split training data into train and validation sets (80% train, 20% validation)
+    train_size = int(0.8 * len(full_train_dataset))
+    val_size = len(full_train_dataset) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(full_train_dataset, [train_size, val_size])
+    
+    # Apply validation transforms to validation set
+    val_dataset.dataset.transform = transform_val
+    
+    # Load the test dataset
     test_dataset = ImageFolder(root=test_dir, transform=transform_test)
 
     # Update output channels based on number of classes
-    args.output_channels = len(train_dataset.classes)
-    print(f'ISIC dataset loaded with {len(train_dataset.classes)} classes')
-    print(f'Class mapping: {train_dataset.class_to_idx}')
+    args.output_channels = len(full_train_dataset.classes)
+    print(f'ISIC dataset loaded with {len(full_train_dataset.classes)} classes')
+    print(f'Class mapping: {full_train_dataset.class_to_idx}')
+    print(f'Train set size: {len(train_dataset)}')
+    print(f'Validation set size: {len(val_dataset)}')
+    print(f'Test set size: {len(test_dataset)}')
 
-    # Create main dataloaders with same batch size pattern as CIFAR10/MNIST
+    # Create main dataloaders
     v_train_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                               shuffle=True, **kwargs)
+    v_val_loader = DataLoader(val_dataset, batch_size=args.batch_size,
+                            shuffle=False, **kwargs)
     v_test_loader = DataLoader(test_dataset, batch_size=args.batch_size,
                              shuffle=False, **kwargs)
 
-    # Split data for federated learning
+    # Split training data for federated learning
     train_loaders = split_data(train_dataset, args, kwargs, is_shuffle=True)
+    val_loaders = split_data(val_dataset, args, kwargs, is_shuffle=False)
     test_loaders = split_data(test_dataset, args, kwargs, is_shuffle=False)
 
-    return train_loaders, test_loaders, v_train_loader, v_test_loader
+    return train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader
 
 def show_distribution(dataloader, args):
     """
