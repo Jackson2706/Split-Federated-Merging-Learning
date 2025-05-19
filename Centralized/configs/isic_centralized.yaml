@@ -4,13 +4,15 @@ model: cnn
 input_channels: 3
 output_channels: 9
 batch_size: 32
-num_clients: 1  # Centralized learning
+num_clients: 100  # Number of clients for data distribution
 lr: 0.01
-num_communication: 5
+num_communication: 5  # This will result in total_epochs = num_clients * num_communication = 50
 momentum: 0.9
 weight_decay: 0.0
 isic_image_size: 224
 classes_per_client: 9  # Set to 9 to include all ISIC classes
 iid: 1  # IID distribution to ensure all classes are available
+global_model: 1  # Ensure centralized learning
+local_model: 0  # Disable local models
 
 # Inherit other settings from base_config.yaml 

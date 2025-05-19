@@ -125,9 +125,10 @@ def main():
     
     # Training loop
     best_acc = 0
-    print(f'Starting training for {config.num_communication} epochs...')
+    epochs = config.num_communication*config.num_clients
+    print(f'Starting training for {epochs} epochs...')
     
-    for epoch in range(config.num_communication):
+    for epoch in range(epochs):
         # Train
         train_loss, train_acc = train(model, train_loader, optimizer, criterion, device)
         
