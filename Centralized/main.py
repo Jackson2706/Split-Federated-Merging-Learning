@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from options import args_parser
+from utils.config import Config
 from datasets.datasets import get_dataset
 from models.cnn_conv_layer import cnn_3conv
 import os
 from tqdm import tqdm
+import argparse
 
 def train(model, train_loader, optimizer, criterion, device):
     model.train()
@@ -50,57 +51,83 @@ def test(model, test_loader, criterion, device):
     return avg_loss, accuracy
 
 def main():
-    # Get arguments
-    args = args_parser()
+    # Parse command line arguments for config path
+    parser = argparse.ArgumentParser(description='Train with YAML config')
+    parser.add_argument('--config', type=str, required=True,
+                      help='Path to YAML config file')
+    parser.add_argument('--override', type=str, nargs='*', default=[],
+                      help='Override config values: key1=value1 key2=value2')
+    args = parser.parse_args()
+    
+    # Load configuration
+    config = Config(args.config)
+    
+    # Handle command line overrides
+    for override in args.override:
+        key, value = override.split('=')
+        try:
+            # Try to convert to int or float if possible
+            value = eval(value)
+        except:
+            pass
+        config.update({key: value})
     
     # Set device
-    device = torch.device(f'cuda:{args.gpu}' if args.cuda else 'cpu')
+    device = config.device
     print(f'Using device: {device}')
     
     # Set random seed for reproducibility
-    torch.manual_seed(args.seed)
-    if args.cuda:
-        torch.cuda.manual_seed(args.seed)
+    torch.manual_seed(config.seed)
+    if config.cuda:
+        torch.cuda.manual_seed(config.seed)
     
     # Load dataset
-    _, _, train_loader, test_loader = get_dataset(args.dataset_root, args.dataset, args)
-    print(f'Dataset: {args.dataset}')
+    train_dataset, test_dataset, train_loader, test_loader = get_dataset(config.dataset_root, config.dataset, config)
+    print(f'Dataset: {config.dataset}')
     
     # Print data distribution settings
     print(f'\nData Distribution Settings:')
-    if args.iid == 1:
+    if config.iid == 1:
         print(f'Distribution: IID with equal size')
-    elif args.iid == 0:
-        print(f'Distribution: Non-IID with balanced classes ({args.classes_per_client} classes per client)')
-    elif args.iid == -1:
+    elif config.iid == 0:
+        print(f'Distribution: Non-IID with balanced classes ({config.classes_per_client} classes per client)')
+    elif config.iid == -1:
         print(f'Distribution: Non-IID with unbalanced classes')
-    elif args.iid == -2:
+    elif config.iid == -2:
         print(f'Distribution: One class per client')
-        print(f'Edge Distribution: {"IID" if args.edgeiid == 1 else "Non-IID"}')
-    print(f'Number of clients: {args.num_clients}')
-    print(f'Fraction of clients used: {args.frac}\n')
+        print(f'Edge Distribution: {"IID" if config.edgeiid == 1 else "Non-IID"}')
+    print(f'Number of clients: {config.num_clients}')
+    print(f'Fraction of clients used: {config.frac}\n')
     
     # Initialize model
-    model = cnn_3conv(args.input_channels, args.output_channels).to(device)
+    model = cnn_3conv(config.input_channels, config.output_channels).to(device)
     print(f'Model architecture:\n{model}')
     
     # Set up optimizer and loss function
     optimizer = optim.SGD(
         model.parameters(),
-        lr=args.lr,
-        momentum=args.momentum,
-        weight_decay=args.weight_decay
+        lr=config.lr,
+        momentum=config.momentum,
+        weight_decay=config.weight_decay
     )
     criterion = nn.CrossEntropyLoss()
     
-    # Create directory for saving models if it doesn't exist
-    os.makedirs('checkpoints', exist_ok=True)
+    # Create dataset-specific directory for saving models
+    checkpoint_dir = os.path.join('checkpoints', config.dataset)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    # Create a unique identifier for this run based on parameters
+    run_id = f"clients{config.num_clients}_iid{config.iid}_lr{config.lr}_batch{config.batch_size}"
+    if config.iid == 0:
+        run_id += f"_classes{config.classes_per_client}"
+    elif config.iid == -2:
+        run_id += f"_edges{config.num_edges}_edgeiid{config.edgeiid}"
     
     # Training loop
     best_acc = 0
-    print(f'Starting training for {args.num_communication} epochs...')
+    print(f'Starting training for {config.num_communication} epochs...')
     
-    for epoch in range(args.num_communication):
+    for epoch in range(config.num_communication):
         # Train
         train_loss, train_acc = train(model, train_loader, optimizer, criterion, device)
         
@@ -108,35 +135,38 @@ def main():
         test_loss, test_acc = test(model, test_loader, criterion, device)
         
         # Learning rate decay
-        if (epoch + 1) % args.lr_decay_epoch == 0:
+        if (epoch + 1) % config.lr_decay_epoch == 0:
             for param_group in optimizer.param_groups:
-                param_group['lr'] *= args.lr_decay
+                param_group['lr'] *= config.lr_decay
                 print(f'Learning rate decayed to: {param_group["lr"]}')
         
         # Print metrics
-        print(f'Epoch: {epoch+1}/{args.num_communication}')
+        print(f'Epoch: {epoch+1}/{config.num_communication}')
         print(f'Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%')
         print(f'Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%')
         
-        # Save best model
+        # Save best model with dataset-specific path and run identifier
         if test_acc > best_acc:
             best_acc = test_acc
-            save_path = os.path.join('checkpoints', 'best_model.pth')
-            torch.save({
+            save_path = os.path.join(checkpoint_dir, f'best_model_{run_id}.pth')
+            
+            # Save model checkpoint
+            checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_acc': train_acc,
                 'test_acc': test_acc,
-                'data_distribution': {
-                    'iid': args.iid,
-                    'edgeiid': args.edgeiid,
-                    'num_clients': args.num_clients,
-                    'frac': args.frac,
-                    'classes_per_client': args.classes_per_client
-                }
-            }, save_path)
+                'config': config.config  # Save full configuration
+            }
+            
+            torch.save(checkpoint, save_path)
             print(f'New best model saved with accuracy: {best_acc:.2f}%')
+            print(f'Saved to: {save_path}')
+            
+            # Also save the configuration separately
+            config_save_path = os.path.join(checkpoint_dir, f'config_{run_id}.yaml')
+            config.save(config_save_path)
     
     print(f'\nTraining completed!')
     print(f'Best Test Accuracy: {best_acc:.2f}%')
