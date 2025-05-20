@@ -167,18 +167,12 @@ def main():
                 model.load_state_dict(checkpoint['model_state_dict'])
                 
                 # Get test dataset
-                _, _, test_loaders, _, _, v_test_loader = get_dataset(config.dataset_root, config.dataset, config)
+                _, _, _, _, _, v_test_loader = get_dataset(config.dataset_root, config.dataset, config)
                 
                 # Test on virtual test loader (all test data)
                 print("\nTesting model on test set...")
                 test_acc = test_model(model, v_test_loader, device)
                 print(f"Test Accuracy: {test_acc:.2f}%")
-                
-                # Test on individual client test loaders
-                print("\nTesting model on individual clients:")
-                for i, test_loader in enumerate(test_loaders):
-                    client_acc = test_model(model, test_loader, device)
-                    print(f"Client {i} Test Accuracy: {client_acc:.2f}%")
             
             if len(checkpoint_files) == 1:
                 break
