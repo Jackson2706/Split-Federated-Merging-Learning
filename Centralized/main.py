@@ -158,6 +158,7 @@ def main():
                 'optimizer_state_dict': optimizer.state_dict(),
                 'train_acc': train_acc,
                 'val_acc': val_acc,
+                'test_acc': None,
                 'config': config.config  # Save full configuration
             }
             
@@ -179,5 +180,10 @@ def main():
     test_loss, test_acc = test(model, v_test_loader, criterion, device)
     print(f'Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%')
 
+    # Save model checkpoint
+    checkpoint['test_acc'] = test_acc
+    torch.save(checkpoint, save_path)
+    print(f"=========Done training and testing=========")
+    
 if __name__ == '__main__':
     main() 
