@@ -156,8 +156,15 @@ def main():
                 
                 # Create model
                 model = cnn_3conv(config.input_channels, config.output_channels)
-                model.load_state_dict(checkpoint['model_state_dict'])
                 model = model.to(device)
+                
+                # Initialize FC layers by doing a forward pass with dummy input
+                dummy_input = torch.randn(1, config.input_channels, config.isic_image_size, config.isic_image_size).to(device)
+                with torch.no_grad():
+                    model(dummy_input)
+                
+                # print(f"model_state_dict: {checkpoint['model_state_dict']}")
+                model.load_state_dict(checkpoint['model_state_dict'])
                 
                 # Get test dataset
                 _, _, test_loaders, _, _, v_test_loader = get_dataset(config.dataset_root, config.dataset, config)
