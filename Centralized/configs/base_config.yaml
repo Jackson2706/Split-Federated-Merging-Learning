@@ -1,0 +1,43 @@
+# Dataset and model configuration
+dataset: cifar10  # mnist, cifar10, isic
+model: cnn  # mnist: logistic, lenet; cifar10: cnn_tutorial, cnn_complex; isic: cnn
+input_channels: 3  # mnist:1, cifar10:3, isic:3
+output_channels: 10  # mnist:10, cifar10:10, isic:9
+
+# Training hyperparameters
+batch_size: 10  # batch size when trained on client
+num_communication: 1  # number of communication rounds with the cloud server
+num_local_update: 1  # number of local update (τ₁)
+num_edge_aggregation: 1  # number of edge aggregation (τ₂)
+lr: 0.001  # learning rate of the SGD when trained on client
+lr_decay: 1.0  # lr decay rate
+lr_decay_epoch: 1  # lr decay epoch
+momentum: 0.0  # SGD momentum
+weight_decay: 0.0  # The weight decay rate
+verbose: 0  # verbose for print progress bar
+
+# Federated learning settings
+iid: 1  # Data distribution type: 1 (IID), 0 (Non-IID balanced), -1 (Non-IID unbalanced), -2 (One-class)
+edgeiid: 1  # Edge data distribution type: 1 (IID), 0 (Non-IID) (only used when iid = -2)
+frac: 1.0  # Fraction of clients to use (between 0 and 1)
+num_clients: 10  # Number of clients for data distribution
+num_edges: 1  # Number of edge servers
+classes_per_client: 2  # Number of classes per client for Non-IID distribution
+
+# System settings
+seed: 1  # random seed
+dataset_root: data  # dataset root folder
+gpu: 0  # GPU to be selected, 0, 1, 2, 3
+
+# ISIC specific settings
+isic_dirname: "Skin cancer ISIC The International Skin Imaging Collaboration"  # ISIC dataset directory name
+isic_image_size: 224  # size to resize ISIC dataset images
+
+# Model type settings
+mtl_model: 0
+global_model: 1
+local_model: 0
+
+# Dataset preprocessing
+use_imagenet_stats: 1  # whether to use ImageNet normalization stats (1) or calculate dataset-specific stats (0)
+show_dis: 0  # whether to show distribution 
