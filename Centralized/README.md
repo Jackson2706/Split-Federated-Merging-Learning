@@ -1,3 +1,6 @@
+<<<<<<< HEAD
+Hello, Jackson. This is main branch of Centrialized baseline
+=======
 # Centralized and Federated Learning Implementation
 
 This repository contains implementations for both centralized and federated learning approaches using PyTorch. It supports MNIST, CIFAR-10, and ISIC datasets with various distribution strategies.
@@ -91,3 +94,4 @@ Best models are automatically saved in the `checkpoints` directory with the foll
 - `--lr`: Initial learning rate
 - `--lr_decay`: Learning rate decay factor
 - `--lr_decay_epoch`: Epochs between learning rate updates
+>>>>>>> dev/central
