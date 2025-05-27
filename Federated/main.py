@@ -3,6 +3,8 @@ import copy
 import os
 import pickle
 import time
+import psutil
+import pandas as pd
 
 import numpy as np
 import torch
@@ -65,9 +67,10 @@ def main():
     cv_loss, cv_acc = [], []
     print_every = config["print_every"]
     val_loss_pre, counter = 0, 0
+    client_cpu_utils = []  # Store CPU utilization for each round
 
     for epoch in tqdm(range(config["epochs"])):
-        local_weights, local_losses, local_updates = [], [], []
+        
         if config["verbose"]:
             print(f"\n | Global Training Round: {epoch+1} |\n")
         global_model.train()
@@ -76,6 +79,9 @@ def main():
             range(config["num_users"]), m, replace=False
         )
 
+        local_weights, local_losses, local_updates = [], [], []
+        _ = psutil.cpu_percent() # Start CPU monitoring
+        
         for idx in idxs_users:
             local_update = get_client_update_strategy(config["strategy"])(
                 args=config,
@@ -86,9 +92,17 @@ def main():
             w, loss = local_update.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch
             )
+            
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
             local_updates.append((copy.deepcopy(w), copy.deepcopy(loss)))
+
+        # End CPU monitoring and calculate utilization
+        round_cpu_util = psutil.cpu_percent()
+        avg_cpu_util = round_cpu_util / len(idxs_users)
+
+        # Store average CPU utilization for this round
+        client_cpu_utils.append(avg_cpu_util)
 
         # update global weights
         global_weights = strategy.aggregate(
@@ -128,6 +142,7 @@ def main():
     print("|---- Avg Train Accuracy: {:.2f}%".format(100 * train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(100 * test_acc))
 
+    # Save results including CPU utilization
     file_name = (
         "./save/objects/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl".format(
             config["strategy"],
@@ -142,7 +157,29 @@ def main():
     )
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, "wb") as f:
-        pickle.dump([training_loss, train_accuracy], f)
+        pickle.dump([training_loss, train_accuracy, client_cpu_utils], f)
+
+    # Save CPU utilization data to CSV
+    cpu_data = {
+        'round': range(len(client_cpu_utils)),
+        'cpu_utilization': client_cpu_utils
+    }
+    cpu_df = pd.DataFrame(cpu_data)
+    cpu_csv_path = (
+        "./save/cpu_metrics/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.csv".format(
+            config["strategy"],
+            config["dataset"],
+            config["model"],
+            config["epochs"],
+            config["frac"],
+            config["iid"],
+            config["local_ep"],
+            config["local_bs"],
+        )
+    )
+    os.makedirs(os.path.dirname(cpu_csv_path), exist_ok=True)
+    cpu_df.to_csv(cpu_csv_path, index=False)
+    print(f"\nCPU utilization data saved to: {cpu_csv_path}")
 
     print("\n Total Run Time: {0:0.4f}".format(time.time() - start_time))
 
@@ -179,6 +216,25 @@ def main():
     plt.xlabel("Communication Rounds")
     plt.savefig(
         "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png".format(
+            config["strategy"],
+            config["dataset"],
+            config["model"],
+            config["epochs"],
+            config["frac"],
+            config["iid"],
+            config["local_ep"],
+            config["local_bs"],
+        )
+    )
+
+    # Plot CPU utilization
+    plt.figure()
+    plt.title("CPU Utilization vs Communication rounds")
+    plt.plot(range(len(client_cpu_utils)), client_cpu_utils, color="b")
+    plt.ylabel("CPU Utilization (%)")
+    plt.xlabel("Communication Rounds")
+    plt.savefig(
+        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.png".format(
             config["strategy"],
             config["dataset"],
             config["model"],
