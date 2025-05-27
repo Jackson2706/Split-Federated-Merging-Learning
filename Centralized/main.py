@@ -1,12 +1,13 @@
+import os
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from utils.config import Config
-from datasets.datasets import get_dataset
-from models.cnn_conv_layer import cnn_3conv
-import os
+import torchvision
+import torchvision.transforms as transforms
 from tqdm import tqdm
+import yaml
 import argparse
+from models.CNNCifar import CNNCifar
 
 def train(model, train_loader, optimizer, criterion, device):
     model.train()
@@ -14,7 +15,7 @@ def train(model, train_loader, optimizer, criterion, device):
     correct = 0
     total = 0
     
-    for batch_idx, (data, target) in enumerate(tqdm(train_loader, desc='Training', leave=False)):
+    for batch_idx, (data, target) in enumerate(tqdm(train_loader)):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
@@ -23,13 +24,30 @@ def train(model, train_loader, optimizer, criterion, device):
         optimizer.step()
         
         total_loss += loss.item()
-        _, predicted = output.max(1)
+        pred = output.argmax(dim=1, keepdim=True)
+        correct += pred.eq(target.view_as(pred)).sum().item()
         total += target.size(0)
-        correct += predicted.eq(target).sum().item()
-        
+    
+    return total_loss / len(train_loader), 100. * correct / total
+
+def validate(model, val_loader, criterion, device):
+    model.eval()
+    val_loss = 0
+    correct = 0
+    total = 0
+    
+    with torch.no_grad():
+        for data, target in val_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            val_loss += criterion(output, target).item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
+            total += target.size(0)
+    
+    val_loss /= len(val_loader)
     accuracy = 100. * correct / total
-    avg_loss = total_loss / len(train_loader)
-    return avg_loss, accuracy
+    return val_loss, accuracy
 
 def test(model, test_loader, criterion, device):
     model.eval()
@@ -38,152 +56,96 @@ def test(model, test_loader, criterion, device):
     total = 0
     
     with torch.no_grad():
-        for data, target in tqdm(test_loader, desc='Testing', leave=False):
+        for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
             test_loss += criterion(output, target).item()
-            _, predicted = output.max(1)
+            pred = output.argmax(dim=1, keepdim=True)
+            correct += pred.eq(target.view_as(pred)).sum().item()
             total += target.size(0)
-            correct += predicted.eq(target).sum().item()
-            
+    
+    test_loss /= len(test_loader)
     accuracy = 100. * correct / total
-    avg_loss = test_loss / len(test_loader)
-    return avg_loss, accuracy
+    return test_loss, accuracy
 
 def main():
     # Parse command line arguments for config path
     parser = argparse.ArgumentParser(description='Train with YAML config')
-    parser.add_argument('--config', type=str, required=True,
+    parser.add_argument('--config', type=str, default='configs/cifar_centralized.yaml',
                       help='Path to YAML config file')
-    parser.add_argument('--override', type=str, nargs='*', default=[],
-                      help='Override config values: key1=value1 key2=value2')
     args = parser.parse_args()
     
     # Load configuration
-    config = Config(args.config)
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
     
-    # Handle command line overrides
-    for override in args.override:
-        key, value = override.split('=')
-        try:
-            # Try to convert to int or float if possible
-            value = eval(value)
-        except:
-            pass
-        config.update({key: value})
+    # Set random seed
+    torch.manual_seed(config['seed'])
+    if config['cuda']:
+        torch.cuda.manual_seed(config['seed'])
     
     # Set device
-    device = config.device
-    print(f'Using device: {device}')
+    device = torch.device("cuda" if config['cuda'] else "cpu")
     
-    # Set random seed for reproducibility
-    torch.manual_seed(config.seed)
-    if config.cuda:
-        torch.cuda.manual_seed(config.seed)
+    # Data loading and preprocessing
+    apply_transform = transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     
-    # Load dataset
-    print(f'Dataset: {config.dataset}')
-    train_loaders, val_loaders, test_loaders, v_train_loader, v_val_loader, v_test_loader = get_dataset(config.dataset_root, config.dataset, config)
+    # Load training dataset
+    full_train_dataset = torchvision.datasets.CIFAR10(
+        root=config['dataset_root'], train=True, download=True, transform=apply_transform)
     
-    # Print data distribution settings
-    print(f'\nData Distribution Settings:')
-    if config.iid == 1:
-        print(f'Distribution: IID with equal size')
-    elif config.iid == 0:
-        print(f'Distribution: Non-IID with balanced classes ({config.classes_per_client} classes per client)')
-    elif config.iid == -1:
-        print(f'Distribution: Non-IID with unbalanced classes')
-    elif config.iid == -2:
-        print(f'Distribution: One class per client')
-        print(f'Edge Distribution: {"IID" if config.edgeiid == 1 else "Non-IID"}')
-    print(f'Number of clients: {config.num_clients}')
-    print(f'Fraction of clients used: {config.frac}\n')
+    # Split training dataset into train and validation sets (80% train, 20% validation)
+    train_size = int(0.8 * len(full_train_dataset))
+    val_size = len(full_train_dataset) - train_size
+    train_dataset, val_dataset = torch.utils.data.random_split(full_train_dataset, [train_size, val_size])
+    
+    # Load test dataset
+    test_dataset = torchvision.datasets.CIFAR10(
+        root=config['dataset_root'], train=False, download=True, transform=apply_transform)
+    
+    # Create data loaders
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=config['batch_size'], shuffle=True, num_workers=2)
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=2)
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=config['batch_size'], shuffle=False, num_workers=2)
     
     # Initialize model
-    model = cnn_3conv(config.input_channels, config.output_channels).to(device)
-    print(f'Model architecture:\n{model}')
+    model = CNNCifar({"num_classes": config['output_channels']}).to(device)
     
-    # Set up optimizer and loss function
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=config.lr,
-        momentum=config.momentum,
-        weight_decay=config.weight_decay
-    )
+    # Define loss function and optimizer
     criterion = nn.CrossEntropyLoss()
-    
-    # Create dataset-specific directory for saving models
-    checkpoint_dir = os.path.join('checkpoints', config.dataset)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    
-    # Create a unique identifier for this run based on parameters
-    run_id = f"clients{config.num_clients}_iid{config.iid}_lr{config.lr}_batch{config.batch_size}"
-    if config.iid == 0:
-        run_id += f"_classes{config.classes_per_client}"
-    elif config.iid == -2:
-        run_id += f"_edges{config.num_edges}_edgeiid{config.edgeiid}"
+    optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=config['momentum'])
     
     # Training loop
     best_val_acc = 0
-    epochs = config.num_communication*config.num_clients
-    print(f'Starting training for {epochs} epochs...')
-    
-    for epoch in range(epochs):
+    for epoch in range(config['num_communication']):
+        print(f'\nEpoch: {epoch+1}/{config["num_communication"]}')
+        
         # Train
-        train_loss, train_acc = train(model, v_train_loader, optimizer, criterion, device)
+        train_loss, train_acc = train(model, train_loader, optimizer, criterion, device)
+        print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
         
         # Validate
-        val_loss, val_acc = test(model, v_val_loader, criterion, device)
-        
-        # Learning rate decay
-        if (epoch + 1) % config.lr_decay_epoch == 0:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= config.lr_decay
-                print(f'Learning rate decayed to: {param_group["lr"]}')
-        
-        # Print metrics
-        print(f'Epoch: {epoch+1}/{epochs}')
-        print(f'Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%')
-        print(f'Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%')
+        val_loss, val_acc = validate(model, val_loader, criterion, device)
+        print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
         
         # Save best model based on validation accuracy
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            save_path = os.path.join(checkpoint_dir, f'best_model_{run_id}.pth')
-            
-            # Save model checkpoint
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'train_acc': train_acc,
-                'val_acc': val_acc,
-                'test_acc': None,
-                'config': config.config  # Save full configuration
-            }
-            
-            torch.save(checkpoint, save_path)
-            print(f'New best model saved with validation accuracy: {best_val_acc:.2f}%')
-            print(f'Saved to: {save_path}')
-            
-            # Also save the configuration separately
-            config_save_path = os.path.join(checkpoint_dir, f'config_{run_id}.yaml')
-            config.save(config_save_path)
-    
-    print(f'\nTraining completed!')
-    print(f'Best Validation Accuracy: {best_val_acc:.2f}%')
+            if not os.path.exists('checkpoints'):
+                os.makedirs('checkpoints')
+            torch.save(model.state_dict(), 'checkpoints/best_model.pth')
+            print(f'Best model saved with validation accuracy: {best_val_acc:.2f}%')
     
     # Load best model and evaluate on test set
     print('\nEvaluating best model on test set...')
-    checkpoint = torch.load(save_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    test_loss, test_acc = test(model, v_test_loader, criterion, device)
-    print(f'Test Loss: {test_loss:.4f} | Test Acc: {test_acc:.2f}%')
+    model.load_state_dict(torch.load('checkpoints/best_model.pth'))
+    test_loss, test_acc = test(model, test_loader, criterion, device)
+    print(f'Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.2f}%')
 
-    # Save model checkpoint
-    checkpoint['test_acc'] = test_acc
-    torch.save(checkpoint, save_path)
-    print(f"=========Done training and testing=========")
-    
 if __name__ == '__main__':
     main() 

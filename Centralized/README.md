@@ -1,97 +1,59 @@
-<<<<<<< HEAD
-Hello, Jackson. This is main branch of Centrialized baseline
-=======
-# Centralized and Federated Learning Implementation
+# Centralized CNN Training on CIFAR-10
 
-This repository contains implementations for both centralized and federated learning approaches using PyTorch. It supports MNIST, CIFAR-10, and ISIC datasets with various distribution strategies.
+This is a centralized implementation for training a CNN model on the CIFAR-10 dataset using YAML configuration.
 
-## Installation
+## Requirements
 
+Install the required packages:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Centralized Learning
-Run this command inside the `Centralized` directory
+## Usage
 
+1. Train the model:
 ```bash
-python main.py --config configs/isic_centralized.yaml
+python main.py --config configs/cifar_centralized.yaml
 ```
 
-## Federated Learning
+### Configuration Options
 
-For federated learning, modify the above commands by adjusting these key parameters:
+The training parameters can be configured in the YAML file. Here are the available options:
 
-### Data Distribution Flags
-
-1. `--num_clients N`: Number of clients (default: 10)
-   - For centralized: set to 1
-   - For federated: set to desired number of clients (e.g., 10, 20, 100)
-
-2. `--iid X`: Data distribution type
-   - 1: IID (Independent and Identically Distributed)
-   - 0: Non-IID with balanced classes
-   - -1: Non-IID with unbalanced classes
-   - -2: One class per client
-
-3. `--classes_per_client N`: Number of classes each client gets (default: 2)
-   - Only used when `--iid` is 0 (Non-IID balanced)
-   - Must be less than total number of classes
-
-4. `--edgeiid X`: Edge server data distribution (only used when `--iid -2`)
-   - 1: IID distribution within edges
-   - 0: Non-IID distribution within edges
-
-5. `--frac X`: Fraction of clients to use (between 0 and 1)
-   - Controls what fraction of clients participate in each round
-
-### Training Configuration
-
-1. `--num_communication N`: Number of communication rounds
-2. `--num_local_update N`: Number of local updates (τ₁)
-3. `--num_edge_aggregation N`: Number of edge aggregations (τ₂)
-4. `--batch_size N`: Batch size for client training
-
-### Example Federated Configurations
-
-1. IID with 10 clients:
-```bash
-python main.py --dataset mnist --num_clients 10 --iid 1
+```yaml
+dataset: cifar10
+model: cnn
+input_channels: 3
+output_channels: 10
+batch_size: 128
+num_clients: 1  # For centralized training
+lr: 0.01
+num_communication: 100  # Number of epochs
+momentum: 0.9
+seed: 1
+cuda: true
+dataset_root: ./data
 ```
 
-2. Non-IID balanced with 20 clients, 2 classes per client:
-```bash
-python main.py --dataset cifar10 --num_clients 20 --iid 0 --classes_per_client 2
-```
+## Model Architecture
 
-3. One class per client with edge servers:
-```bash
-python main.py --dataset isic --num_clients 9 --iid -2 --num_edges 3 --edgeiid 1
-```
+The model is a simple CNN with the following architecture:
+- 2 convolutional layers with ReLU and max pooling
+- 3 fully connected layers
+- Output layer with softmax activation
 
-4. Non-IID unbalanced with partial client participation:
-```bash
-python main.py --dataset mnist --num_clients 100 --iid -1 --frac 0.1
-```
+## Training Process
 
-## Model Checkpoints
+The training process includes:
+1. Data loading and preprocessing
+   - Training set is split into 80% train and 20% validation
+   - Test set is kept separate for final evaluation
+2. Model training with validation
+   - Model is trained on training set
+   - Performance is evaluated on validation set
+   - Best model is saved based on validation accuracy
+3. Final evaluation
+   - Best model is loaded and evaluated on test set
+   - Test accuracy is reported
 
-Best models are automatically saved in the `checkpoints` directory with the following information:
-- Model state
-- Optimizer state
-- Training/Test accuracy
-- Data distribution configuration
-
-## Additional Features
-
-1. `--use_imagenet_stats`: Use ImageNet normalization (1) or calculate dataset-specific stats (0)
-2. `--show_dis`: Show data distribution across clients
-3. `--verbose`: Print progress bars and detailed information
-4. `--gpu`: Select GPU device (0, 1, 2, 3)
-
-## Learning Rate Scheduling
-
-- `--lr`: Initial learning rate
-- `--lr_decay`: Learning rate decay factor
-- `--lr_decay_epoch`: Epochs between learning rate updates
->>>>>>> dev/central
+The best model will be saved in the `checkpoints` directory.
