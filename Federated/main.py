@@ -103,8 +103,8 @@ def main():
     print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
 
-    file_name = './save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        format(config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
+    file_name = './save/objects/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
+        format(config["strategy"], config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
                config["local_ep"], config["local_bs"])
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, 'wb') as f:
@@ -123,8 +123,8 @@ def main():
     plt.plot(range(len(training_loss)), training_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
-                format(config["dataset"], config["model"], config["epochs"], config["frac"],
+    plt.savefig('./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png'.
+                format(config["strategy"], config["dataset"], config["model"], config["epochs"], config["frac"],
                        config["iid"], config["local_ep"], config["local_bs"]))
     #
     # # Plot Average Accuracy vs Communication rounds
@@ -133,8 +133,8 @@ def main():
     plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
     plt.ylabel('Average Accuracy')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/fed_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
-                format(config["dataset"], config["model"], config["epochs"], config["frac"],
+    plt.savefig('./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png'.
+                format(config["strategy"], config["dataset"], config["model"], config["epochs"], config["frac"],
                        config["iid"], config["local_ep"], config["local_bs"]))
 if __name__ == "__main__":
     main()
