@@ -56,4 +56,22 @@ The training process includes:
    - Best model is loaded and evaluated on test set
    - Test accuracy is reported
 
+## Results
+
+The training results are saved in the following locations:
+
+1. Model checkpoints:
+   - `checkpoints/best_model.pth`: Best model based on validation accuracy
+
+2. Training metrics:
+   - `results/training_metrics.csv`: CSV file containing epoch-wise metrics
+     - Training loss and accuracy
+     - Validation loss and accuracy
+   - `results/training_curves.png`: Plot of training and validation curves
+     - Loss curves
+     - Accuracy curves
+   - `results/test_results.txt`: Final test results
+     - Best validation accuracy
+     - Test loss and accuracy
+
 The best model will be saved in the `checkpoints` directory.
