@@ -1,7 +1,8 @@
-from .CNNMnist import CNNMnist
-from .CNNFashion_Mnist import CNNFashion_Mnist
 from .CNNCifar import CNNCifar
+from .CNNFashion_Mnist import CNNFashion_Mnist
+from .CNNMnist import CNNMnist
 from .MLP import MLP
+
 model_dataset_map = {
     "cnn":{
         "mnist": CNNMnist,

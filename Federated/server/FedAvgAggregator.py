@@ -1,6 +1,9 @@
-from .Aggregator import Aggregator
-import copy 
+import copy
+
 import torch
+
+from .Aggregator import Aggregator
+
 
 class FedAvgAggregator(Aggregator):
     def aggregate(self, _1, _2, client_updates):

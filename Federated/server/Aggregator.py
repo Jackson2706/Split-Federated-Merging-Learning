@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class Aggregator(ABC):
     def __init__(self, args):
         self.args = args

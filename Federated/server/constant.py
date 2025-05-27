@@ -2,6 +2,7 @@ from .FedAvgAggregator import FedAvgAggregator
 from .FedNovaAggregator import FedNovaAggregator
 from .FedProxAggregator import FedProxAggregator
 from .FedSGDAggregator import FedSGDAggregator
+
 strategies_map = {
     "fedavg": FedAvgAggregator,
     "fednova": FedNovaAggregator,

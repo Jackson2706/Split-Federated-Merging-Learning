@@ -1,7 +1,9 @@
-from .Client import Client
-import torch
 import copy
+
+import torch
 from torch import nn
+
+from .Client import Client
 
 
 class FedProxClient(Client):

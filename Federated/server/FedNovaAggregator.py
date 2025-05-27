@@ -1,5 +1,6 @@
-from .Aggregator import Aggregator
 import copy
+
+from .Aggregator import Aggregator
 
 
 class FedNovaAggregator(Aggregator):

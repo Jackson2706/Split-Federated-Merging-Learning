@@ -4,18 +4,19 @@
 # Python version: 3.6
 
 import copy
-from torchvision import datasets, transforms
-from .sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
-from .sampling import cifar_iid, cifar_noniid
+
 # import time
 # import numpy as np
 # from LSTM_utilities import dataset, utility
 # from options import args_parser
 # from models import Basic_LSTM_2
 import torch
-from torch.utils.data import Dataset, DataLoader, Subset
 from torch import nn
+from torch.utils.data import DataLoader, Dataset, Subset
+from torchvision import datasets, transforms
 
+from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
+                       mnist_noniid_unequal)
 
 
 def get_dataset(args):

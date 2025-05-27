@@ -1,5 +1,7 @@
 import os
+
 import yaml
+
 
 class ConfigLoader:
     def __init__(self, cfg_path):

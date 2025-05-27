@@ -1,6 +1,8 @@
-from .Client import Client
 import torch
 from torch import nn
+
+from .Client import Client
+
 
 class FedAvgClient(Client):
     def update_weights(self, model, global_round):

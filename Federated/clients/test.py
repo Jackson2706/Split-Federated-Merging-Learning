@@ -1,6 +1,7 @@
-from torch import nn
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
+
 
 def test_inference(args, model, test_dataset):
     """ Returns the test accuracy and loss.
