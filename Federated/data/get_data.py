@@ -4,18 +4,19 @@
 # Python version: 3.6
 
 import copy
-from torchvision import datasets, transforms
-from .sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
-from .sampling import cifar_iid, cifar_noniid
+
 # import time
 # import numpy as np
 # from LSTM_utilities import dataset, utility
 # from options import args_parser
 # from models import Basic_LSTM_2
 import torch
-from torch.utils.data import Dataset, DataLoader, Subset
 from torch import nn
+from torch.utils.data import DataLoader, Dataset, Subset
+from torchvision import datasets, transforms
 
+from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
+                       mnist_noniid_unequal)
 
 
 def get_dataset(args):
@@ -25,7 +26,7 @@ def get_dataset(args):
     """
 
     if args["dataset"] == 'cifar':
-        data_dir = '/mnt/Data/cifar/'
+        data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
             [transforms.ToTensor(),
              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -51,9 +52,9 @@ def get_dataset(args):
 
     elif args["dataset"] == 'mnist' or 'fmnist':
         if args.dataset == 'mnist':
-            data_dir = '/mnt/Data/mnist/'
+            data_dir = args["dataset_root"]
         else:
-            data_dir = '/mnt/Data/fmnist/'
+            data_dir = args["dataset_root"]
 
         apply_transform = transforms.Compose([
             transforms.ToTensor(),

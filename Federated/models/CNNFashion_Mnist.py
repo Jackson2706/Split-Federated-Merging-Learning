@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class CNNFashion_Mnist(nn.Module):
     def __init__(self, args):
         super(CNNFashion_Mnist, self).__init__()
