@@ -80,7 +80,9 @@ def main():
         )
 
         local_weights, local_losses, local_updates = [], [], []
-        _ = psutil.cpu_percent() # Start CPU monitoring
+        
+        # Start CPU monitoring
+        start_time = time.time()
         
         for idx in idxs_users:
             local_update = get_client_update_strategy(config["strategy"])(
@@ -98,11 +100,12 @@ def main():
             local_updates.append((copy.deepcopy(w), copy.deepcopy(loss)))
 
         # End CPU monitoring and calculate utilization
-        round_cpu_util = psutil.cpu_percent()
-        avg_cpu_util = round_cpu_util / len(idxs_users)
+        end_time = time.time()
+        interval = end_time - start_time
+        round_cpu_util = psutil.cpu_percent(interval=interval)
 
         # Store average CPU utilization for this round
-        client_cpu_utils.append(avg_cpu_util)
+        client_cpu_utils.append(round_cpu_util)
 
         # update global weights
         global_weights = strategy.aggregate(
