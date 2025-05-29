@@ -82,7 +82,7 @@ def main():
         local_weights, local_losses, local_updates = [], [], []
         
         # Start CPU monitoring
-        start_time = time.time()
+        cpu_start = psutil.cpu_percent()
         
         for idx in idxs_users:
             local_update = get_client_update_strategy(config["strategy"])(
@@ -100,9 +100,8 @@ def main():
             local_updates.append((copy.deepcopy(w), copy.deepcopy(loss)))
 
         # End CPU monitoring and calculate utilization
-        end_time = time.time()
-        interval = end_time - start_time
-        round_cpu_util = psutil.cpu_percent(interval=interval)
+        cpu_end = psutil.cpu_percent()
+        round_cpu_util = (cpu_start + cpu_end) / 2
 
         # Store average CPU utilization for this round
         client_cpu_utils.append(round_cpu_util)
@@ -165,7 +164,7 @@ def main():
     # Save CPU utilization data to CSV
     cpu_data = {
         'round': range(len(client_cpu_utils)),
-        'cpu_utilization': client_cpu_utils
+        'cpu_util': client_cpu_utils
     }
     cpu_df = pd.DataFrame(cpu_data)
     cpu_csv_path = (
