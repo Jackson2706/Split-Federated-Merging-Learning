@@ -44,6 +44,7 @@ class Client(ABC):
 
     def inference(self, model):
         model.eval()
+        model = model.to(self.device)
         criterion = nn.NLLLoss().to(self.device)
         loss, total, correct = 0.0, 0.0, 0.0
         for images, labels in self.testloader:
