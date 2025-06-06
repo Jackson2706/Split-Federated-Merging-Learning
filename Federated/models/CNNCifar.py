@@ -31,18 +31,13 @@ class CNNCifar(nn.Module):
         super(CNNCifar, self).__init__()
 
         # Load pretrained ResNet-50
-        resnet = models.resnet50(pretrained=True)
+        resnet = models.resnet18(pretrained=True)
 
         # Remove the original classification head (fc layer)
         self.feature_extractor = nn.Sequential(
             *list(resnet.children())[:-1]
         )  # Exclude the final fc layer
-
-        # Freeze feature extractor if desired
-        if args.get("freeze_backbone", False):
-            for param in self.feature_extractor.parameters():
-                param.requires_grad = False
-
+        
         # Add custom classifier
         self.classifier = nn.Linear(resnet.fc.in_features, args["num_classes"])
 
