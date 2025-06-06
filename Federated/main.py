@@ -69,6 +69,7 @@ def main():
     val_loss_pre, counter = 0, 0
     metrics = {
         "client_cpu": [], # Store CPU utilization for each round
+        'global_cpu': [], # Store CPU utilization for global model
         "server_comm": []
     }
 
@@ -104,10 +105,13 @@ def main():
 
         # End CPU monitoring and calculate utilization
         cpu_end = psutil.cpu_percent()
-        round_cpu_util = round((cpu_start + cpu_end) / 2, 2)
+        client_cpu_util = round((cpu_start + cpu_end) / 2, 2)
 
         # Store average CPU utilization for this round
-        metrics['client_cpu'].append(round_cpu_util)
+        metrics['client_cpu'].append(client_cpu_util)
+
+        # Compute CPU utilization by global model
+        cpu_start = psutil.cpu_percent()
 
         # update global weights
         global_weights, global_comm = strategy.aggregate(
@@ -115,7 +119,12 @@ def main():
         )
         # update global weights
         global_model.load_state_dict(global_weights)
-        # Append communication overhead
+
+        cpu_end = psutil.cpu_percent()
+        global_cpu_util = round((cpu_start + cpu_end) / 2, 2)
+
+        # Append communication & computation overhead
+        metrics['global_cpu'].append(global_cpu_util)
         metrics['server_comm'].append(global_comm)
 
         loss_avg = sum(local_losses) / len(local_losses)
@@ -169,7 +178,8 @@ def main():
     # Save all metrics to CSV
     metrics_data = {
         'round': range(len(metrics['client_cpu'])),
-        'cpu_util_percent': metrics['client_cpu'],
+        'client_cpu_util_percent': metrics['client_cpu'],
+        'global_cpu_util_percent': metrics['global_cpu'],
         'server_comm_bytes': metrics['server_comm']
     }
     metrics_df = pd.DataFrame(metrics_data)
