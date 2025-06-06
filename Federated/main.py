@@ -70,7 +70,7 @@ def main():
     metrics = {
         "client_cpu": [], # Store CPU utilization for each round
         'global_cpu': [], # Store CPU utilization for global model
-        "server_comm": []
+        "global_comm": []
     }
 
     for epoch in tqdm(range(config["epochs"])):
@@ -102,13 +102,12 @@ def main():
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
             local_updates.append((copy.deepcopy(w), copy.deepcopy(loss)))
+        loss_avg = sum(local_losses) / len(local_losses)
+        training_loss.append(loss_avg)
 
         # End CPU monitoring and calculate utilization
         cpu_end = psutil.cpu_percent()
-        client_cpu_util = round((cpu_start + cpu_end) / 2, 2)
-
-        # Store average CPU utilization for this round
-        metrics['client_cpu'].append(client_cpu_util)
+        client_train_cpu_util = (cpu_start + cpu_end) / 2, 2
 
         # Compute CPU utilization by global model
         cpu_start = psutil.cpu_percent()
@@ -125,14 +124,12 @@ def main():
 
         # Append communication & computation overhead
         metrics['global_cpu'].append(global_cpu_util)
-        metrics['server_comm'].append(global_comm)
-
-        loss_avg = sum(local_losses) / len(local_losses)
-        training_loss.append(loss_avg)
+        metrics['global_comm'].append(global_comm)
 
         # Calculate training accuracy over all users at every epoch
         list_acc, list_loss = [], []
         global_model.eval()
+        cpu_start = psutil.cpu_percent()
         for idx in range(config["num_users"]):
             local_update = get_client_update_strategy(config["strategy"])(
                 args=config,
@@ -144,6 +141,13 @@ def main():
             list_acc.append(acc)
             list_loss.append(loss)
         train_accuracy.append(sum(list_acc) / len(list_acc))
+
+        cpu_end = psutil.cpu_percent()
+        client_agg_cpu_util = (cpu_start + cpu_end) / 2, 2
+        client_cpu_util = round(client_train_cpu_util + client_agg_cpu_util, 2)
+
+        # Store average CPU utilization for this round
+        metrics['client_cpu'].append(client_cpu_util)
 
         # print global training loss after every i rounds
         if (epoch + 1) % print_every == 0:
@@ -180,7 +184,7 @@ def main():
         'round': range(len(metrics['client_cpu'])),
         'client_cpu_util_percent': metrics['client_cpu'],
         'global_cpu_util_percent': metrics['global_cpu'],
-        'server_comm_bytes': metrics['server_comm']
+        'global_comm_bytes': metrics['global_comm']
     }
     metrics_df = pd.DataFrame(metrics_data)
     metrics_csv_path = (
