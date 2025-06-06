@@ -105,7 +105,8 @@ def main():
 
         # Top - down model management
         if config["management"]:
-            print("Management is activated")
+            if config["verbose"]:
+                print("Management is activated")
             hierarchical_fl.manage_models_top_down()
         # compute the loss
         loss_avg = sum(local_losses) / len(local_losses)
