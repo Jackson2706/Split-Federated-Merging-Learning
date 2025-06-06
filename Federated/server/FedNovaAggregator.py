@@ -1,3 +1,4 @@
+import sys
 import copy
 
 from .Aggregator import Aggregator
@@ -12,10 +13,13 @@ class FedNovaAggregator(Aggregator):
         
         Returns:
             new_global_weights: updated global model weights after aggregation
+            server_comm: communication overhead the server has to handle
         """
         total_steps = sum([steps for _, steps in client_updates])
         if total_steps == 0:
             raise ValueError("Sum of local steps is zero, cannot normalize")
+        
+        server_comm = sys.getsizeof(client_updates) + sys.getsizeof(global_weights)
 
         agg_delta = None
         for delta_weights, steps in client_updates:
@@ -35,5 +39,5 @@ class FedNovaAggregator(Aggregator):
         for k in new_global_weights.keys():
             new_global_weights[k] += agg_delta[k]
 
-        return new_global_weights
-
+        # Return the updated global weights and the communication overhead
+        return new_global_weights, server_comm
