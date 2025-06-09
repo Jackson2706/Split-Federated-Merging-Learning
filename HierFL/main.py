@@ -12,6 +12,7 @@ from clients import FedAvgClient
 import copy
 from clients import test_inference
 import pickle
+import psutil
 
 def main():
     start_time = time.time()
@@ -62,6 +63,7 @@ def main():
     # Training
     train_loss, train_accuracy = [], []
     print_every = 2
+    client_cpu_utils = []  # Store Clients' CPU utilization for each round
 
     for epoch in tqdm(range(config["epochs"])):
         local_weights, local_losses = {}, []
@@ -72,6 +74,8 @@ def main():
             range(config["num_users"]), m, replace=False
         )
 
+        # Start CPU monitoring
+        cpu_start = psutil.cpu_percent()
         for idx in idxs_users:
             local_update = FedAvgClient(
                 args=config, dataset=train_dataset, idxs=user_groups[idx], logger=logger
@@ -91,10 +95,15 @@ def main():
 
             local_losses.append(copy.deepcopy(loss))
 
-        # update system weights
-        hierarchical_fl.upload_client_weights(local_weights)
+        # Update & store CPU utilization
+        cpu_end = psutil.cpu_percent()
+        round_cpu_util = (cpu_start + cpu_end) / 2
+        client_cpu_utils.append(round_cpu_util)
 
-            # Top - down model management
+        # update system weights
+        hierarchical_fl.upload_client_weights(local_weights)      
+
+        # Top - down model management
         if config["management"]:
             if config["verbose"]:
                 print("Management is activated")
@@ -137,6 +146,16 @@ def main():
         pickle.dump([train_loss, train_accuracy], f)
 
     print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
+
+    # Save CPU utilization data to CSV
+    cpu_data = {
+        'round': range(len(client_cpu_utils)),
+        'client_cpu_util': client_cpu_utils
+    }
+    cpu_df = pd.DataFrame(cpu_data)
+    cpu_df.to_csv('./save/cpu_metrics/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].csv'.format(
+        config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
+        config["local_ep"], config["local_bs"]), index=False)
 
     # PLOTTING (optional)
     import matplotlib.pyplot as plt
