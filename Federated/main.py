@@ -18,9 +18,10 @@ from data import get_dataset
 from models import get_model
 from server import get_strategy
 
-
 def main():
     start_time = time.time()
+    torch.cuda.memory._record_memory_history(max_entries=100000)
+
     parser = argparse.ArgumentParser(description="Run with config file")
     parser.add_argument(
         "--cfg", type=str, required=True, help="Path to the YAML config file"
@@ -107,7 +108,7 @@ def main():
 
         # End CPU monitoring and calculate utilization
         cpu_end = psutil.cpu_percent()
-        client_train_cpu_util = (cpu_start + cpu_end) / 2, 2
+        client_train_cpu_util = (cpu_start + cpu_end) / 2
 
         # Compute CPU utilization by global model
         cpu_start = psutil.cpu_percent()
@@ -143,7 +144,7 @@ def main():
         train_accuracy.append(sum(list_acc) / len(list_acc))
 
         cpu_end = psutil.cpu_percent()
-        client_agg_cpu_util = (cpu_start + cpu_end) / 2, 2
+        client_agg_cpu_util = (cpu_start + cpu_end) / 2
         client_cpu_util = round(client_train_cpu_util + client_agg_cpu_util, 2)
 
         # Store average CPU utilization for this round
@@ -163,8 +164,8 @@ def main():
     print("|---- Test Accuracy: {:.2f}%".format(100 * test_acc))
 
     # Save results including CPU utilization
-    file_name = (
-        "./save/objects/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl".format(
+    file_name_format = (
+        "{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]".format(
             config["strategy"],
             config["dataset"],
             config["model"],
@@ -175,9 +176,14 @@ def main():
             config["local_bs"],
         )
     )
+    file_name = f"./save/objects/{file_name_format}.pkl"
     os.makedirs(os.path.dirname(file_name), exist_ok=True)
     with open(file_name, "wb") as f:
         pickle.dump([training_loss, train_accuracy, metrics['client_cpu']], f)
+
+    # Dump memory snapshot history to a file and stop recording
+    torch.cuda.memory._dump_snapshot(f"./save/objects/profile_{file_name_format}.pkl")
+    torch.cuda.memory._record_memory_history(enabled=None)
 
     # Save all metrics to CSV
     metrics_data = {
@@ -187,18 +193,7 @@ def main():
         'global_comm_bytes': metrics['global_comm']
     }
     metrics_df = pd.DataFrame(metrics_data)
-    metrics_csv_path = (
-        "./save/cpu_metrics/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.csv".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
+    metrics_csv_path = f"./save/metrics/{file_name_format}.csv"
     os.makedirs(os.path.dirname(metrics_csv_path), exist_ok=True)
     metrics_df.to_csv(metrics_csv_path, index=False)
     print(f"\nCPU utilization data saved to: {metrics_csv_path}")
