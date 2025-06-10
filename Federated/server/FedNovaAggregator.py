@@ -37,7 +37,8 @@ class FedNovaAggregator(Aggregator):
         # Update global weights
         new_global_weights = copy.deepcopy(global_weights)
         for k in new_global_weights.keys():
-            new_global_weights[k] += agg_delta[k]
+            new_global_weights[k] = new_global_weights[k].float() + agg_delta[k]
+
 
         # Return the updated global weights and the communication overhead
         return new_global_weights, server_comm
