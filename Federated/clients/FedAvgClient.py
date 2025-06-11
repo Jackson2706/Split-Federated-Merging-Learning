@@ -16,7 +16,7 @@ class FedAvgClient(Client):
             batch_loss = []
             for images, labels in self.trainloader:
                 images, labels = images.to(self.device), labels.to(self.device)
-                model.zero_grad()
+                optimizer.zero_grad()
                 log_probs = model(images)
                 loss = criterion(log_probs, labels)
                 loss.backward()

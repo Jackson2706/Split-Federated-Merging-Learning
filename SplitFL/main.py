@@ -8,18 +8,16 @@ import pandas as pd
 
 import numpy as np
 import torch
-import yaml
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from torch import nn
 from torch.optim import SGD
-# from clients import get_client_update_strategy, test_inference
+
 from config import ConfigLoader
 from data import get_dataset
 from models import get_model
-from sklearn.model_selection import train_test_split
+from FedServer import get_strategy
 
-# from server import get_strategy
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -59,12 +57,13 @@ def main():
     device = torch.device("cuda") if config["is_gpu"] else "cpu"
 
     train_dataset, test_dataset, user_groups = get_dataset(config)
-    # train_dataset, valid_dataset = train_test_split(
-    #     train_dataset, test_size=0.2
-    # )
     model = get_model(config["model"], config["dataset"])
     if config["model"] == "cnn":
-        client_model, main_server_model = model[0](), model[1](config)
+        client_model, main_server_model, merge_model = (
+            model[0](),
+            model[1](config),
+            model[2](config),
+        )
     elif config["model"] == "mlp":
         img_size = train_dataset[0][0].shape
         len_in = 1
@@ -74,12 +73,14 @@ def main():
             dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"]
         )
 
-    client_model, main_server_model = client_model.to(
-        device
-    ), main_server_model.to(device)
+    client_model, main_server_model, merge_model = (
+        client_model.to(device),
+        main_server_model.to(device),
+        merge_model.to(device),
+    )
     if config["verbose"]:
         print(global_model)
-
+    strategy = get_strategy(config["strategy"])(config)
     # Training
     training_loss, train_accuracy = [], []
     val_acc_list, net_list = [], []
@@ -103,15 +104,30 @@ def main():
         # Start CPU monitoring
         start_time = time.time()
         criterion = nn.NLLLoss().to(device)
-        client_optimizer = SGD(client_model.parameters(), lr=config["lr"], momentum=config["momentum"])
-        server_optimizer = SGD(main_server_model.parameters(), lr=config["lr"], momentum=config["momentum"])
-        for iter in range(config["local_ep"]):
-            for idx in idxs_users:
+        client_optimizer = SGD(
+            client_model.parameters(),
+            lr=config["lr"],
+            momentum=config["momentum"],
+        )
+        server_optimizer = SGD(
+            main_server_model.parameters(),
+            lr=config["lr"],
+            momentum=config["momentum"],
+        )
+        user_losses_per_epoch = []
+        for idx in idxs_users:
+            user_losses_per_iter = []
+            for iter in range(config["local_ep"]):
                 local_train_dataset = DatasetSplit(
                     dataset=train_dataset, idxs=user_groups[idx]
                 )
-                local_train_loader = DataLoader(dataset=local_train_dataset, batch_size=config["local_bs"], shuffle=True)
-                print(len(local_train_loader.dataset))
+                local_train_loader = DataLoader(
+                    dataset=local_train_dataset,
+                    batch_size=config["local_bs"],
+                    shuffle=True,
+                )
+                # print(len(local_train_loader.dataset))
+                losses = []
                 for image, label in local_train_loader:
                     server_optimizer.zero_grad()
                     client_optimizer.zero_grad()
@@ -122,9 +138,18 @@ def main():
                     loss.backward()
                     server_optimizer.step()
                     client_optimizer.step()
-                    print(loss)
-        
-        continue
+                    losses.append(loss.item())
+                user_losses_per_iter.append(sum(losses) / len(losses))
+            user_losses_per_epoch.append(
+                sum(user_losses_per_iter) / len(user_losses_per_iter)
+            )
+            local_weights.append(copy.deepcopy(client_model.state_dict()))
+        training_loss.append(
+            sum(user_losses_per_epoch) / len(user_losses_per_epoch)
+        )
+        aggregated_local_model = strategy.aggregate(None, None, local_weights)
+        client_model.load_state_dict(aggregated_local_model)
+
         # End CPU monitoring and calculate utilization
         end_time = time.time()
         interval = end_time - start_time
@@ -133,30 +158,30 @@ def main():
         # Store average CPU utilization for this round
         client_cpu_utils.append(round_cpu_util)
 
-        # update global weights
-        global_weights = strategy.aggregate(
-            local_updates, global_weights, local_weights
+        merge_model.load_weight(
+            aggregated_local_model, main_server_model.state_dict()
         )
-        # update global weights
-        global_model.load_state_dict(global_weights)
-
-        loss_avg = sum(local_losses) / len(local_losses)
-        training_loss.append(loss_avg)
-
-        # Calculate training accuracy over all users at every epoch
-        list_acc, list_loss = [], []
-        global_model.eval()
+        list_acc = []
         for idx in range(config["num_users"]):
-            local_update = get_client_update_strategy(config["strategy"])(
-                args=config,
-                dataset=train_dataset,
-                idxs=user_groups[idx],
-                logger=logger,
+            local_train_dataset = DatasetSplit(
+                dataset=train_dataset, idxs=user_groups[idx]
             )
-            acc, loss = local_update.inference(model=global_model)
-            list_acc.append(acc)
-            list_loss.append(loss)
-        train_accuracy.append(sum(list_acc) / len(list_acc))
+            local_train_loader = DataLoader(
+                dataset=local_train_dataset,
+                batch_size=config["local_bs"],
+                shuffle=False,
+            )
+            merge_model.eval()
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for image, label in local_train_loader:
+                    image, label = image.to(device), label.to(device)
+                    outputs = merge_model(image)
+                    _, predicted = torch.max(outputs.data, 1)
+                    total += label.size(0)
+                    correct += (predicted == label).sum().item()
+            train_accuracy.append(float(correct) / total)
 
         # print global training loss after every i rounds
         if (epoch + 1) % print_every == 0:
@@ -164,9 +189,23 @@ def main():
             print(f"Training Loss : {np.mean(np.array(training_loss))}")
             print("Train Accuracy: {:.2f}% \n".format(100 * train_accuracy[-1]))
 
-    test_acc, test_loss = test_inference(
-        args=config, model=global_model, test_dataset=test_dataset
+
+    test_loader = DataLoader(
+                dataset=test_dataset,
+                batch_size=1,
+                shuffle=False,
     )
+    merge_model.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for image, label in test_loader:
+            image, label = image.to(device), label.to(device)
+            outputs = merge_model(image)
+            _, predicted = torch.max(outputs.data, 1)
+            total += label.size(0)
+            correct += (predicted == label).sum().item()
+    test_acc = correct/total
     print(f' \n Results after {config["epochs"]} global rounds of training:')
     print("|---- Avg Train Accuracy: {:.2f}%".format(100 * train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(100 * test_acc))

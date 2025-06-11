@@ -35,3 +35,18 @@ class CifarServerModel(nn.Module):
         x = torch.flatten(x, 1)
         logits = self.fc(x)
         return F.log_softmax(logits, dim=1)
+
+
+class MergedModel(nn.Module):
+    def __init__(self, args):
+        super().__init__()
+        self.client_side_model = CifarClientModel()
+        self.server_side_model = CifarServerModel(args)
+
+    def load_weight(self, client_model_weight, server_model_weight):
+        self.client_side_model.load_state_dict(client_model_weight)
+        self.server_side_model.load_state_dict(server_model_weight)
+    
+    def forward(self, x):
+        out = self.client_side_model(x)
+        return self.server_side_model(out)
