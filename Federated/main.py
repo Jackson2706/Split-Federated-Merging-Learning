@@ -226,6 +226,7 @@ def main():
     torch.cuda.memory._record_memory_history(enabled=None)
 
     # Save all metrics to CSV
+    bytes_to_mb = lambda x: x / (1024 * 1024)  # Convert bytes to MB
     metrics_data = {
         'round': range(len(metrics['client_cpu'])),
         'client_cpu_util_percent': metrics['client_cpu'],
@@ -234,10 +235,11 @@ def main():
     metrics_df = pd.DataFrame(metrics_data)
     metrics_df['total_cpu_util_percent'] = metrics_df['client_cpu_util_percent'] + metrics_df['global_cpu_util_percent']
     metrics_df['global_comm_bytes'] = metrics['global_comm']
-    metrics_df['global_gpu_allocated'] = metrics['global_gpu_allocated']
-    metrics_df['global_gpu_reserved'] = metrics['global_gpu_reserved']
-    metrics_df['global_gpu_peak_allocated'] = metrics['global_gpu_peak_allocated']
-    metrics_df['global_gpu_peak_reserved'] = metrics['global_gpu_peak_reserved']
+    metrics_df['global_gpu_allocated_mb'] = metrics_df['global_gpu_allocated'].apply(bytes_to_mb)
+    metrics_df['global_gpu_reserved_mb'] = metrics_df['global_gpu_reserved'].apply(bytes_to_mb)
+    metrics_df['global_gpu_peak_allocated_mb'] = metrics_df['global_gpu_peak_allocated'].apply(bytes_to_mb)
+    metrics_df['global_gpu_peak_reserved_mb'] = metrics_df['global_gpu_peak_reserved'].apply(bytes_to_mb)
+    metrics_df = metrics_df.round(2)
 
     metrics_csv_path = f"./save/metrics/{file_name_format}.csv"
     os.makedirs(os.path.dirname(metrics_csv_path), exist_ok=True)
