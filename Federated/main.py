@@ -93,6 +93,10 @@ def main():
         "client_cpu": [], # Store CPU utilization for each round
         'global_cpu': [], # Store CPU utilization for global model
         "global_comm": [],
+        "client_gpu_allocated": [],
+        "client_gpu_reserved": [],
+        "client_gpu_peak_allocated": [],
+        "client_gpu_peak_reserved": [],
         "global_gpu_allocated": [],
         "global_gpu_reserved": [],
         "global_gpu_peak_allocated": [],
@@ -113,6 +117,7 @@ def main():
         
         # Start CPU monitoring for client training
         cpu_start = psutil.cpu_percent()
+        start_gpu_monitor()
         
         for idx in idxs_users:
             local_update = get_client_update_strategy(config["strategy"])(
@@ -131,9 +136,10 @@ def main():
         loss_avg = sum(local_losses) / len(local_losses)
         training_loss.append(loss_avg)
 
-        # End CPU monitoring and calculate utilization for client training
+        # End monitoring and calculate utilization for client training
         cpu_end = psutil.cpu_percent()
         client_train_cpu_util = (cpu_start + cpu_end) / 2
+        client_train_gpu_allocated, client_train_gpu_reserved, client_train_gpu_peak_allocated, client_train_gpu_peak_reserved = stop_gpu_monitor()
 
         # Start monitor CPU & GPU utilization by global model
         cpu_start = psutil.cpu_percent()
@@ -149,20 +155,21 @@ def main():
         # Stop monitoring and compute CPU & GPU memory usage
         cpu_end = psutil.cpu_percent()
         global_cpu_util = round((cpu_start + cpu_end) / 2, 2)
-        gpu_allocated, gpu_reserved, peak_allocated, peak_reserved = stop_gpu_monitor()
+        global_gpu_allocated, global_gpu_reserved, global_gpu_peak_allocated, global_gpu_peak_reserved = stop_gpu_monitor()
 
         # Append communication & computation overhead
         metrics['global_cpu'].append(global_cpu_util)
         metrics['global_comm'].append(global_comm)
-        metrics['global_gpu_allocated'].append(gpu_allocated)
-        metrics['global_gpu_reserved'].append(gpu_reserved)
-        metrics['global_gpu_peak_allocated'].append(peak_allocated)
-        metrics['global_gpu_peak_reserved'].append(peak_reserved)
+        metrics['global_gpu_allocated'].append(global_gpu_allocated)
+        metrics['global_gpu_reserved'].append(global_gpu_reserved)
+        metrics['global_gpu_peak_allocated'].append(global_gpu_peak_allocated)
+        metrics['global_gpu_peak_reserved'].append(global_gpu_peak_reserved)
 
         # Calculate training accuracy over all users at every epoch
         list_acc, list_loss = [], []
         global_model.eval()
         cpu_start = psutil.cpu_percent()
+        start_gpu_monitor()
         for idx in range(config["num_users"]):
             local_update = get_client_update_strategy(config["strategy"])(
                 args=config,
@@ -175,12 +182,22 @@ def main():
             list_loss.append(loss)
         train_accuracy.append(sum(list_acc) / len(list_acc))
 
+        # Compute CPU & GPU utilization for client aggregation
         cpu_end = psutil.cpu_percent()
         client_agg_cpu_util = (cpu_start + cpu_end) / 2
         client_cpu_util = round(client_train_cpu_util + client_agg_cpu_util, 2)
+        client_agg_gpu_allocated, client_agg_gpu_reserved, client_agg_gpu_peak_allocated, client_agg_gpu_peak_reserved = stop_gpu_monitor()
+        client_gpu_allocated = client_train_gpu_allocated + client_agg_gpu_allocated
+        client_gpu_reserved = client_train_gpu_reserved + client_agg_gpu_reserved
+        client_gpu_peak_allocated = client_train_gpu_peak_allocated + client_agg_gpu_peak_allocated
+        client_gpu_peak_reserved = client_train_gpu_peak_reserved + client_agg_gpu_peak_reserved
 
         # Store average CPU utilization for this round
         metrics['client_cpu'].append(client_cpu_util)
+        metrics['client_gpu_allocated'].append(client_gpu_allocated)
+        metrics['client_gpu_reserved'].append(client_gpu_reserved)
+        metrics['client_gpu_peak_allocated'].append(client_gpu_peak_allocated)
+        metrics['client_gpu_peak_reserved'].append(client_gpu_peak_reserved)
 
         # print global training loss after every i rounds
         if (epoch + 1) % print_every == 0:
@@ -228,7 +245,12 @@ def main():
     metrics_df['total_cpu_util_percent'] = metrics_df['client_cpu_util_percent'] + metrics_df['global_cpu_util_percent']
     metrics_df['global_comm_bytes'] = metrics['global_comm']
 
-    # Convert bytes to MB for GPU metrics
+    # Client GPU metrics
+    metrics_df['client_gpu_allocated_mb'] = np.array(metrics['client_gpu_allocated'])/bytes_to_mb
+    metrics_df['client_gpu_reserved_mb'] = np.array(metrics['client_gpu_reserved'])/bytes_to_mb
+    metrics_df['client_gpu_peak_allocated_mb'] = np.array(metrics['client_gpu_peak_allocated'])/bytes_to_mb
+    metrics_df['client_gpu_peak_reserved_mb'] = np.array(metrics['client_gpu_peak_reserved'])/bytes_to_mb
+    # Global GPU metrics
     metrics_df['global_gpu_allocated_mb'] = np.array(metrics['global_gpu_allocated'])/bytes_to_mb
     metrics_df['global_gpu_reserved_mb'] = np.array(metrics['global_gpu_reserved'])/bytes_to_mb
     metrics_df['global_gpu_peak_allocated_mb'] = np.array(metrics['global_gpu_peak_allocated'])/bytes_to_mb
