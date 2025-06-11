@@ -255,6 +255,12 @@ def main():
     metrics_df['global_gpu_reserved_mb'] = np.array(metrics['global_gpu_reserved'])/bytes_to_mb
     metrics_df['global_gpu_peak_allocated_mb'] = np.array(metrics['global_gpu_peak_allocated'])/bytes_to_mb
     metrics_df['global_gpu_peak_reserved_mb'] = np.array(metrics['global_gpu_peak_reserved'])/bytes_to_mb
+    # Total GPU metrics
+    metrics_df['total_gpu_allocated_mb'] = metrics_df['client_gpu_allocated_mb'] + metrics_df['global_gpu_allocated_mb']
+    metrics_df['total_gpu_reserved_mb'] = metrics_df['client_gpu_reserved_mb'] + metrics_df['global_gpu_reserved_mb']
+    metrics_df['total_gpu_peak_allocated_mb'] = metrics_df['client_gpu_peak_allocated_mb'] + metrics_df['global_gpu_peak_allocated_mb']
+    metrics_df['total_gpu_peak_reserved_mb'] = metrics_df['client_gpu_peak_reserved_mb'] + metrics_df['global_gpu_peak_reserved_mb']
+    
     metrics_df = metrics_df.round(2)
 
     metrics_csv_path = f"./save/metrics/{file_name_format}.csv"
