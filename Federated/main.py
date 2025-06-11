@@ -258,37 +258,15 @@ def main():
     plt.plot(range(len(training_loss)), training_loss, color="r")
     plt.ylabel("Training loss")
     plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
-    #
+    plt.savefig(f"./save/{file_name_format}_loss.png")
+
     # # Plot Average Accuracy vs Communication rounds
     plt.figure()
     plt.title("Average Accuracy vs Communication rounds")
     plt.plot(range(len(train_accuracy)), train_accuracy, color="k")
     plt.ylabel("Average Accuracy")
     plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
+    plt.savefig(f"./save/{file_name_format}_acc.png")
 
     # Plot CPU utilization
     plt.figure()
@@ -296,19 +274,7 @@ def main():
     plt.plot(range(len(metrics['client_cpu'])), metrics['client_cpu'], color="b")
     plt.ylabel("CPU Utilization (%)")
     plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
-
+    plt.savefig(f"./save/{file_name_format}_cpu.png")
 
 if __name__ == "__main__":
     main()
