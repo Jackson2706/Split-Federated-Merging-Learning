@@ -18,6 +18,33 @@ from data import get_dataset
 from models import get_model
 from server import get_strategy
 
+def start_gpu_monitor():
+    """Start monitoring GPU memory usage."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        start_allocated = torch.cuda.memory_allocated()
+        start_reserved = torch.cuda.memory_reserved()
+        return start_allocated, start_reserved
+    else:
+        print("No GPU available for monitoring.")
+
+def stop_gpu_monitor(start_allocated, start_reserved):
+    """Stop monitoring and compute GPU memory usage."""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated()
+        reserved = torch.cuda.memory_reserved()
+        
+        delta_allocated = allocated - start_allocated
+        delta_reserved = reserved - start_reserved
+
+        peak_allocated = torch.cuda.max_memory_allocated()
+        peak_reserved = torch.cuda.max_memory_reserved()
+
+        return delta_allocated, delta_reserved, peak_allocated, peak_reserved
+    else:
+        print("No GPU available for monitoring.")
+
 def main():
     start_time = time.time()
     torch.cuda.memory._record_memory_history(max_entries=100000)
@@ -71,7 +98,11 @@ def main():
     metrics = {
         "client_cpu": [], # Store CPU utilization for each round
         'global_cpu': [], # Store CPU utilization for global model
-        "global_comm": []
+        "global_comm": [],
+        "global_gpu_allocated": [],
+        "global_gpu_reserved": [],
+        "global_gpu_peak_allocated": [],
+        "global_gpu_peak_reserved": [],
     }
 
     for epoch in tqdm(range(config["epochs"])):
@@ -86,7 +117,7 @@ def main():
 
         local_weights, local_losses, local_updates = [], [], []
         
-        # Start CPU monitoring
+        # Start CPU monitoring for client training
         cpu_start = psutil.cpu_percent()
         
         for idx in idxs_users:
@@ -106,12 +137,13 @@ def main():
         loss_avg = sum(local_losses) / len(local_losses)
         training_loss.append(loss_avg)
 
-        # End CPU monitoring and calculate utilization
+        # End CPU monitoring and calculate utilization for client training
         cpu_end = psutil.cpu_percent()
         client_train_cpu_util = (cpu_start + cpu_end) / 2
 
-        # Compute CPU utilization by global model
+        # Start monitor CPU & GPU utilization by global model
         cpu_start = psutil.cpu_percent()
+        gpu_start_allocated, gpu_start_reserved = start_gpu_monitor()
 
         # update global weights
         global_weights, global_comm = strategy.aggregate(
@@ -120,12 +152,20 @@ def main():
         # update global weights
         global_model.load_state_dict(global_weights)
 
+        # Stop monitoring and compute CPU & GPU memory usage
         cpu_end = psutil.cpu_percent()
         global_cpu_util = round((cpu_start + cpu_end) / 2, 2)
+        gpu_allocated, gpu_reserved, peak_allocated, peak_reserved = stop_gpu_monitor(
+            gpu_start_allocated, gpu_start_reserved
+        )
 
         # Append communication & computation overhead
         metrics['global_cpu'].append(global_cpu_util)
         metrics['global_comm'].append(global_comm)
+        metrics['global_gpu_allocated'].append(gpu_allocated)
+        metrics['global_gpu_reserved'].append(gpu_reserved)
+        metrics['global_gpu_peak_allocated'].append(peak_allocated)
+        metrics['global_gpu_peak_reserved'].append(peak_reserved)
 
         # Calculate training accuracy over all users at every epoch
         list_acc, list_loss = [], []
@@ -190,9 +230,15 @@ def main():
         'round': range(len(metrics['client_cpu'])),
         'client_cpu_util_percent': metrics['client_cpu'],
         'global_cpu_util_percent': metrics['global_cpu'],
-        'global_comm_bytes': metrics['global_comm']
     }
     metrics_df = pd.DataFrame(metrics_data)
+    metrics_df['total_cpu_util_percent'] = metrics_df['client_cpu_util_percent'] + metrics_df['global_cpu_util_percent']
+    metrics_df['global_comm_bytes'] = metrics['global_comm']
+    metrics_df['global_gpu_allocated'] = metrics['global_gpu_allocated']
+    metrics_df['global_gpu_reserved'] = metrics['global_gpu_reserved']
+    metrics_df['global_gpu_peak_allocated'] = metrics['global_gpu_peak_allocated']
+    metrics_df['global_gpu_peak_reserved'] = metrics['global_gpu_peak_reserved']
+
     metrics_csv_path = f"./save/metrics/{file_name_format}.csv"
     os.makedirs(os.path.dirname(metrics_csv_path), exist_ok=True)
     metrics_df.to_csv(metrics_csv_path, index=False)
