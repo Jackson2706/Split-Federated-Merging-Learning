@@ -1,18 +1,25 @@
 import argparse
+import copy
+import pickle
 import time
-from tqdm import tqdm
-import torch
-from tensorboardX import SummaryWriter
+
 import numpy as np
+import psutil
+import torch
+from clients import FedAvgClient, test_inference
 from config import ConfigLoader
 from data import get_dataset
-from models import get_model
 from hierarchy import HierarchicalFL
-from clients import FedAvgClient
-import copy
-from clients import test_inference
-import pickle
-import psutil
+from models import get_model
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
+
+def get_model_size(model):
+    # Assumes model is in float32
+    param_size = sum(p.numel() for p in model.parameters())
+    bytes_size = param_size * 4  # float32 = 4 bytes
+    mb_size = bytes_size / (1024 ** 2)
+    return mb_size
 
 def main():
     start_time = time.time()
@@ -130,6 +137,9 @@ def main():
             print(f'Training Loss : {np.mean(np.array(train_loss))}')
             print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracy[-1]))
 
+        for k, v in hierarchical_fl.get_communication_status().items():
+            print(f"{k}: {v:.2f} MB")
+
     # Test inference after completion of training
     test_acc, test_loss = test_inference(config, global_model, test_dataset)
     
@@ -152,7 +162,10 @@ def main():
         'round': range(len(client_cpu_utils)),
         'client_cpu_util': client_cpu_utils
     }
+    import pandas as pd
     cpu_df = pd.DataFrame(cpu_data)
+    import os
+    os.makedirs('./save/cpu_metrics', exist_ok=True)
     cpu_df.to_csv('./save/cpu_metrics/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].csv'.format(
         config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
         config["local_ep"], config["local_bs"]), index=False)
