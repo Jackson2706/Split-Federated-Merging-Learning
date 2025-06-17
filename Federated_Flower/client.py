@@ -4,7 +4,6 @@ from typing import Dict
 import flwr as fl
 import torch
 from flwr.common import NDArrays, Scalar
-
 from model import Net, test, train
 
 

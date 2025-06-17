@@ -1,9 +1,8 @@
 from collections import OrderedDict
 
 import torch
-from omegaconf import DictConfig
-
 from model import Net, test
+from omegaconf import DictConfig
 
 
 def get_in_fit_config(config: DictConfig):

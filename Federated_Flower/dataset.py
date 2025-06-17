@@ -1,7 +1,7 @@
-from torchvision.datasets import CIFAR10
-from torchvision.transforms import ToTensor, Normalize, Compose
-from torch.utils.data import random_split, DataLoader
 import torch
+from torch.utils.data import DataLoader, random_split
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import Compose, Normalize, ToTensor
 
 
 def get_cifar(data_path: str = "/mnt/Data/cifar/"):

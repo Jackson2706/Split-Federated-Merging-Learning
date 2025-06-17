@@ -1,5 +1,5 @@
-import sys
 import copy
+import sys
 
 from .Aggregator import Aggregator
 

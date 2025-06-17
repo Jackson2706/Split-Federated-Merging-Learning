@@ -1,15 +1,18 @@
 import pickle
+from pathlib import Path
+
 import flwr as fl
 import hydra
-from pathlib import Path
-from omegaconf import DictConfig, OmegaConf
-from hydra.core.hydra_config import HydraConfig
 from client import generate_client_fn
 from dataset import prepare_dataset
-from server import get_evaluate_fn, get_in_fit_config
 from fednova import FedNova
 from flwr.common import ndarrays_to_parameters
 from flwr.server.strategy import FedProx
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
+from server import get_evaluate_fn, get_in_fit_config
+
+
 @hydra.main(config_path = "config", config_name="base", version_base=None)
 def main(cfg: DictConfig):
     ## 1. Parse config & get experiment output dir

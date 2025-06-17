@@ -1,15 +1,17 @@
+import argparse
 import os
+
+import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from tqdm import tqdm
 import yaml
-import argparse
-import matplotlib.pyplot as plt
-import pandas as pd
 from models.CNNCifar import CNNCifar
+from tqdm import tqdm
+
 
 def train(model, train_loader, optimizer, criterion, device):
     model.train()

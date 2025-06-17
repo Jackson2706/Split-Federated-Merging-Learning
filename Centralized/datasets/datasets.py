@@ -2,19 +2,21 @@
 download the required dataset, split the data among the clients, and generate DataLoader for training
 """
 import os
-from tqdm import tqdm
-from sklearn import metrics
-import numpy as np
 
+import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
+from sklearn import metrics
+from tqdm import tqdm
+
 cudnn.banchmark = True
 
 import torchvision.transforms as transforms
-from torchvision import datasets
-from torch.utils.data import DataLoader, Dataset
-from torchvision.datasets import ImageFolder
 from options import args_parser
+from torch.utils.data import DataLoader, Dataset
+from torchvision import datasets
+from torchvision.datasets import ImageFolder
+
 
 class DatasetSplit(Dataset):
 

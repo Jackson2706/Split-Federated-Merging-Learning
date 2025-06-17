@@ -1,7 +1,9 @@
 import os
-import yaml
-from typing import Dict, Any
+from typing import Any, Dict
+
 import torch
+import yaml
+
 
 def load_yaml(file_path: str) -> Dict[str, Any]:
     """Load YAML configuration file"""

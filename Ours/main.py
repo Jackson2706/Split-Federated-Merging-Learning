@@ -1,21 +1,20 @@
 import argparse
+import copy
+import pickle
 import time
-from tqdm import tqdm
-import torch
-from tensorboardX import SummaryWriter
+
 import numpy as np
+import psutil
+import torch
 from config import ConfigLoader
 from data import get_dataset
-from models import get_model
 from hierarchy import HierarchicalFL
-from clients import FedAvgClient
-import copy
-from clients import test_inference
-import pickle
-import psutil
-from torch.utils.data import Dataset, DataLoader
+from models import get_model
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
-    
+
 def main():
     start_time = time.time()
     parser = argparse.ArgumentParser(description="Run with config file")
@@ -36,7 +35,7 @@ def main():
         torch.cuda.set_device(config["gpu"])
     device = torch.device("cuda") if config["is_gpu"] else "cpu"
 
-    train_dataset, test_dataset, user_groups = get_dataset(config)
+    train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
     client_model, egde_model, cloud_model = get_model(config["model"], config["dataset"])
     if config["model"] == "cnn":
         client_model, egde_model, cloud_model = client_model(), egde_model(), cloud_model(config)
@@ -60,12 +59,52 @@ def main():
     )
     hierachical_fl.print_structure()
     
-    hierachical_fl.train_end_to_end(
+    output = hierachical_fl.train_end_to_end(
         train_dataset=train_dataset,
+        valid_dataset=valid_dataset,
         user_groups=user_groups,
         config=config, 
         epochs=config["epochs"]
     )
+    train_loss = output["train_loss"]
+    train_accuracy = output["train_accuracy"]
+    best_model = output["best_weight"]
+    best_model = best_model.to(device)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False, drop_last=False)
+    correct, total, total_loss = 0, 0, 0.0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device) 
+            out = best_model(data)
+            pred = out.argmax(dim=1)
+            correct += pred.eq(target).sum().item()
+            total += data.size(0)
+    test_acc = correct / total
+    print(f' \n Results after {config["epochs"]} global rounds of training:')
+    print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
+    print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
+    # PLOTTING (optional)
+    import os
 
+    import matplotlib.pyplot as plt
+    os.makedirs('./save', exist_ok=True)
+
+    # Plot Loss curve
+    plt.figure()
+    plt.title('Training Loss vs Communication rounds')
+    plt.plot([10 * (i + 1) for i in range(len(train_loss))], train_loss, color='r')
+    plt.ylabel('Training loss')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_loss.png'.
+                format(config["dataset"], config["epochs"]))
+    #
+    # # Plot Average Accuracy vs Communication rounds
+    plt.figure()
+    plt.title('Average Accuracy vs Communication Rounds')
+    plt.plot([10 * (i + 1) for i in range(len(train_accuracy))], train_accuracy, color='k')
+    plt.ylabel('Average Accuracy')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_acc.png'.
+                format(config["dataset"], config["epochs"]))
 if __name__ == "__main__":
     main()

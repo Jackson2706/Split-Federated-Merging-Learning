@@ -12,9 +12,9 @@ import copy
 # from models import Basic_LSTM_2
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from torchvision import datasets, transforms
-
+from sklearn.model_selection import train_test_split
 from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
                        mnist_noniid_unequal)
 
@@ -33,7 +33,10 @@ def get_dataset(args):
 
         train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
                                        transform=apply_transform)
+        train_len = int(0.2 * len(train_dataset))
+        valid_len = len(train_dataset) - train_len
 
+        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
         test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
                                       transform=apply_transform)
 
@@ -79,7 +82,7 @@ def get_dataset(args):
                 # Chose euqal splits for every user
                 user_groups = mnist_noniid(train_dataset, args.num_users)
 
-    return train_dataset, test_dataset, user_groups
+    return train_dataset, valid_dataset, test_dataset, user_groups
 
 
 def average_weights(w):

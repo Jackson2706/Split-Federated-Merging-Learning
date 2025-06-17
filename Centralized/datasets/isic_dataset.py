@@ -1,8 +1,10 @@
-import pandas as pd
 import os
+
+import pandas as pd
+import torchvision.transforms as transforms
 from PIL import Image
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
+
 
 class ISICDataset(Dataset):
     def __init__(self, csv_file, img_dir, transform=None):

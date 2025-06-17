@@ -1,12 +1,14 @@
-import torch
+import argparse
 import os
-import yaml
 from datetime import datetime
+
+import torch
 import torch.nn as nn
+import yaml
 from datasets.datasets import get_dataset
 from models.cnn_conv_layer import cnn_3conv
 from utils.config import Config
-import argparse
+
 
 def test_model(model, test_loader, device):
     """

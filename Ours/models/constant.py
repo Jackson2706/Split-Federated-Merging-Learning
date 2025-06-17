@@ -1,4 +1,4 @@
-from .CNNCifar import ClientModel, EdgeModel, CloudModel
+from .CNNCifar import ClientModel, CloudModel, EdgeModel
 from .CNNFashion_Mnist import CNNFashion_Mnist
 from .CNNMnist import CNNMnist
 from .MLP import MLP

@@ -3,20 +3,20 @@ import copy
 import os
 import pickle
 import time
-import psutil
-import pandas as pd
 
 import numpy as np
+import pandas as pd
+import psutil
 import torch
 import yaml
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
-
 from clients import get_client_update_strategy, test_inference
 from config import ConfigLoader
 from data import get_dataset
 from models import get_model
 from server import get_strategy
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
+
 
 def main():
     start_time = time.time()

@@ -3,22 +3,20 @@ import copy
 import os
 import pickle
 import time
-import psutil
-import pandas as pd
 
 import numpy as np
+import pandas as pd
+import psutil
 import torch
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
-from torch import nn
-from torch.optim import SGD
-
 from config import ConfigLoader
 from data import get_dataset
-from models import get_model
 from FedServer import get_strategy
-
+from models import get_model
+from tensorboardX import SummaryWriter
+from torch import nn
+from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
 
 
 class DatasetSplit(Dataset):

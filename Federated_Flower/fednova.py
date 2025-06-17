@@ -4,15 +4,8 @@ from logging import INFO
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
-from flwr.common import (
-    Metrics,
-    NDArray,
-    NDArrays,
-    Parameters,
-    Scalar,
-    ndarrays_to_parameters,
-    parameters_to_ndarrays,
-)
+from flwr.common import (Metrics, NDArray, NDArrays, Parameters, Scalar,
+                         ndarrays_to_parameters, parameters_to_ndarrays)
 from flwr.common.logger import log
 from flwr.common.typing import FitRes
 from flwr.server.client_proxy import ClientProxy
