@@ -15,6 +15,8 @@ class FullPipelineModel(nn.Module):
         self.edge = edge_model
         self.cloud = cloud_model
 
+        print(self.client.__class__, self.edge.__class__, self.cloud.__class__)
+
     def forward(self, x):
         x = self.client(x)
         x = self.edge(x)
@@ -181,49 +183,106 @@ class HierarchicalFL:
 
     def edge_server_aggregation(self):
         client_layer = self.structure[-1]
+        edge_layer = self.structure[0]
         client_to_edge = self.connectivity[-1]
 
         edge_to_clients = {}
-        for cid, eid in client_to_edge.items():
+        for cid in self.client_cache:
+            eid = client_to_edge[cid]
             edge_to_clients.setdefault(eid, []).append(cid)
 
-        for cid in self.client_cache:
-            client_models = [client_layer[cid].state_dict()]
+        self.edge_cache = {}  # Reset edge cache
 
-        avg_model = self.average_state_dicts(client_models)
+        for eid, cids in edge_to_clients.items():
+            # Aggregate client models
+            client_models = [client_layer[cid].state_dict() for cid in cids]
+            avg_client_model = self.average_state_dicts(client_models)
 
-        size_MB = self.get_model_size(avg_model)
-        self.comm_tracker["client_model_upload_MB"] += (
-            len(self.client_cache) * size_MB
-        )
-        
-        for _, client in client_layer.items():
-            client.load_state_dict(avg_model)
-        self.comm_tracker["client_model_download_MB"] += (
-            len(client_layer.items()) * size_MB
-        )
+            # Save edge model and aggregated client model
+            self.edge_cache[eid] = {
+                "client_model": avg_client_model,
+                "edge_model": edge_layer[eid].state_dict(),
+            }
+
+            # Estimate upload cost from clients to edge
+            size_MB = self.get_model_size(avg_client_model)
+            self.comm_tracker["client_model_upload_MB"] += len(cids) * size_MB
+
+            # Distribute aggregated client model to all clients under this edge
+            for cid in cids:
+                client_layer[cid].load_state_dict(avg_client_model)
+            self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
+
         self.client_cache = []
 
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
+        cloud_layer = self.structure[1][0]  # Assuming one cloud server
         edge_to_cloud = self.connectivity[0]
+        client_layer = self.structure[-1]
+        client_to_edge = self.connectivity[-1]
 
+        # Reverse mapping: cloud → list of edge servers
         cloud_to_edges = {}
         for eid, cid in edge_to_cloud.items():
             cloud_to_edges.setdefault(cid, []).append(eid)
 
         for cid, edge_ids in cloud_to_edges.items():
-            edge_models = [edge_layer[eid].state_dict() for eid in edge_ids]
-            avg_model = self.average_state_dicts(edge_models)
-
-            size_MB = self.get_model_size(avg_model)
-            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_MB
-            self.comm_tracker["edge_model_download_MB"] += (
-                len(edge_ids) * size_MB
-            )
+            edge_models = []
+            client_models = []
 
             for eid in edge_ids:
-                edge_layer[eid].load_state_dict(avg_model)
+                cache = self.edge_cache.get(eid)
+                if cache:
+                    edge_models.append(cache["edge_model"])
+                    client_models.append(cache["client_model"])
+
+            # Aggregate
+            avg_edge_model = self.average_state_dicts(edge_models)
+            avg_client_model = self.average_state_dicts(client_models)
+
+            # Communication tracking
+            size_edge_MB = self.get_model_size(avg_edge_model)
+            size_client_MB = self.get_model_size(avg_client_model)
+            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * (
+                size_edge_MB + size_client_MB
+            )
+            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * (
+                size_edge_MB + size_client_MB
+            )
+
+            # Send back aggregated models
+            for eid in edge_ids:
+                # Update edge server with aggregated edge model
+                edge_layer[eid].load_state_dict(avg_edge_model)
+
+                # === ✅ Send back aggregated client model to relevant clients ===
+                # Find all clients connected to this edge server
+                for client_id, edge_id in client_to_edge.items():
+                    if edge_id == eid:
+                        client_layer[client_id].load_state_dict(
+                            avg_client_model
+                        )
+                self.comm_tracker["client_model_download_MB"] += (
+                    sum(
+                        1
+                        for edge_id in client_to_edge.values()
+                        if edge_id == eid
+                    )
+                    * size_client_MB
+                )
+
+            # Optionally return the full pipeline model (client + edge + cloud)
+            # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # self.client_model.load_state_dict(avg_client_model).to(device)
+            # self.edge_model.load_state_dict(avg_edge_model).to(device)
+            # self.cloud_model.load_state_dict(cloud_layer.state_dict()).to(device)
+            # fullmodel = FullPipelineModel(
+            #     self.client_model,
+            #     self.edge_model,
+            #     self.cloud_model,
+            # )
+            # return fullmodel
 
     def print_comm_report(self):
         print("\n=== Communication Report ===")
@@ -234,8 +293,8 @@ class HierarchicalFL:
         self.optimizers = {}
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {
-                nid: torch.optim.SGD(
-                    model.parameters(), lr=self.args.get("lr", 0.01)
+                nid: torch.optim.Adam(
+                    model.parameters(), lr=self.args["lr"]
                 )
                 for nid, model in nodes.items()
             }
@@ -244,7 +303,7 @@ class HierarchicalFL:
         self, train_dataset, valid_dataset, user_groups, config, epochs
     ):
         self.initialize_optimizers()
-        criterion = torch.nn.NLLLoss()
+        criterion = torch.nn.CrossEntropyLoss()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         num_users = config["num_users"]
@@ -340,79 +399,85 @@ class HierarchicalFL:
 
             del edge_outputs
             torch.cuda.empty_cache()
-
             if epoch % int(config["t1"]) == 0:
                 print("Edge server aggregation...")
                 self.edge_server_aggregation()
             else:
                 continue
+
             if epoch % int(config["t2"]) == 0:
+                # print("Edge server aggregation...")
+                # self.edge_server_aggregation()
                 print("Cloud aggregation...")
+                # fullmodel = self.cloud_aggregation()
                 self.cloud_aggregation()
             else:
                 continue
             metrics_by_cid = {}
             list_acc, list_loss = [], []
-            for cid in range(config["num_users"]):
-                client_model = self.structure[-1][cid]
-                eid = self.connectivity[-1][cid]
-                edge_model = self.structure[0][eid]
-                cloud_model = self.structure[len(self.args["mid_server"])][0]
+            # for cid in range(config["num_users"]):
+            #     client_model = self.structure[-1][cid]
+            #     eid = self.connectivity[-1][cid]
+            #     edge_model = self.structure[0][eid]
+            #     cloud_model = self.structure[len(self.args["mid_server"])][0]
 
-                client_model.to(device).eval()
-                edge_model.to(device).eval()
-                cloud_model.to(device).eval()
+            #     client_model.to(device).eval()
+            #     edge_model.to(device).eval()
+            #     cloud_model.to(device).eval()
+            client_model = self.structure[-1][cid]
+            eid = self.connectivity[-1][0]
+            edge_model = self.structure[0][eid]
+            cloud_model = self.structure[len(self.args["mid_server"])][0]
+            client_model.to(device).eval()
+            edge_model.to(device).eval()
+            cloud_model.to(device).eval()
+            loader = DataLoader(valid_dataset, batch_size=256, shuffle=False)
 
-                loader = DataLoader(
-                    valid_dataset, batch_size=256, shuffle=False
-                )
+            correct, total, total_loss = 0, 0, 0.0
+            with torch.no_grad():
+                for data, target in loader:
+                    data, target = data.to(device), target.to(device)
+                    out_c = client_model(data)
+                    out_e = edge_model(out_c)
+                    out_cl = cloud_model(out_e)
+                    loss = criterion(out_cl, target)
+                    # loss = criterion(out, target)
 
-                correct, total, total_loss = 0, 0, 0.0
-                with torch.no_grad():
-                    for data, target in loader:
-                        data, target = data.to(device), target.to(device)
-                        out_c = client_model(data)
-                        out_e = edge_model(out_c)
-                        out_cl = cloud_model(out_e)
+                    pred = out_cl.argmax(dim=1)
+                    # pred = out.argmax(dim=1)
+                    total_loss += loss.item() * data.size(0)
+                    correct += pred.eq(target).sum().item()
+                    total += data.size(0)
 
-                        loss = criterion(out_cl, target)
-                        pred = out_cl.argmax(dim=1)
-
-                        total_loss += loss.item() * data.size(0)
-                        correct += pred.eq(target).sum().item()
-                        total += data.size(0)
-
-                acc = correct / total
-                avg_loss = total_loss / total
-                list_acc.append(acc)
-                list_loss.append(avg_loss)
-                metrics_by_cid[cid] = (acc, avg_loss)
-                client_model.cpu()
-                edge_model.cpu()
-                cloud_model.cpu()
-                torch.cuda.empty_cache()
+            acc = correct / total
+            avg_loss = total_loss / total
+            list_acc.append(acc)
+            list_loss.append(avg_loss)
+            torch.cuda.empty_cache()
             train_accuracy.append(sum(list_acc) / len(list_acc))
             train_loss.append(sum(list_loss) / len(list_loss))
-            best_cid = max(
-                metrics_by_cid, key=lambda cid: metrics_by_cid[cid][0]
-            )
-            print(
-                f"Best model pipeline from client {best_cid} with accuracy {metrics_by_cid[best_cid][0]:.4f}"
-            )
-            best_client = self.structure[-1][best_cid]
-            best_edge = self.structure[0][self.connectivity[-1][best_cid]]
-            best_cloud = self.structure[len(self.args["mid_server"])][
-                0
-            ]  # assuming 1 cloud
-            best_client.cpu()
-            best_edge.cpu()
-            best_cloud.cpu()
-            pipeline_model = FullPipelineModel(
-                client_model=copy.deepcopy(best_client),
-                edge_model=copy.deepcopy(best_edge),
-                cloud_model=copy.deepcopy(best_cloud),
-            )
-            print("\n=== Communication Summary ===")
+        # best_cid = max(
+        #     metrics_by_cid, key=lambda cid: metrics_by_cid[cid][0]
+        # )
+        # print(
+        #     f"Best model pipeline from client {best_cid} with accuracy {metrics_by_cid[best_cid][0]:.4f}"
+        # )
+        # best_client = self.structure[-1][best_cid]
+        # best_edge = self.structure[0][self.connectivity[-1][best_cid]]
+        # best_cloud = self.structure[len(self.args["mid_server"])][
+        #     0
+        # ]  # assuming 1 cloud
+        # best_client.cpu()
+        # best_edge.cpu()
+        # best_cloud.cpu()
+        # pipeline_model = FullPipelineModel(
+        #     client_model=copy.deepcopy(best_client),
+        #     edge_model=copy.deepcopy(best_edge),
+        #     cloud_model=copy.deepcopy(best_cloud),
+        # )
+
+            print("\n=== Communication Accuracy Summary ===")
+            print(f"Acc: {acc * 100} %")
             for k, v in self.comm_tracker.items():
                 print(f"{k}: {v:.2f} MB")
         print("\n=== Communication Summary ===")

@@ -71,7 +71,7 @@ def main():
     best_model = output["best_weight"]
     best_model = best_model.to(device)
     test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False, drop_last=False)
-    correct, total, total_loss = 0, 0, 0.0
+    correct, total = 0, 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device) 

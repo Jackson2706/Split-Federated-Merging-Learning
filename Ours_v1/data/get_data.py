@@ -12,9 +12,9 @@ import copy
 # from models import Basic_LSTM_2
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from torchvision import datasets, transforms
 from sklearn.model_selection import train_test_split
+from torch.utils.data import random_split
 from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
                        mnist_noniid_unequal)
 
@@ -27,16 +27,19 @@ def get_dataset(args):
 
     if args["dataset"] == 'cifar':
         data_dir = args["dataset_root"]
-        apply_transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        apply_transform = transforms.Compose([
+            # transforms.RandomResizedCrop(224),
+            # transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
         train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
                                        transform=apply_transform)
-        train_len = int(0.2 * len(train_dataset))
+        train_len = int(0.8 * len(train_dataset))
         valid_len = len(train_dataset) - train_len
-
+        
         train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
+        print(len(train_dataset)/len(valid_dataset))
         test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
                                       transform=apply_transform)
 

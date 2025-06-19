@@ -1,11 +1,15 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchvision import models
 
 
+def set_requires_grad(module, freeze=True):
+    for param in module.parameters():
+        param.requires_grad = not freeze
+
+
 class ClientModel(nn.Module):
-    def __init__(self):
+    def __init__(self, freeze_backbone=False):
         super(ClientModel, self).__init__()
         resnet = models.resnet50(pretrained=True)
         self.part = nn.Sequential(
@@ -15,26 +19,28 @@ class ClientModel(nn.Module):
             resnet.maxpool,
             resnet.layer1,
         )
+        set_requires_grad(self.part, freeze=freeze_backbone)
 
     def forward(self, x):
         return self.part(x)
 
 
 class EdgeModel(nn.Module):
-    def __init__(self):
+    def __init__(self, freeze_backbone=False):
         super(EdgeModel, self).__init__()
         resnet = models.resnet50(pretrained=True)
         self.part = nn.Sequential(
             resnet.layer2,
             resnet.layer3,
         )
+        set_requires_grad(self.part, freeze=freeze_backbone)
 
     def forward(self, x):
         return self.part(x)
 
 
 class CloudModel(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, freeze_backbone=False):
         super(CloudModel, self).__init__()
         resnet = models.resnet50(pretrained=True)
 
@@ -42,14 +48,20 @@ class CloudModel(nn.Module):
             resnet.layer4,
             resnet.avgpool
         )
-        self.classifier = nn.Linear(resnet.fc.in_features, args["num_classes"])
-
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(resnet.fc.in_features, 256),
+            nn.ReLU(),
+            nn.Linear(256, args["num_classes"])
+        )
+        set_requires_grad(self.feature_part, freeze=freeze_backbone)
 
     def forward(self, x):
         x = self.feature_part(x)
         x = x.view(x.size(0), -1)
         logits = self.classifier(x)
-        return F.log_softmax(logits, dim=1)
+        return logits
+
 
 
 # Example usage
