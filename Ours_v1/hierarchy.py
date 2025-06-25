@@ -6,6 +6,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+from collections import deque
+import psutil
+import os
+import time
 
 
 class FullPipelineModel(nn.Module):
@@ -14,8 +18,6 @@ class FullPipelineModel(nn.Module):
         self.client = client_model
         self.edge = edge_model
         self.cloud = cloud_model
-
-        print(self.client.__class__, self.edge.__class__, self.cloud.__class__)
 
     def forward(self, x):
         x = self.client(x)
@@ -70,7 +72,7 @@ class HierarchicalFL:
             "edge_model_upload_MB": 0.0,
             "edge_model_download_MB": 0.0,
         }
-        self.client_cache = []
+        self.client_cache = deque(maxlen=20)
 
     def _build_hierarchy(self):
         structure = {}
@@ -213,11 +215,10 @@ class HierarchicalFL:
                 client_layer[cid].load_state_dict(avg_client_model)
             self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
 
-        self.client_cache = []
+        # self.client_cache = []
 
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
-        cloud_layer = self.structure[1][0]  # Assuming one cloud server
         edge_to_cloud = self.connectivity[0]
         client_layer = self.structure[-1]
         client_to_edge = self.connectivity[-1]
@@ -272,18 +273,6 @@ class HierarchicalFL:
                     * size_client_MB
                 )
 
-            # Optionally return the full pipeline model (client + edge + cloud)
-            # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            # self.client_model.load_state_dict(avg_client_model).to(device)
-            # self.edge_model.load_state_dict(avg_edge_model).to(device)
-            # self.cloud_model.load_state_dict(cloud_layer.state_dict()).to(device)
-            # fullmodel = FullPipelineModel(
-            #     self.client_model,
-            #     self.edge_model,
-            #     self.cloud_model,
-            # )
-            # return fullmodel
-
     def print_comm_report(self):
         print("\n=== Communication Report ===")
         for k, v in self.comm_tracker.items():
@@ -294,7 +283,9 @@ class HierarchicalFL:
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {
                 nid: torch.optim.Adam(
-                    model.parameters(), lr=self.args["lr"]
+                    model.parameters(),
+                    lr=self.args["lr"],
+                    weight_decay=self.args["weight_decay"],
                 )
                 for nid, model in nodes.items()
             }
@@ -309,16 +300,37 @@ class HierarchicalFL:
         num_users = config["num_users"]
         frac = config["frac"]
         local_bs = config["local_bs"]
-        train_accuracy, train_loss = [], []
+        train_f1, train_loss = [], []
+        client_cpu_list = []
+        client_ram_list = []
+        client_gpu_ram_list = []
+        edge_cpu_list = []
+        edge_ram_list = []
+        edge_gpu_ram_list = []
+        cloud_cpu_list = []
+        cloud_ram_list = []
+        cloud_gpu_ram_list = []
+        best_f1 = 0
+        client_compute_times = []
 
         for epoch in tqdm(range(1, epochs + 1)):
-            print(f"\n=== Epoch {epoch} ===")
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
 
+            start_time = time.time()
+            client_cpu_usages = []
+            client_ram_usages = []
+            client_gpu_ram_usages = []
             client_outputs = {}
+
             for cid in idxs_users:
                 self.client_cache.append(cid)
+                cpu_before = psutil.cpu_percent(interval=None)
+                mem_before = psutil.Process(os.getpid()).memory_info().rss / (
+                    1024**2
+                )
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.empty_cache()
                 local_data = DatasetSplit(train_dataset, user_groups[cid])
                 loader = DataLoader(
                     local_data, batch_size=local_bs, shuffle=True
@@ -337,9 +349,33 @@ class HierarchicalFL:
 
                 fx, fy = torch.cat(feats), torch.cat(labels)
                 client_outputs[cid] = (fx, fy)
+                cpu_after = psutil.cpu_percent(interval=None)
+                mem_after = psutil.Process(os.getpid()).memory_info().rss / (
+                    1024**2
+                )
 
+                mem_gpu_used = torch.cuda.max_memory_allocated(device) / (1024**2)
+                avg_cpu = (cpu_before + cpu_after) / 2
+                mem_used = mem_after - mem_before
+                client_ram_usages.append(mem_used)
+                client_cpu_usages.append(avg_cpu)
+                client_gpu_ram_usages.append(mem_gpu_used)
                 model.cpu()
                 torch.cuda.empty_cache()
+
+            avg_ram = sum(client_ram_usages) / len(client_ram_usages) if sum(client_ram_usages) / len(client_ram_usages) > 0 else 0
+            avg_cpu = sum(client_cpu_usages) / len(client_cpu_usages)
+            avg_gpu_ram = sum(client_gpu_ram_usages) / len(
+                client_gpu_ram_usages
+            )
+
+            print(f"Average CPU usage / client: {avg_cpu:.2f} %")
+            print(f"Average RAM usage/ client: {avg_ram:.2f} MB")
+            print(f"Average GPU RAM usage/ client: {avg_gpu_ram:.2f} MB")
+
+            client_ram_list.append(avg_ram)
+            client_cpu_list.append(avg_cpu)
+            client_gpu_ram_list.append(avg_gpu_ram)
 
             edge_outputs = {}
             edge_to_clients = {}
@@ -347,7 +383,16 @@ class HierarchicalFL:
                 eid = self.connectivity[-1][cid]
                 edge_to_clients.setdefault(eid, []).append(cid)
 
+            edge_cpu_usages = []
+            edge_ram_usages = []
+            edge_gpu_ram_usages = []
             for eid, cids in edge_to_clients.items():
+                cpu_before = psutil.cpu_percent(interval=None)
+                mem_before = psutil.Process(os.getpid()).memory_info().rss / (
+                    1024**2
+                )
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.empty_cache()
                 model = self.structure[0][eid]
                 model.to(device).train()
                 X = torch.cat(
@@ -361,10 +406,39 @@ class HierarchicalFL:
                 self.comm_tracker["client_upload_smashed_MB"] += size_MB
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
                 model.cpu()
+
+                mem_after = psutil.Process(os.getpid()).memory_info().rss / (
+                    1024**2
+                )
+                cpu_after = psutil.cpu_percent(interval=None)
+                mem_gpu_used = torch.cuda.max_memory_allocated(device) / (1024**2)
+                avg_cpu = (cpu_before + cpu_after) / 2
+                mem_used = mem_after - mem_before
+
+                edge_ram_usages.append(mem_used)
+                edge_cpu_usages.append(avg_cpu)
+                edge_gpu_ram_usages.append(mem_gpu_used)
                 del X, Y, out
                 torch.cuda.empty_cache()
 
             del client_outputs
+            avg_edge_ram = sum(edge_ram_usages) / len(edge_ram_usages) if sum(edge_ram_usages) / len(edge_ram_usages) > 0 else 0
+            avg_edge_cpu = sum(edge_cpu_usages) / len(edge_cpu_usages)
+            avg_edge_gpu_ram = sum(edge_gpu_ram_usages) / len(edge_gpu_ram_usages)
+            edge_cpu_list.append(avg_edge_cpu)
+            edge_ram_list.append(avg_edge_ram)
+            edge_gpu_ram_list.append(avg_edge_gpu_ram)
+
+            print(f"Average Edge CPU usage: {avg_edge_cpu:.2f} %")
+            print(f"Average Edge RAM usage: {avg_edge_ram:.2f} MB")
+            print(f"Average Edge GPU RAM usage: {avg_edge_gpu_ram:.2f} MB")
+
+            cloud_cpu_usage = psutil.cpu_percent(interval=None)
+            cloud_ram_usage = psutil.Process(os.getpid()).memory_info().rss / (
+                1024**2
+            )
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.empty_cache()
 
             cloud_model = self.structure[len(self.args["mid_server"])][0]
             cloud_model.to(device).train()
@@ -379,13 +453,30 @@ class HierarchicalFL:
             self.comm_tracker["edge_upload_smashed_MB"] += size_MB
             pred = cloud_model(all_X)
             loss = criterion(pred, all_Y)
-            print(f"Cloud Loss: {loss.item():.4f}")
 
             self.optimizers[len(self.args["mid_server"])][0].zero_grad()
             loss.backward()
             self.optimizers[len(self.args["mid_server"])][0].step()
 
             cloud_model.cpu()
+            end_time = time.time()
+            cloud_ram_usage = (
+                psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+                - cloud_ram_usage
+            ) if psutil.Process(os.getpid()).memory_info().rss / (1024**2) - cloud_ram_usage > 0 else 0
+            cloud_cpu_usage = (
+                psutil.cpu_percent(interval=None) + cloud_cpu_usage
+            ) / 2
+            mem_gpu_used = torch.cuda.max_memory_allocated(device) / (1024**2)
+            time_taken = end_time - start_time
+            cloud_cpu_list.append(cloud_cpu_usage)
+            cloud_ram_list.append(cloud_ram_usage)
+            cloud_gpu_ram_list.append(mem_gpu_used)
+            client_compute_times.append(time_taken)
+            print(f"Cloud CPU usage: {cloud_cpu_usage:.2f} %")
+            print(f"Cloud RAM usage: {cloud_ram_usage:.2f} MB")
+            print(f"Cloud GPU RAM usage: {mem_gpu_used:.2f} MB")
+            print(f"Time taken for cloud aggregation: {time_taken:.2f} seconds")
             del all_X, all_Y, pred, loss
             torch.cuda.empty_cache()
 
@@ -406,24 +497,13 @@ class HierarchicalFL:
                 continue
 
             if epoch % int(config["t2"]) == 0:
-                # print("Edge server aggregation...")
-                # self.edge_server_aggregation()
+                print("Edge server aggregation...")
+                self.edge_server_aggregation()
                 print("Cloud aggregation...")
-                # fullmodel = self.cloud_aggregation()
                 self.cloud_aggregation()
             else:
                 continue
-            metrics_by_cid = {}
-            list_acc, list_loss = [], []
-            # for cid in range(config["num_users"]):
-            #     client_model = self.structure[-1][cid]
-            #     eid = self.connectivity[-1][cid]
-            #     edge_model = self.structure[0][eid]
-            #     cloud_model = self.structure[len(self.args["mid_server"])][0]
-
-            #     client_model.to(device).eval()
-            #     edge_model.to(device).eval()
-            #     cloud_model.to(device).eval()
+            list_f1, list_loss = [], []
             client_model = self.structure[-1][cid]
             eid = self.connectivity[-1][0]
             edge_model = self.structure[0][eid]
@@ -433,7 +513,12 @@ class HierarchicalFL:
             cloud_model.to(device).eval()
             loader = DataLoader(valid_dataset, batch_size=256, shuffle=False)
 
-            correct, total, total_loss = 0, 0, 0.0
+            from sklearn.metrics import f1_score
+
+            all_preds = []
+            all_targets = []
+            total_loss = 0.0
+
             with torch.no_grad():
                 for data, target in loader:
                     data, target = data.to(device), target.to(device)
@@ -441,43 +526,38 @@ class HierarchicalFL:
                     out_e = edge_model(out_c)
                     out_cl = cloud_model(out_e)
                     loss = criterion(out_cl, target)
-                    # loss = criterion(out, target)
+
+                    total_loss += loss.item() * data.size(0)
 
                     pred = out_cl.argmax(dim=1)
-                    # pred = out.argmax(dim=1)
-                    total_loss += loss.item() * data.size(0)
-                    correct += pred.eq(target).sum().item()
-                    total += data.size(0)
+                    all_preds.extend(pred.cpu().numpy())
+                    all_targets.extend(target.cpu().numpy())
 
-            acc = correct / total
-            avg_loss = total_loss / total
-            list_acc.append(acc)
+            # Compute F1 score (macro, micro, or weighted depending on your task)
+            f1 = f1_score(
+                all_targets, all_preds, average="macro"
+            )  # change 'macro' if needed
+            avg_loss = total_loss / len(loader.dataset)
+            list_f1.append(f1)
             list_loss.append(avg_loss)
             torch.cuda.empty_cache()
-            train_accuracy.append(sum(list_acc) / len(list_acc))
+            train_f1.append(sum(list_f1) / len(list_f1))
             train_loss.append(sum(list_loss) / len(list_loss))
-        # best_cid = max(
-        #     metrics_by_cid, key=lambda cid: metrics_by_cid[cid][0]
-        # )
-        # print(
-        #     f"Best model pipeline from client {best_cid} with accuracy {metrics_by_cid[best_cid][0]:.4f}"
-        # )
-        # best_client = self.structure[-1][best_cid]
-        # best_edge = self.structure[0][self.connectivity[-1][best_cid]]
-        # best_cloud = self.structure[len(self.args["mid_server"])][
-        #     0
-        # ]  # assuming 1 cloud
-        # best_client.cpu()
-        # best_edge.cpu()
-        # best_cloud.cpu()
-        # pipeline_model = FullPipelineModel(
-        #     client_model=copy.deepcopy(best_client),
-        #     edge_model=copy.deepcopy(best_edge),
-        #     cloud_model=copy.deepcopy(best_cloud),
-        # )
+            if best_f1 < f1:
+                print(
+                    f"Save best weight at epoch {epoch} with f1: {f1 * 100:.2f} %"
+                )
+                pipeline_model = FullPipelineModel(
+                    client_model=copy.deepcopy(client_model),
+                    edge_model=copy.deepcopy(edge_model),
+                    cloud_model=copy.deepcopy(cloud_model),
+                )
+                best_f1 = f1
+            else:
+                continue
 
             print("\n=== Communication Accuracy Summary ===")
-            print(f"Acc: {acc * 100} %")
+            print(f"F1: {f1 * 100} %")
             for k, v in self.comm_tracker.items():
                 print(f"{k}: {v:.2f} MB")
         print("\n=== Communication Summary ===")
@@ -485,7 +565,17 @@ class HierarchicalFL:
             print(f"{k}: {v:.2f} MB")
 
         return {
-            "train_accuracy": train_accuracy,
+            "train_accuracy": train_f1,
             "train_loss": train_loss,
+            "client_cpu": client_cpu_list,
+            "client_ram": client_ram_list,
+            "client_gpu_ram": client_gpu_ram_list,
+            "edge_cpu": edge_cpu_list,
+            "edge_ram": edge_ram_list,
+            "edge_gpu_ram": edge_gpu_ram_list,
+            "cloud_cpu": cloud_cpu_list,
+            "cloud_ram": cloud_ram_list,
+            "cloud_gpu_ram": cloud_gpu_ram_list,
+            "client_time_list": client_compute_times,
             "best_weight": pipeline_model,
         }

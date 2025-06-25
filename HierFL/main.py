@@ -1,18 +1,25 @@
 import argparse
 import copy
+import os
 import pickle
 import time
 
 import numpy as np
 import psutil
 import torch
+from fvcore.nn import FlopCountAnalysis
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
+
 from clients import FedAvgClient, test_inference
 from config import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
 from models import get_model
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
+
+import warnings
+warnings.filterwarnings("ignore")
+
 
 def get_model_size(model):
     # Assumes model is in float32
@@ -69,6 +76,10 @@ def main():
     hierarchical_fl.print_structure()
     # Training
     train_loss, train_accuracy = [], []
+    client_cpu_list = [] 
+    client_time_list = []
+    client_ram_list = []
+    client_gpu_ram_list = []
     print_every = 2
     client_cpu_utils = []  # Store Clients' CPU utilization for each round
 
@@ -82,8 +93,17 @@ def main():
         )
 
         # Start CPU monitoring
-        cpu_start = psutil.cpu_percent()
+        client_cpu_usages = []
+        client_compute_times = []
+        client_ram_usages = []
+        client_gpu_ram_usage = []
         for idx in idxs_users:
+            start_time = time.time()
+            cpu_before = psutil.cpu_percent(interval=None)
+            import os
+            mem_before = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.empty_cache()
             local_update = FedAvgClient(
                 args=config, dataset=train_dataset, idxs=user_groups[idx], logger=logger
             )
@@ -94,6 +114,20 @@ def main():
                 model=client_model, global_round=epoch
             )
 
+            # End time and CPU
+            mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
+            end_time = time.time()
+            cpu_after = psutil.cpu_percent(interval=None)
+            mem_gpu_used = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+            # Metrics per client
+            elapsed_time = end_time - start_time
+            avg_cpu = (cpu_before + cpu_after) / 2
+            mem_used = mem_after - mem_before
+            client_compute_times.append(elapsed_time)
+            client_cpu_usages.append(avg_cpu)
+            client_ram_usages.append(mem_used)
+            client_gpu_ram_usage.append(mem_gpu_used)
+
             # prepare local weights for uploading weights
             if server_idx in local_weights.keys():
                 local_weights[server_idx].append((copy.deepcopy(w)))
@@ -103,9 +137,21 @@ def main():
             local_losses.append(copy.deepcopy(loss))
 
         # Update & store CPU utilization
-        cpu_end = psutil.cpu_percent()
-        round_cpu_util = (cpu_start + cpu_end) / 2
-        client_cpu_utils.append(round_cpu_util)
+        avg_time = sum(client_compute_times) / len(client_compute_times)
+        avg_cpu = sum(client_cpu_usages) / len(client_cpu_usages)
+        avg_ram = sum(client_ram_usages) / len(client_ram_usages) if sum(client_ram_usages) > 0 else 0
+        avg_gpu_ram = sum(client_gpu_ram_usage) / len(client_gpu_ram_usage)
+        print(f"Round {epoch+1} Metrics:")
+        print(f"  ⏱ Avg Time/Client: {avg_time:.2f}s")
+        print(f"  💻 Avg CPU/Client: {avg_cpu:.2f}%")
+        print(f"  💻 Avg RAM: {avg_ram:.2f} MB")
+        print(f"  💻 Avg GPU RAM: {avg_gpu_ram:.2f} MB")
+
+        client_time_list.append(avg_time)
+        client_cpu_list.append(avg_cpu)
+        client_ram_list.append(avg_ram)
+        client_gpu_ram_list.append(avg_gpu_ram)
+        
 
         # update system weights
         hierarchical_fl.upload_client_weights(local_weights)      
@@ -135,7 +181,7 @@ def main():
         if (epoch+1) % print_every == 0:
             print(f' \nAvg Training Stats after {epoch+1} global rounds:')
             print(f'Training Loss : {np.mean(np.array(train_loss))}')
-            print('Train Accuracy: {:.2f}% \n'.format(100*train_accuracy[-1]))
+            print('Train F1 Score: {:.2f}% \n'.format(100*train_accuracy[-1]))
 
         for k, v in hierarchical_fl.get_communication_status().items():
             print(f"{k}: {v:.2f} MB")
@@ -144,8 +190,8 @@ def main():
     test_acc, test_loss = test_inference(config, global_model, test_dataset)
     
     print(f' \n Results after {config["epochs"]} global rounds of training:')
-    print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
-    print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
+    print("|---- Avg Train F1 Score: {:.2f}%".format(100*train_accuracy[-1]))
+    print("|---- Test F1 Score: {:.2f}%".format(100*test_acc))
 
     # Saving the objects train_loss and train_accuracy:
     file_name = './save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
@@ -159,8 +205,8 @@ def main():
 
     # Save CPU utilization data to CSV
     cpu_data = {
-        'round': range(len(client_cpu_utils)),
-        'client_cpu_util': client_cpu_utils
+        'round': range(len(client_cpu_list)),
+        'client_cpu_util': client_cpu_list
     }
     import pandas as pd
     cpu_df = pd.DataFrame(cpu_data)
@@ -184,12 +230,43 @@ def main():
     #
     # # Plot Average Accuracy vs Communication rounds
     plt.figure()
-    plt.title('Average Accuracy vs Communication rounds')
+    plt.title('Average F1 Score vs Communication rounds')
     plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
-    plt.ylabel('Average Accuracy')
+    plt.ylabel('Average F1 Score')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_acc.png'.
+    plt.savefig('./save/hierFed_{}_{}_f1.png'.
                 format(config["dataset"], config["epochs"]))
     
+    plt.figure()
+    plt.title('Average training time in each rounds')
+    plt.plot(range(len(client_time_list)), client_time_list, color='k')
+    plt.ylabel('Average Training Time')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_training_time.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average CPU usage in each rounds')
+    plt.plot(range(len(client_time_list)), client_time_list, color='k')
+    plt.ylabel('Average CPU Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_cpu_usage.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average RAM Usage in each rounds')
+    plt.plot(range(len(client_ram_list)), client_ram_list, color='k')
+    plt.ylabel('Average RAM Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_ram_usage.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average GPU RAM Usage in each rounds')
+    plt.plot(range(len(client_gpu_ram_list)), client_gpu_ram_list, color='k')
+    plt.ylabel('Average GPU RAM Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/hierFed_{}_{}_gpu_ram_usage.png'.
+                format(config["dataset"], config["epochs"]))
 if __name__ == "__main__":
     main()

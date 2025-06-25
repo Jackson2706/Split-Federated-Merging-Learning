@@ -16,6 +16,9 @@ class FedAvgClient(Client):
         for _ in range(self.args["local_ep"]):
             batch_loss = []
             for images, labels in self.trainloader:
+                assert not torch.isnan(images).any(), "NaN in input!"
+                assert not torch.isinf(images).any(), "Inf in input!"
+
                 images, labels = images.to(self.device), labels.to(self.device)
                 model.zero_grad()
                 log_probs = model(images)

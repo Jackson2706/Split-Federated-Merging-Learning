@@ -69,6 +69,9 @@ def main():
     train_loss = output["train_loss"]
     train_accuracy = output["train_accuracy"]
     best_model = output["best_weight"]
+    client_time_list = output["client_time_list"]
+    client_ram_list = output["client_ram"]
+    client_gpu_ram_list = output["client_gpu_ram"]
     best_model = best_model.to(device)
     test_loader = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False, drop_last=False)
     correct, total = 0, 0
@@ -81,8 +84,8 @@ def main():
             total += data.size(0)
     test_acc = correct / total
     print(f' \n Results after {config["epochs"]} global rounds of training:')
-    print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
-    print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
+    print("|---- Avg Train F1 Score: {:.2f}%".format(100*train_accuracy[-1]))
+    print("|---- Test F1 Score: {:.2f}%".format(100*test_acc))
     # PLOTTING (optional)
     import os
 
@@ -92,19 +95,51 @@ def main():
     # Plot Loss curve
     plt.figure()
     plt.title('Training Loss vs Communication rounds')
-    plt.plot([10 * (i + 1) for i in range(len(train_loss))], train_loss, color='r')
+    plt.plot([config["t2"] * (i + 1) for i in range(len(train_loss))], train_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_loss.png'.
+    plt.savefig('./save/Oursv1_{}_{}_loss.png'.
                 format(config["dataset"], config["epochs"]))
     #
     # # Plot Average Accuracy vs Communication rounds
     plt.figure()
-    plt.title('Average Accuracy vs Communication Rounds')
-    plt.plot([10 * (i + 1) for i in range(len(train_accuracy))], train_accuracy, color='k')
-    plt.ylabel('Average Accuracy')
+    plt.title('Average F1 Score vs Communication Rounds')
+    plt.plot([config['t2'] * (i + 1) for i in range(len(train_accuracy))], train_accuracy, color='k')
+    plt.ylabel('Average F1 Score')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_acc.png'.
+    plt.savefig('./save/Oursv1_{}_{}_f1.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average training time in each rounds')
+    plt.plot(range(len(client_time_list)), client_time_list, color='k')
+    plt.ylabel('Average Training Time')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/Oursv1_{}_{}_training_time.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average CPU usage in each rounds')
+    plt.plot(range(len(client_time_list)), client_time_list, color='k')
+    plt.ylabel('Average CPU Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/Oursv1_{}_{}_cpu_usage.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average RAM Usage in each rounds')
+    plt.plot(range(len(client_ram_list)), client_ram_list, color='k')
+    plt.ylabel('Average RAM Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/Oursv1_{}_{}_ram_usage.png'.
+                format(config["dataset"], config["epochs"]))
+    
+    plt.figure()
+    plt.title('Average GPU RAM Usage in each rounds')
+    plt.plot(range(len(client_gpu_ram_list)), client_gpu_ram_list, color='k')
+    plt.ylabel('Average GPU RAM Usage')
+    plt.xlabel('Communication Rounds')
+    plt.savefig('./save/Oursv1_{}_{}_gpu_ram_usage.png'.
                 format(config["dataset"], config["epochs"]))
 if __name__ == "__main__":
     main()
