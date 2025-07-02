@@ -81,7 +81,6 @@ def main():
     client_ram_list = []
     client_gpu_ram_list = []
     print_every = 2
-    client_cpu_utils = []  # Store Clients' CPU utilization for each round
 
     for epoch in tqdm(range(config["epochs"])):
         local_weights, local_losses = {}, []
@@ -203,19 +202,22 @@ def main():
 
     print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
 
-    # Save CPU utilization data to CSV
-    cpu_data = {
-        'round': range(len(client_cpu_list)),
-        'client_cpu_util': client_cpu_list
+    
+    import json
+    filtered_output = {
+        "train_loss": train_loss,
+        "train_accuracy": train_accuracy,
+        "client_time_list": client_time_list,
+        "client_cpu_list": client_cpu_list,
+        "client_ram_list": client_ram_list,
+        "client_gpu_ram_list": client_gpu_ram_list,
+        "test_accuracy": test_acc,
+        "test_loss": test_loss,
     }
-    import pandas as pd
-    cpu_df = pd.DataFrame(cpu_data)
-    import os
-    os.makedirs('./save/cpu_metrics', exist_ok=True)
-    cpu_df.to_csv('./save/cpu_metrics/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].csv'.format(
-        config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
-        config["local_ep"], config["local_bs"]), index=False)
+    with open(f'{config["dataset"]}_output.json', 'w') as f:
+        json.dump(filtered_output, f, indent=4)
 
+   
     # PLOTTING (optional)
     import matplotlib.pyplot as plt
 
@@ -247,7 +249,7 @@ def main():
     
     plt.figure()
     plt.title('Average CPU usage in each rounds')
-    plt.plot(range(len(client_time_list)), client_time_list, color='k')
+    plt.plot(range(len(client_cpu_list)), client_cpu_list, color='k')
     plt.ylabel('Average CPU Usage')
     plt.xlabel('Communication Rounds')
     plt.savefig('./save/hierFed_{}_{}_cpu_usage.png'.

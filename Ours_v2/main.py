@@ -99,7 +99,7 @@ def main():
     plt.plot([config["t2"] * (i + 1) for i in range(len(train_loss))], train_loss, color='r')
     plt.ylabel('Training loss')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_loss.png'.
+    plt.savefig('./save/Oursv2_{}_{}_loss.png'.
                 format(config["dataset"], config["epochs"]))
     #
     # # Plot Average Accuracy vs Communication rounds
@@ -108,7 +108,7 @@ def main():
     plt.plot([config['t2'] * (i + 1) for i in range(len(train_accuracy))], train_accuracy, color='k')
     plt.ylabel('Average F1 Score')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_f1.png'.
+    plt.savefig('./save/Oursv2_{}_{}_f1.png'.
                 format(config["dataset"], config["epochs"]))
     
     plt.figure()
@@ -116,7 +116,7 @@ def main():
     plt.plot(range(len(client_time_list)), client_time_list, color='k')
     plt.ylabel('Average Training Time')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_training_time.png'.
+    plt.savefig('./save/Oursv2_{}_{}_training_time.png'.
                 format(config["dataset"], config["epochs"]))
     
     plt.figure()
@@ -124,7 +124,7 @@ def main():
     plt.plot(range(len(client_time_list)), client_time_list, color='k')
     plt.ylabel('Average CPU Usage')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_cpu_usage.png'.
+    plt.savefig('./save/Oursv2_{}_{}_cpu_usage.png'.
                 format(config["dataset"], config["epochs"]))
     
     plt.figure()
@@ -132,7 +132,7 @@ def main():
     plt.plot(range(len(client_ram_list)), client_ram_list, color='k')
     plt.ylabel('Average RAM Usage')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_ram_usage.png'.
+    plt.savefig('./save/Oursv2_{}_{}_ram_usage.png'.
                 format(config["dataset"], config["epochs"]))
     
     plt.figure()
@@ -140,7 +140,7 @@ def main():
     plt.plot(range(len(client_gpu_ram_list)), client_gpu_ram_list, color='k')
     plt.ylabel('Average GPU RAM Usage')
     plt.xlabel('Communication Rounds')
-    plt.savefig('./save/Oursv1_{}_{}_gpu_ram_usage.png'.
+    plt.savefig('./save/Oursv2_{}_{}_gpu_ram_usage.png'.
                 format(config["dataset"], config["epochs"]))
 if __name__ == "__main__":
     main()

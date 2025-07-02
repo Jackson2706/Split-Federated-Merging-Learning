@@ -13,10 +13,10 @@ class FedNovaClient(Client):
 
         local_steps = 0
         global_weights = copy.deepcopy(model.state_dict())
-
+    
         optimizer = torch.optim.SGD(model.parameters(), lr=self.args["lr"], momentum=self.args["momentum"]) \
             if self.args["optimizer"] == 'sgd' else torch.optim.Adam(model.parameters(), lr=self.args["lr"], weight_decay=self.args["weight_decay"])
-
+        avg_loss = 0.0
         for _ in range(self.args["local_ep"]):
             for images, labels in self.trainloader:
                 images, labels = images.to(self.device), labels.to(self.device)
@@ -26,7 +26,10 @@ class FedNovaClient(Client):
                 loss.backward()
                 optimizer.step()
                 self.logger.add_scalar('loss', loss.item())
+                avg_loss += loss.item()
                 local_steps += 1
+
+        avg_loss /= local_steps
 
         updated_weights = model.state_dict()
 
@@ -35,4 +38,4 @@ class FedNovaClient(Client):
         for key in delta_weights.keys():
             delta_weights[key] = (delta_weights[key] - global_weights[key]) / local_steps
 
-        return delta_weights, local_steps
+        return delta_weights, avg_loss

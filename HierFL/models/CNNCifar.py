@@ -9,8 +9,7 @@ class CNNCifar(nn.Module):
         super(CNNCifar, self).__init__()
 
         # Load pretrained ResNet-50
-        resnet = models.resnet50(pretrained=True)
-
+        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
         # Remove the original classification head (fc layer)
         self.feature_extractor = nn.Sequential(
             *list(resnet.children())[:-1]

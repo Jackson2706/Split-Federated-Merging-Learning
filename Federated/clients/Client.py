@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from sklearn.metrics import f1_score
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
@@ -46,13 +46,20 @@ class Client(ABC):
         model.eval()
         model = model.to(self.device)
         criterion = nn.NLLLoss().to(self.device)
-        loss, total, correct = 0.0, 0.0, 0.0
+        loss = 0.0
+        all_preds = []
+        all_labels = []
+
         for images, labels in self.testloader:
             images, labels = images.to(self.device), labels.to(self.device)
             outputs = model(images)
             batch_loss = criterion(outputs, labels)
             loss += batch_loss.item()
+
             _, preds = torch.max(outputs, 1)
-            correct += torch.sum(preds == labels).item()
-            total += labels.size(0)
-        return correct / total, loss
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+        f1 = f1_score(all_labels, all_preds, average='macro')  # or 'weighted' if your data is imbalanced
+        return f1, loss
+

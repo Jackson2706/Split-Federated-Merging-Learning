@@ -62,6 +62,25 @@ def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     size_MB = (numel * element_size) / (1024**2)
     return size_MB
 
+def add_dp_noise(tensor, noise_scale=1.0, clipping_bound=1.0):
+    """
+    Apply differential privacy by clipping and adding Gaussian noise.
+    
+    Args:
+        tensor (torch.Tensor): Activations to protect.
+        noise_scale (float): Standard deviation of Gaussian noise.
+        clipping_bound (float): L2 norm clipping threshold.
+
+    Returns:
+        torch.Tensor: DP-protected activations.
+    """
+    norm = torch.norm(tensor, p=2, dim=1, keepdim=True)
+    clip_factor = (clipping_bound / (norm + 1e-6)).clamp(max=1.0)
+    tensor = tensor * clip_factor
+
+    noise = torch.normal(0, noise_scale, size=tensor.shape).to(tensor.device)
+    return tensor + noise
+
 
 class HierarchicalFL:
     def __init__(
@@ -377,6 +396,11 @@ class HierarchicalFL:
                         labels.append(target.cpu())
 
                 fx, fy = torch.cat(feats), torch.cat(labels)
+                fx = add_dp_noise(
+                    fx,
+                    noise_scale=config["dp_noise"],
+                    clipping_bound=config["dp_clip"],
+                )
                 client_outputs[cid] = (fx, fy)
                 cpu_after = psutil.cpu_percent(interval=None)
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
@@ -441,6 +465,11 @@ class HierarchicalFL:
                 out = model(X)
                 size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
                 self.comm_tracker["client_upload_smashed_MB"] += size_MB
+                out = add_dp_noise(
+                    out,
+                    noise_scale=config["dp_noise"],
+                    clipping_bound=config["dp_clip"],
+                )
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
                 model.cpu()
 
