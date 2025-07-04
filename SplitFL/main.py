@@ -1,12 +1,12 @@
 import argparse
 import copy
 import os
-import pickle
 import time
+import gc
+import json
 
 import numpy as np
 import pandas as pd
-import psutil
 import torch
 from config import ConfigLoader
 from data import get_dataset
@@ -17,11 +17,11 @@ from torch import nn
 from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+import psutil
+from sklearn.metrics import f1_score
 
 
-class DatasetSplit(Dataset):
-    """An abstract Dataset class wrapped around Pytorch Dataset class."""
-
+class DatasetSplit(torch.utils.data.Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
         self.idxs = [int(i) for i in idxs]
@@ -34,97 +34,102 @@ class DatasetSplit(Dataset):
         return image.clone(), torch.tensor(label)
 
 
+def get_weight_size_mb(weights):
+    return sum(torch.numel(v) for v in weights.values()) * 4 / (1024**2)
+
+
+def estimate_gradient_size_MB(model, input_shape, device="cpu"):
+    model = model.to(device).eval()
+    dummy_input = torch.randn(*input_shape).to(device)
+    with torch.no_grad():
+        output = model(dummy_input)
+    numel = output.numel()
+    element_size = output.element_size()
+    return (numel * element_size) / (1024**2)
+
+
 def main():
     start_time = time.time()
     parser = argparse.ArgumentParser(description="Run with config file")
-    parser.add_argument(
-        "--cfg", type=str, required=True, help="Path to the YAML config file"
-    )
+    parser.add_argument("--cfg", type=str, required=True, help="Path to the YAML config file")
     args = parser.parse_args()
 
     config_loader = ConfigLoader(args.cfg)
     config = config_loader.get_config()
     print("Baseline: {}".format(config["strategy"]))
+
     if config["verbose"]:
-        print("✅ Loaded Configuration:")
+        print("\n✅ Loaded Configuration:")
         for key, value in config.items():
             print(f"{key}: {value}")
+
     logger = SummaryWriter("./logs")
     if config["is_gpu"]:
         torch.cuda.set_device(config["gpu"])
-    device = torch.device("cuda") if config["is_gpu"] else "cpu"
+    device = torch.device("cuda") if config["is_gpu"] else torch.device("cpu")
 
-    train_dataset, test_dataset, user_groups = get_dataset(config)
+    train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
     model = get_model(config["model"], config["dataset"])
+
     if config["model"] == "cnn":
-        client_model, main_server_model, merge_model = (
-            model[0](),
-            model[1](config),
-            model[2](config),
-        )
+        client_model_abs, main_server_model, merge_model = model[0](), model[1](config), model[2](config)
     elif config["model"] == "mlp":
         img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in image_size:
-            len_in *= x
-        global_model = model(
-            dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"]
-        )
+        len_in = np.prod(img_size)
+        client_model_abs = model(dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"])
+        main_server_model = copy.deepcopy(client_model_abs)
+        merge_model = copy.deepcopy(client_model_abs)
 
-    client_model, main_server_model, merge_model = (
-        client_model.to(device),
-        main_server_model.to(device),
-        merge_model.to(device),
-    )
-    if config["verbose"]:
-        print(global_model)
+    client_model_abs = client_model_abs.to(device)
+    main_server_model = main_server_model.to(device)
+    merge_model = merge_model.to(device)
+
     strategy = get_strategy(config["strategy"])(config)
-    # Training
-    training_loss, train_accuracy = [], []
-    val_acc_list, net_list = [], []
-    cv_loss, cv_acc = [], []
     print_every = config["print_every"]
-    val_loss_pre, counter = 0, 0
-    client_cpu_utils = []  # Store CPU utilization for each round
 
+    training_loss, eval_losses, eval_f1_scores = [], [], []
+    round_cpu_usages, round_ram_usages, round_gpu_usages = [], [], []
+
+    comm_cost_dict = {
+        "client_upload_smashed_MB": 0,
+        "client_model_upload_MB": 0,
+        "client_model_download_MB": 0,
+        "cloud_download_grad_MB": 0,
+    }
+    best_f1 = 0.0
     for epoch in tqdm(range(config["epochs"])):
-
         if config["verbose"]:
             print(f"\n | Global Training Round: {epoch+1} |\n")
-        # global_model.train()
+
         m = max(int(config["frac"] * config["num_users"]), 1)
-        idxs_users = np.random.choice(
-            range(config["num_users"]), m, replace=False
-        )
+        idxs_users = np.random.choice(range(config["num_users"]), m, replace=False)
 
-        local_weights, local_losses, local_updates = [], [], []
-
-        # Start CPU monitoring
-        start_time = time.time()
+        local_weights, user_losses_per_epoch = [], []
         criterion = nn.NLLLoss().to(device)
-        client_optimizer = SGD(
-            client_model.parameters(),
-            lr=config["lr"],
-            momentum=config["momentum"],
-        )
-        server_optimizer = SGD(
-            main_server_model.parameters(),
-            lr=config["lr"],
-            momentum=config["momentum"],
-        )
-        user_losses_per_epoch = []
+        server_optimizer = SGD(main_server_model.parameters(), lr=config["lr"], momentum=config["momentum"])
+
+        round_cpu_per_client, round_ram_per_client, round_gpu_per_client = [], [], []
+
         for idx in idxs_users:
+            client_model = copy.deepcopy(client_model_abs).to(device)
+            client_optimizer = SGD(client_model.parameters(), lr=config["lr"], momentum=config["momentum"])
+            client_model.train()
+
+            local_train_dataset = DatasetSplit(train_dataset, user_groups[idx])
+            local_train_loader = DataLoader(local_train_dataset, batch_size=config["local_bs"], shuffle=True)
+
+            local_cpu_usages, local_ram_usages, local_gpu_usages = [], [], []
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.empty_cache()
+            gc.collect()
+
             user_losses_per_iter = []
-            for iter in range(config["local_ep"]):
-                local_train_dataset = DatasetSplit(
-                    dataset=train_dataset, idxs=user_groups[idx]
-                )
-                local_train_loader = DataLoader(
-                    dataset=local_train_dataset,
-                    batch_size=config["local_bs"],
-                    shuffle=True,
-                )
-                # print(len(local_train_loader.dataset))
+            for _ in range(config["local_ep"]):
+                local_cpu_usages.append(psutil.cpu_percent(interval=None))
+                local_ram_usages.append(psutil.virtual_memory().percent)
+                if config["is_gpu"]:
+                    local_gpu_usages.append(torch.cuda.memory_allocated(device=device) / 1024**2)
+
                 losses = []
                 for image, label in local_train_loader:
                     server_optimizer.zero_grad()
@@ -137,178 +142,96 @@ def main():
                     server_optimizer.step()
                     client_optimizer.step()
                     losses.append(loss.item())
-                user_losses_per_iter.append(sum(losses) / len(losses))
-            user_losses_per_epoch.append(
-                sum(user_losses_per_iter) / len(user_losses_per_iter)
-            )
+
+                    comm_cost_dict["client_upload_smashed_MB"] += (activation.numel() + label.numel()) * 4 / (1024**2)
+                    comm_cost_dict["cloud_download_grad_MB"] += estimate_gradient_size_MB(main_server_model, activation.shape, device)
+
+                user_losses_per_iter.append(np.mean(losses))
+
+            round_cpu_per_client.append(np.mean(local_cpu_usages))
+            round_ram_per_client.append(np.mean(local_ram_usages))
+            if config["is_gpu"]:
+                round_gpu_per_client.append(np.mean(local_gpu_usages))
+
+            user_losses_per_epoch.append(np.mean(user_losses_per_iter))
+            comm_cost_dict["client_model_upload_MB"] += get_weight_size_mb(client_model.state_dict())
             local_weights.append(copy.deepcopy(client_model.state_dict()))
-        training_loss.append(
-            sum(user_losses_per_epoch) / len(user_losses_per_epoch)
-        )
+
+        training_loss.append(np.mean(user_losses_per_epoch))
         aggregated_local_model = strategy.aggregate(None, None, local_weights)
-        client_model.load_state_dict(aggregated_local_model)
+        client_model_abs.load_state_dict(aggregated_local_model)
 
-        # End CPU monitoring and calculate utilization
-        end_time = time.time()
-        interval = end_time - start_time
-        round_cpu_util = psutil.cpu_percent(interval=interval)
+        comm_cost_dict["client_model_download_MB"] += get_weight_size_mb(client_model_abs.state_dict()) * config["num_users"]
 
-        # Store average CPU utilization for this round
-        client_cpu_utils.append(round_cpu_util)
+        # Evaluation
+        all_preds, all_labels = [], []
+        total_loss, total_samples = 0.0, 0
+        merge_model.load_weight(copy.deepcopy(client_model_abs.state_dict()), copy.deepcopy(main_server_model.state_dict()))
+        merge_model.to(device)
+        merge_model.eval()
 
-        merge_model.load_weight(
-            aggregated_local_model, main_server_model.state_dict()
-        )
-        list_acc = []
-        for idx in range(config["num_users"]):
-            local_train_dataset = DatasetSplit(
-                dataset=train_dataset, idxs=user_groups[idx]
-            )
-            local_train_loader = DataLoader(
-                dataset=local_train_dataset,
-                batch_size=config["local_bs"],
-                shuffle=False,
-            )
-            merge_model.eval()
-            correct = 0
-            total = 0
-            with torch.no_grad():
-                for image, label in local_train_loader:
-                    image, label = image.to(device), label.to(device)
-                    outputs = merge_model(image)
-                    _, predicted = torch.max(outputs.data, 1)
-                    total += label.size(0)
-                    correct += (predicted == label).sum().item()
-            train_accuracy.append(float(correct) / total)
+        with torch.no_grad():
+            eval_loader = DataLoader(valid_dataset, batch_size=config["local_bs"], shuffle=False)
+            for image, label in eval_loader:
+                image, label = image.to(device), label.to(device)
+                outputs = merge_model(image)
+                loss = criterion(outputs, label)
+                _, predicted = torch.max(outputs.data, 1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(label.cpu().numpy())
+                total_loss += loss.item() * label.size(0)
+                total_samples += label.size(0)
 
-        # print global training loss after every i rounds
+        eval_f1_scores.append(f1_score(all_labels, all_preds, average="macro"))
+        eval_losses.append(total_loss / total_samples)
+        round_cpu_usages.append(np.mean(round_cpu_per_client))
+        round_ram_usages.append(np.mean(round_ram_per_client))
+        round_gpu_usages.append(np.mean(round_gpu_per_client) if config["is_gpu"] else 0)
+
         if (epoch + 1) % print_every == 0:
-            print(f" \nAvg Training Stats after {epoch+1} global rounds:")
-            print(f"Training Loss : {np.mean(np.array(training_loss))}")
-            print("Train Accuracy: {:.2f}% \n".format(100 * train_accuracy[-1]))
+            print(f"Epoch {epoch+1}: Train Loss {training_loss[-1]:.4f}, Eval F1 {eval_f1_scores[-1]:.4f}, Eval Loss {eval_losses[-1]:.4f}")
+        if eval_f1_scores[-1] > best_f1:
+            best_f1 = eval_f1_scores[-1]
+            best_model_weights = copy.deepcopy(merge_model.state_dict())
+            print(f"New Best F1 Score: {best_f1:.4f} at Epoch {epoch+1}")
 
-
-    test_loader = DataLoader(
-                dataset=test_dataset,
-                batch_size=1,
-                shuffle=False,
-    )
+    # Final Test
+    test_preds, test_labels, test_loss = [], [], 0.0
+    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    merge_model.load_state_dict(best_model_weights)
+    merge_model.to(device)
     merge_model.eval()
-    correct = 0
-    total = 0
     with torch.no_grad():
         for image, label in test_loader:
             image, label = image.to(device), label.to(device)
             outputs = merge_model(image)
+            loss = criterion(outputs, label)
             _, predicted = torch.max(outputs.data, 1)
-            total += label.size(0)
-            correct += (predicted == label).sum().item()
-    test_acc = correct/total
-    print(f' \n Results after {config["epochs"]} global rounds of training:')
-    print("|---- Avg Train Accuracy: {:.2f}%".format(100 * train_accuracy[-1]))
-    print("|---- Test Accuracy: {:.2f}%".format(100 * test_acc))
+            test_preds.extend(predicted.cpu().numpy())
+            test_labels.extend(label.cpu().numpy())
+            test_loss += loss.item()
 
-    # Save results including CPU utilization
-    file_name = (
-        "./save/objects/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
-    os.makedirs(os.path.dirname(file_name), exist_ok=True)
-    with open(file_name, "wb") as f:
-        pickle.dump([training_loss, train_accuracy, client_cpu_utils], f)
+    test_f1 = f1_score(test_labels, test_preds, average="macro")
+    avg_test_loss = test_loss / len(test_loader)
+    print(f"\n✅ Final Results: Test F1 {test_f1*100:.2f}%, Test Loss {avg_test_loss:.4f}")
 
-    # Save CPU utilization data to CSV
-    cpu_data = {
-        "round": range(len(client_cpu_utils)),
-        "cpu_utilization": client_cpu_utils,
+    metrics_dict = {
+        "avg_cpu_percent": round_cpu_usages,
+        "avg_ram_percent": round_ram_usages,
+        "avg_gpu_memory_MB": round_gpu_usages,
+        "eval_f1": eval_f1_scores,
+        "eval_loss": eval_losses,
+        "final_test_f1": test_f1,
+        "final_test_loss": avg_test_loss,
     }
-    cpu_df = pd.DataFrame(cpu_data)
-    cpu_csv_path = "./save/cpu_metrics/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.csv".format(
-        config["strategy"],
-        config["dataset"],
-        config["model"],
-        config["epochs"],
-        config["frac"],
-        config["iid"],
-        config["local_ep"],
-        config["local_bs"],
-    )
-    os.makedirs(os.path.dirname(cpu_csv_path), exist_ok=True)
-    cpu_df.to_csv(cpu_csv_path, index=False)
-    print(f"\nCPU utilization data saved to: {cpu_csv_path}")
 
-    print("\n Total Run Time: {0:0.4f}".format(time.time() - start_time))
+    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config['dataset']}_SplitFed_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json"
+    os.makedirs("/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure", exist_ok=True)
+    with open(json_path, "w") as f:
+        json.dump(metrics_dict, f, indent=4)
 
-    # PLOTTING (optional)
-    import matplotlib
-    import matplotlib.pyplot as plt
-
-    matplotlib.use("Agg")
-
-    # Plot Loss curve
-    plt.figure()
-    plt.title("Training Loss vs Communication rounds")
-    plt.plot(range(len(training_loss)), training_loss, color="r")
-    plt.ylabel("Training loss")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_loss.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
-    #
-    # # Plot Average Accuracy vs Communication rounds
-    plt.figure()
-    plt.title("Average Accuracy vs Communication rounds")
-    plt.plot(range(len(train_accuracy)), train_accuracy, color="k")
-    plt.ylabel("Average Accuracy")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_acc.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
-
-    # Plot CPU utilization
-    plt.figure()
-    plt.title("CPU Utilization vs Communication rounds")
-    plt.plot(range(len(client_cpu_utils)), client_cpu_utils, color="b")
-    plt.ylabel("CPU Utilization (%)")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/{}_{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}]_cpu.png".format(
-            config["strategy"],
-            config["dataset"],
-            config["model"],
-            config["epochs"],
-            config["frac"],
-            config["iid"],
-            config["local_ep"],
-            config["local_bs"],
-        )
-    )
+    print(f"\n📦 Metrics saved to JSON: {json_path}")
+    print("⏱ Total Run Time: {:.2f} seconds".format(time.time() - start_time))
 
 
 if __name__ == "__main__":

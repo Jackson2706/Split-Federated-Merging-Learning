@@ -320,7 +320,7 @@ class HierarchicalFL:
         self, train_dataset, valid_dataset, user_groups, config, epochs
     ):
         self.initialize_optimizers()
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         num_users = config["num_users"]
@@ -584,21 +584,21 @@ class HierarchicalFL:
             all_preds = []
             all_targets = []
             total_loss = 0.0
-
+            criterion = nn.NLLLoss()
             with torch.no_grad():
                 for data, target in loader:
                     data, target = data.to(device), target.to(device)
                     out_c = client_model(data)
                     out_e = edge_model(out_c)
                     out_cl = cloud_model(out_e)
-                    loss = criterion(out_cl, target)
-
-                    total_loss += loss.item() * data.size(0)
-
                     pred = out_cl.argmax(dim=1)
                     all_preds.extend(pred.cpu().numpy())
                     all_targets.extend(target.cpu().numpy())
 
+                    out_cl = nn.functional.log_softmax(out_cl, dim=1)
+                    loss = criterion(out_cl, target)
+
+                    total_loss += loss.item() * data.size(0)
             # Compute F1 score (macro, micro, or weighted depending on your task)
             f1 = f1_score(
                 all_targets, all_preds, average="macro"

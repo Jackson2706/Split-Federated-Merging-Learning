@@ -208,7 +208,7 @@ def main():
         "client_gpu_ram_list": client_gpu_ram_list,
 
     }
-    with open(f'{config["dataset"]}_{config["strategy"]}_output.json', 'w') as f:
+    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_{config["strategy"]}_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
     # PLOTTING (optional)

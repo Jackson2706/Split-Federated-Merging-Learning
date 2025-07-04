@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torchvision import models
-
+import torch.nn.functional as F
 
 def set_requires_grad(module, freeze=True):
     for param in module.parameters():
@@ -48,20 +48,11 @@ class CloudModel(nn.Module):
             resnet.layer4,
             resnet.avgpool
         )
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.5),
-            nn.Linear(resnet.fc.in_features, 512),
-            nn.LeakyReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, args["num_classes"])
-        )
-        set_requires_grad(self.feature_part, freeze=freeze_backbone)
+        self.classifier = nn.Linear(resnet.fc.in_features, args["num_classes"])
 
     def forward(self, x):
         x = self.feature_part(x)
-        x = x.view(x.size(0), -1)
+        x = torch.flatten(x, 1)
         logits = self.classifier(x)
         return logits
 

@@ -214,7 +214,7 @@ def main():
         "test_accuracy": test_acc,
         "test_loss": test_loss,
     }
-    with open(f'{config["dataset"]}_output.json', 'w') as f:
+    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_HierFL_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
    

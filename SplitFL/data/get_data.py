@@ -12,12 +12,25 @@ import copy
 # from models import Basic_LSTM_2
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
-
+from sklearn.model_selection import train_test_split
+from torch.utils.data import random_split
 from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
                        mnist_noniid_unequal)
+from torch.utils.data import ConcatDataset
 
+class TransformedDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset, transform):
+        self.base = base_dataset
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.base)
+
+    def __getitem__(self, idx):
+        img, label = self.base[idx]
+        img = self.transform(img)
+        return img, label
 
 def get_dataset(args):
     """ Returns train and test datasets and a user group which is a dict where
@@ -27,15 +40,29 @@ def get_dataset(args):
 
     if args["dataset"] == 'cifar':
         data_dir = args["dataset_root"]
-        apply_transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        train_transform = transforms.Compose([
+            transforms.RandomResizedCrop(32),   # or (224) if you're using a larger model
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+
+        valid_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
 
         train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
-                                       transform=apply_transform)
-
+                                       transform=None)
+        train_len = int(0.9 * len(train_dataset))
+        valid_len = len(train_dataset) - train_len
+        
+        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
+        train_dataset = TransformedDataset(train_dataset, train_transform)
+        valid_dataset = TransformedDataset(valid_dataset, valid_transform)
+        print(len(train_dataset)/len(valid_dataset))
         test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
-                                      transform=apply_transform)
+                                      transform=valid_transform)
 
         # sample training data amongst users
         if args["iid"]:
@@ -79,7 +106,7 @@ def get_dataset(args):
                 # Chose euqal splits for every user
                 user_groups = mnist_noniid(train_dataset, args.num_users)
 
-    return train_dataset, test_dataset, user_groups
+    return train_dataset, valid_dataset, test_dataset, user_groups
 
 
 def average_weights(w):

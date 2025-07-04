@@ -62,23 +62,55 @@ def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     size_MB = (numel * element_size) / (1024**2)
     return size_MB
 
-def add_dp_noise(tensor, noise_scale=1.0, clipping_bound=1.0):
+
+import torch
+import math
+
+
+def add_dp_noise(
+    tensor, epsilon=1.0, delta=1e-5, sensitivity=1.0, clip=True, clip_norm=1.0
+):
     """
-    Apply differential privacy by clipping and adding Gaussian noise.
-    
+    Add PixelDP-style Gaussian noise to a tensor for Differential Privacy.
+
     Args:
-        tensor (torch.Tensor): Activations to protect.
-        noise_scale (float): Standard deviation of Gaussian noise.
-        clipping_bound (float): L2 norm clipping threshold.
+        tensor (Tensor): The smashed data to be privatized (e.g., client output).
+        epsilon (float): Privacy budget ε (lower = more noise, more privacy).
+        delta (float): Failure probability (small, e.g., 1e-5).
+        sensitivity (float): L2 sensitivity, usually 1.0.
+        clip (bool): Whether to clip the tensor norm before adding noise.
+        clip_norm (float): Max L2 norm per sample (applied per row if 2D).
 
     Returns:
-        torch.Tensor: DP-protected activations.
+        Tensor: Noised (privatized) tensor.
     """
-    norm = torch.norm(tensor, p=2, dim=1, keepdim=True)
-    clip_factor = (clipping_bound / (norm + 1e-6)).clamp(max=1.0)
-    tensor = tensor * clip_factor
+    device = tensor.device
+    dtype = tensor.dtype
 
-    noise = torch.normal(0, noise_scale, size=tensor.shape).to(tensor.device)
+    # Step 1: Optional L2 Norm Clipping (per sample)
+    if clip:
+        if tensor.dim() > 1:
+            norms = tensor.norm(p=2, dim=1, keepdim=True)
+        else:
+            norms = tensor.norm(p=2).unsqueeze(0)
+        scale = clip_norm / (norms + 1e-6)
+        scale = torch.clamp(scale, max=1.0)
+        tensor = tensor * scale
+
+    # Step 2: Compute std for Gaussian noise
+    if epsilon == 0:
+        noise_std = 0.0
+    else:
+        noise_std = (
+            sensitivity * math.sqrt(2 * math.log(1.25 / delta)) / epsilon
+        )
+
+    # Step 3: Add Gaussian noise
+    noise = (
+        torch.normal(mean=0.0, std=noise_std, size=tensor.shape)
+        .to(device)
+        .type(dtype)
+    )
     return tensor + noise
 
 
@@ -398,8 +430,10 @@ class HierarchicalFL:
                 fx, fy = torch.cat(feats), torch.cat(labels)
                 fx = add_dp_noise(
                     fx,
-                    noise_scale=config["dp_noise"],
-                    clipping_bound=config["dp_clip"],
+                    epsilon=config["epsilon"],
+                    delta=config["delta"],
+                    clip_norm=config["clip_norm"],
+                    clip=config["clip"],
                 )
                 client_outputs[cid] = (fx, fy)
                 cpu_after = psutil.cpu_percent(interval=None)
@@ -467,8 +501,10 @@ class HierarchicalFL:
                 self.comm_tracker["client_upload_smashed_MB"] += size_MB
                 out = add_dp_noise(
                     out,
-                    noise_scale=config["dp_noise"],
-                    clipping_bound=config["dp_clip"],
+                    epsilon=config["epsilon"],
+                    delta=config["delta"],
+                    clip_norm=config["clip_norm"],
+                    clip=config["clip"],
                 )
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
                 model.cpu()
@@ -535,13 +571,17 @@ class HierarchicalFL:
             # === Track gradient sent from cloud → edge ===
             for eid in edge_outputs:
                 edge_model = self.structure[0][eid].to(device)
-                grad_to_edge_MB = estimate_gradient_size_MB(edge_model, input_shape_edge)
+                grad_to_edge_MB = estimate_gradient_size_MB(
+                    edge_model, input_shape_edge
+                )
                 self.comm_tracker["cloud_download_grad_MB"] += grad_to_edge_MB
 
             # === Track gradient sent from edge → client ===
             for cid in idxs_users:
                 client_model = self.structure[-1][cid].to(device)
-                grad_to_client_MB = estimate_gradient_size_MB(client_model, input_shape_client)
+                grad_to_client_MB = estimate_gradient_size_MB(
+                    client_model, input_shape_client
+                )
                 self.comm_tracker["edge_download_grad_MB"] += grad_to_client_MB
             cloud_model.cpu()
             end_time = time.time()
@@ -613,21 +653,22 @@ class HierarchicalFL:
             all_preds = []
             all_targets = []
             total_loss = 0.0
-
+            criterion = nn.NLLLoss().to(device)
             with torch.no_grad():
                 for data, target in loader:
                     data, target = data.to(device), target.to(device)
                     out_c = client_model(data)
                     out_e = edge_model(out_c)
                     out_cl = cloud_model(out_e)
-                    loss = criterion(out_cl, target)
-
-                    total_loss += loss.item() * data.size(0)
 
                     pred = out_cl.argmax(dim=1)
                     all_preds.extend(pred.cpu().numpy())
                     all_targets.extend(target.cpu().numpy())
 
+                    out_cl = torch.nn.functional.log_softmax(out_cl, dim=1)
+                    loss = criterion(out_cl, target)
+
+                    total_loss += loss.item() * data.size(0)
             # Compute F1 score (macro, micro, or weighted depending on your task)
             f1 = f1_score(
                 all_targets, all_preds, average="macro"

@@ -1,13 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models import resnet50
-
+from torchvision import models
 
 class CifarClientModel(nn.Module):
     def __init__(self):
         super().__init__()
-        resnet = resnet50(pretrained=True)
+        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
         self.client_part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
@@ -23,7 +22,7 @@ class CifarClientModel(nn.Module):
 class CifarServerModel(nn.Module):
     def __init__(self, args):
         super().__init__()
-        resnet = resnet50(pretrained=True)
+        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
         self.server_part = nn.Sequential(
             resnet.layer3,
             resnet.layer4,
