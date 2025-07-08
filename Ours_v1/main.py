@@ -66,6 +66,7 @@ def main():
     output = hierachical_fl.train_end_to_end(
         train_dataset=train_dataset,
         valid_dataset=valid_dataset,
+        test_dataset=test_dataset,
         user_groups=user_groups,
         config=config,
         epochs=config["epochs"],
@@ -75,7 +76,7 @@ def main():
     exclude_keys = ["best_weight"]  # ví dụ các key bạn muốn bỏ
     filtered_output = {k: v for k, v in output.items() if k not in exclude_keys}
     with open(
-        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_ourv1_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_{config["t1"]}_{config["t2"]}_output.json',
+        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_ourv1_{config["num_users"]}_{config["epochs"]}_{config["t1"]}_{config["t2"]}_output.json',
         "w",
     ) as f:
         json.dump(filtered_output, f, indent=4)
@@ -90,18 +91,25 @@ def main():
     test_loader = DataLoader(
         dataset=test_dataset, batch_size=1, shuffle=False, drop_last=False
     )
-    correct, total = 0, 0
+    from sklearn.metrics import f1_score
+
+    all_preds = []
+    all_targets = []
+
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             out = best_model(data)
             pred = out.argmax(dim=1)
-            correct += pred.eq(target).sum().item()
-            total += data.size(0)
-    test_acc = correct / total
+            all_preds.extend(pred.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+
+    # Compute macro-F1 (recommended for imbalanced classes)
+    f1 = f1_score(all_targets, all_preds, average='macro')  # or 'micro', 'weighted' as needed
+
     print(f' \n Results after {config["epochs"]} global rounds of training:')
     print("|---- Avg Train F1 Score: {:.2f}%".format(100 * train_accuracy[-1]))
-    print("|---- Test F1 Score: {:.2f}%".format(100 * test_acc))
+    print("|---- Test F1 Score: {:.2f}%".format(100 * f1))
     # PLOTTING (optional)
     import os
 

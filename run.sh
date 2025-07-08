@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Tạo thư mục logs nếu chưa tồn tại
+mkdir -p logs
+
+# Hàm chạy lệnh và ghi log
+run_and_log() {
+    CMD=$1
+    LOG_FILE=$2
+
+    echo "Running: $CMD" > "$LOG_FILE"
+    echo "Start time: $(date)" >> "$LOG_FILE"
+    eval "$CMD" >> "$LOG_FILE" 2>&1
+    echo "End time: $(date)" >> "$LOG_FILE"
+    echo "----------------------------------------" >> "$LOG_FILE"
+}
+
+####### CIFAR10
+# run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedavg.yaml"   "logs/cifar_fedavg_federated.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fednova.yaml"  "logs/cifar_fednova_federated.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedprox.yaml"  "logs/cifar_fedprox_federated.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedsgd.yaml"   "logs/cifar_fedsgd_federated.txt"
+
+# run_and_log "python3 HierFL/main.py --cfg HierFL/config/cifar_fedavg.yaml"         "logs/cifar_fedavg_hierfl.txt"
+
+# run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/cifar_fedavg.yaml"       "logs/cifar_fedavg_splitfl.txt"
+
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_5_10.yaml"       "logs/cifar_our_5_10.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_10_20.yaml"       "logs/cifar_our_10_20.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_25_50.yaml"       "logs/cifar_our_25_50.txt"
+
+# run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a1.yaml"       "logs/cifar_fedavg_ours_v2_a1.txt"
+# run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a2.yaml"       "logs/cifar_fedavg_ours_v2_a2.txt"
+# run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a3.yaml"       "logs/cifar_fedavg_ours_v2_a3.txt"
+# run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a4.yaml"       "logs/cifar_fedavg_ours_v2_a4.txt"
+# run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a5.yaml"       "logs/cifar_fedavg_ours_v2_a5.txt"
+
+######### HAM10000
+run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedavg.yaml"   "logs/ham10000_fedavg.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fednova.yaml"  "logs/ham10000_fednova.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedprox.yaml"  "logs/ham10000_fedprox.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedsgd.yaml"   "logs/ham10000_fedsgd.txt"

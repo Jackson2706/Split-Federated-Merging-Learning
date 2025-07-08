@@ -16,8 +16,9 @@ def test_inference(args, model, test_dataset):
 
     all_preds = []
     all_labels = []
-
+    torch.cuda.empty_cache()  # Clear GPU memory
     for batch_idx, (images, labels) in enumerate(testloader):
+        torch.cuda.empty_cache()
         images, labels = images.to(device), labels.to(device)
 
         outputs = model(images)

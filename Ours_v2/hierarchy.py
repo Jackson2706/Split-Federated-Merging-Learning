@@ -11,6 +11,7 @@ import psutil
 import os
 import time
 
+import random
 
 class FullPipelineModel(nn.Module):
     def __init__(self, client_model, edge_model, cloud_model):
@@ -368,12 +369,13 @@ class HierarchicalFL:
             }
 
     def train_end_to_end(
-        self, train_dataset, valid_dataset, user_groups, config, epochs
+        self, train_dataset, valid_dataset, test_dataset, user_groups, config, epochs
     ):
-        self.initialize_optimizers()
-        criterion = torch.nn.CrossEntropyLoss()
+        
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+        self.initialize_optimizers()
+        criterion = torch.nn.CrossEntropyLoss().to(device)
+        evalcriterion = nn.NLLLoss().to(device)
         num_users = config["num_users"]
         frac = config["frac"]
         local_bs = config["local_bs"]
@@ -400,6 +402,7 @@ class HierarchicalFL:
             client_ram_usages = []
             client_gpu_ram_usages = []
             client_outputs = {}
+            is_dp = random.random() < 0.5
 
             for cid in idxs_users:
                 self.client_cache.append(cid)
@@ -428,13 +431,15 @@ class HierarchicalFL:
                         labels.append(target.cpu())
 
                 fx, fy = torch.cat(feats), torch.cat(labels)
-                fx = add_dp_noise(
-                    fx,
-                    epsilon=config["epsilon"],
-                    delta=config["delta"],
-                    clip_norm=config["clip_norm"],
-                    clip=config["clip"],
-                )
+                if is_dp:
+                    # Add DP noise to client output
+                    fx = add_dp_noise(
+                        fx,
+                        epsilon=config["epsilon"],
+                        delta=config["delta"],
+                        clip_norm=config["clip_norm"],
+                        clip=config["clip"],
+                    )
                 client_outputs[cid] = (fx, fy)
                 cpu_after = psutil.cpu_percent(interval=None)
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
@@ -499,13 +504,16 @@ class HierarchicalFL:
                 out = model(X)
                 size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
                 self.comm_tracker["client_upload_smashed_MB"] += size_MB
-                out = add_dp_noise(
-                    out,
-                    epsilon=config["epsilon"],
-                    delta=config["delta"],
-                    clip_norm=config["clip_norm"],
-                    clip=config["clip"],
-                )
+                if is_dp:
+                    # Add DP noise to edge output
+                    # Note: This is optional and can be controlled by the config
+                    out = add_dp_noise(
+                        out,
+                        epsilon=config["epsilon"],
+                        delta=config["delta"],
+                        clip_norm=config["clip_norm"],
+                        clip=config["clip"],
+                    )
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
                 model.cpu()
 
@@ -563,7 +571,9 @@ class HierarchicalFL:
             self.comm_tracker["edge_upload_smashed_MB"] += size_MB
             pred = cloud_model(all_X)
             loss = criterion(pred, all_Y)
-
+            out_cl = nn.functional.log_softmax(pred, dim=1)
+            loss = evalcriterion(out_cl, all_Y)
+            train_loss.append(loss.item())
             self.optimizers[len(self.args["mid_server"])][0].zero_grad()
             loss.backward()
             self.optimizers[len(self.args["mid_server"])][0].step()
@@ -638,7 +648,6 @@ class HierarchicalFL:
                 pass
             else:
                 continue
-            list_f1, list_loss = [], []
             client_model = self.structure[-1][cid]
             eid = self.connectivity[-1][0]
             edge_model = self.structure[0][eid]
@@ -653,33 +662,27 @@ class HierarchicalFL:
             all_preds = []
             all_targets = []
             total_loss = 0.0
-            criterion = nn.NLLLoss().to(device)
+            evalcriterion = nn.NLLLoss()
             with torch.no_grad():
                 for data, target in loader:
                     data, target = data.to(device), target.to(device)
                     out_c = client_model(data)
                     out_e = edge_model(out_c)
                     out_cl = cloud_model(out_e)
-
                     pred = out_cl.argmax(dim=1)
                     all_preds.extend(pred.cpu().numpy())
                     all_targets.extend(target.cpu().numpy())
 
-                    out_cl = torch.nn.functional.log_softmax(out_cl, dim=1)
-                    loss = criterion(out_cl, target)
+                    out_cl = nn.functional.log_softmax(out_cl, dim=1)
+                    loss = evalcriterion(out_cl, target)
 
                     total_loss += loss.item() * data.size(0)
             # Compute F1 score (macro, micro, or weighted depending on your task)
             f1 = f1_score(
                 all_targets, all_preds, average="macro"
             )  # change 'macro' if needed
-            avg_loss = total_loss / len(loader.dataset)
-            list_f1.append(f1)
-            list_loss.append(avg_loss)
             torch.cuda.empty_cache()
-            train_f1.append(sum(list_f1) / len(list_f1))
-            train_loss.append(sum(list_loss) / len(list_loss))
-            if best_f1 < f1:
+            if best_f1 <= f1:
                 print(
                     f"Save best weight at epoch {epoch} with f1: {f1 * 100:.2f} %"
                 )
@@ -691,7 +694,18 @@ class HierarchicalFL:
                 best_f1 = f1
             else:
                 continue
-
+            test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+            with torch.no_grad():
+                for data, target in test_loader:
+                    data, target = data.to(device), target.to(device)
+                    out = pipeline_model(data)
+                    pred = out.argmax(dim=1)
+                    all_preds.extend(pred.cpu().numpy())
+                    all_targets.extend(target.cpu().numpy())
+            f1 = f1_score(
+                all_targets, all_preds, average="macro"
+            )  # change 'macro' if needed
+            train_f1.append(f1)
             print("\n=== Communication Accuracy Summary ===")
             print(f"F1: {f1 * 100} %")
             for k, v in self.comm_tracker.items():

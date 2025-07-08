@@ -43,17 +43,7 @@ def main():
     device = torch.device("cuda") if config["is_gpu"] else "cpu"
 
     train_dataset, test_dataset, user_groups = get_dataset(config)
-    model = get_model(config["model"], config["dataset"])
-    if config["model"] == "cnn":
-        global_model = model(config)
-    elif config["model"] == "mlp":
-        img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in image_size:
-            len_in *= x
-        global_model = model(
-            dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"]
-        )
+    global_model = get_model(config["model"], config["dataset"])(config)
 
     global_model = global_model.to(device)
     global_model.train()
@@ -81,7 +71,7 @@ def main():
         "client_model_download_MB": 0,
     }
     for epoch in tqdm(range(config["epochs"])):
-
+        torch.cuda.empty_cache()
         if config["verbose"]:
             print(f"\n | Global Training Round: {epoch+1} |\n")
         global_model.train()
@@ -97,6 +87,7 @@ def main():
         client_ram_usages = []
         client_gpu_ram_usage = []
         for idx in idxs_users:
+            torch.cuda.empty_cache()
             start_time = time.time()
             cpu_before = psutil.cpu_percent(interval=None)
             mem_before = psutil.Process(os.getpid()).memory_info().rss / (
@@ -113,6 +104,7 @@ def main():
             w, loss = local_update.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch
             )
+            
             mem_after = psutil.Process(os.getpid()).memory_info().rss / (
                 1024**2
             )
@@ -165,20 +157,14 @@ def main():
         list_acc, list_loss = [], []
         global_model.eval()
         cpu_start = psutil.cpu_percent()
-        for idx in range(config["num_users"]):
-            local_update = get_client_update_strategy(config["strategy"])(
-                args=config,
-                dataset=train_dataset,
-                idxs=user_groups[idx],
-                logger=logger,
-            )
-            comm_cost_dict["client_model_download_MB"] += get_weight_size_mb(
-                global_model.state_dict()
-            )
-            acc, loss = local_update.inference(model=global_model)
-            list_acc.append(acc)
-            list_loss.append(loss)
-        train_accuracy.append(sum(list_acc) / len(list_acc))
+        
+        comm_cost_dict["client_model_download_MB"] += get_weight_size_mb(
+            global_model.state_dict()
+        ) * config["num_users"]
+        test_acc, test_loss = test_inference(
+            args=config, model=global_model, test_dataset=test_dataset
+        )
+        train_accuracy.append(test_acc)
 
         # print global training loss after every i rounds
         if (epoch + 1) % print_every == 0:

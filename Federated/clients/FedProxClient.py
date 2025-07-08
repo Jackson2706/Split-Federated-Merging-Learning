@@ -9,6 +9,7 @@ from .Client import Client
 class FedProxClient(Client):
     def update_weights(self, model, global_round):
         model.train()
+        model = model.to(self.device)
         global_weights = copy.deepcopy(model.state_dict())
         criterion = nn.NLLLoss().to(self.device)
         optimizer = (
@@ -24,8 +25,10 @@ class FedProxClient(Client):
         mu = self.args["mu"]
         epoch_loss = []
         for _ in range(self.args["local_ep"]):
+            torch.cuda.empty_cache()
             batch_loss = []
             for images, labels in self.trainloader:
+                torch.cuda.empty_cache()
                 images, labels = images.to(self.device), labels.to(self.device)
                 model.zero_grad()
                 log_probs = model(images)

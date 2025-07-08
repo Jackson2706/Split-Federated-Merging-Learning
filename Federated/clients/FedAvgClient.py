@@ -12,9 +12,12 @@ class FedAvgClient(Client):
             if self.args["optimizer"] == 'sgd' else torch.optim.Adam(model.parameters(), lr=self.args["lr"], weight_decay=1e-4)
 
         epoch_loss = []
+        model = model.to(self.device)
         for _ in range(self.args["local_ep"]):
+            torch.cuda.empty_cache()
             batch_loss = []
             for images, labels in self.trainloader:
+                torch.cuda.empty_cache()
                 images, labels = images.to(self.device), labels.to(self.device)
                 optimizer.zero_grad()
                 log_probs = model(images)

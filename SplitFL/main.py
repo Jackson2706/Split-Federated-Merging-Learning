@@ -182,19 +182,35 @@ def main():
                 total_loss += loss.item() * label.size(0)
                 total_samples += label.size(0)
 
-        eval_f1_scores.append(f1_score(all_labels, all_preds, average="macro"))
-        eval_losses.append(total_loss / total_samples)
+        eval_f1 = f1_score(all_labels, all_preds, average="macro")
+        
         round_cpu_usages.append(np.mean(round_cpu_per_client))
         round_ram_usages.append(np.mean(round_ram_per_client))
         round_gpu_usages.append(np.mean(round_gpu_per_client) if config["is_gpu"] else 0)
 
         if (epoch + 1) % print_every == 0:
-            print(f"Epoch {epoch+1}: Train Loss {training_loss[-1]:.4f}, Eval F1 {eval_f1_scores[-1]:.4f}, Eval Loss {eval_losses[-1]:.4f}")
-        if eval_f1_scores[-1] > best_f1:
-            best_f1 = eval_f1_scores[-1]
+            print(f"Epoch {epoch+1}: Train Loss {training_loss[-1]:.4f}, Eval F1 {eval_f1:.4f}")
+        if eval_f1 > best_f1:
+            best_f1 = eval_f1
             best_model_weights = copy.deepcopy(merge_model.state_dict())
             print(f"New Best F1 Score: {best_f1:.4f} at Epoch {epoch+1}")
 
+        with torch.no_grad():
+            eval_loader = DataLoader(valid_dataset, batch_size=config["local_bs"], shuffle=False)
+            for image, label in eval_loader:
+                image, label = image.to(device), label.to(device)
+                outputs = merge_model(image)
+                loss = criterion(outputs, label)
+                _, predicted = torch.max(outputs.data, 1)
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(label.cpu().numpy())
+                total_loss += loss.item() * label.size(0)
+                total_samples += label.size(0)
+
+        eval_f1_scores.append(f1_score(all_labels, all_preds, average="macro"))
+        print(f"F1 Score: {eval_f1_scores[-1]:.4f}, Loss: {total_loss / total_samples:.4f}")
+        for k,v in comm_cost_dict.items():
+            print(f"{k}: {v:.2f} MB")
     # Final Test
     test_preds, test_labels, test_loss = [], [], 0.0
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
@@ -219,13 +235,13 @@ def main():
         "avg_cpu_percent": round_cpu_usages,
         "avg_ram_percent": round_ram_usages,
         "avg_gpu_memory_MB": round_gpu_usages,
-        "eval_f1": eval_f1_scores,
-        "eval_loss": eval_losses,
+        "train_accuracy": eval_f1_scores,
+        "train_loss": training_loss,
         "final_test_f1": test_f1,
         "final_test_loss": avg_test_loss,
     }
 
-    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config['dataset']}_SplitFed_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json"
+    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config['dataset']}_SplitFed_{config['num_users']}_{config['epochs']}_{config['local_ep']}_output.json"
     os.makedirs("/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure", exist_ok=True)
     with open(json_path, "w") as f:
         json.dump(metrics_dict, f, indent=4)

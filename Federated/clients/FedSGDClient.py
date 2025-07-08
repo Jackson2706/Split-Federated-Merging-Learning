@@ -7,6 +7,8 @@ from .Client import Client
 class FedSGDClient(Client):
     def update_weights(self, model, global_round):
         model.train()
+        model = model.to(self.device)
+        torch.cuda.empty_cache()
         criterion = nn.NLLLoss().to(self.device)
 
         optimizer = (

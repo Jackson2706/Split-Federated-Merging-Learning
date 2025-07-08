@@ -14,8 +14,10 @@ class FedAvgClient(Client):
 
         epoch_loss = []
         for _ in range(self.args["local_ep"]):
+            torch.cuda.empty_cache()
             batch_loss = []
             for images, labels in self.trainloader:
+                torch.cuda.empty_cache()
                 assert not torch.isnan(images).any(), "NaN in input!"
                 assert not torch.isinf(images).any(), "Inf in input!"
 

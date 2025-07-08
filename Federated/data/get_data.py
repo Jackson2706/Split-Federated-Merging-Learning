@@ -5,18 +5,11 @@
 
 import copy
 
-# import time
-# import numpy as np
-# from LSTM_utilities import dataset, utility
-# from options import args_parser
-# from models import Basic_LSTM_2
 import torch
-from torch import nn
-from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
-
+import os
 from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
-                       mnist_noniid_unequal)
+                       mnist_noniid_unequal, ham10000_iid)
 
 
 def get_dataset(args):
@@ -50,34 +43,66 @@ def get_dataset(args):
                 # Chose euqal splits for every user
                 user_groups = cifar_noniid(train_dataset, args.num_users)
 
-    elif args["dataset"] == 'mnist' or 'fmnist':
-        if args.dataset == 'mnist':
-            data_dir = args["dataset_root"]
-        else:
-            data_dir = args["dataset_root"]
+    # elif args["dataset"] == 'mnist' or 'fmnist':
+    #     pass
+    #     if args["dataset"] == 'mnist':
+    #         data_dir = args["dataset_root"]
+    #     else:
+    #         data_dir = args["dataset_root"]
 
+    #     apply_transform = transforms.Compose([
+    #         transforms.ToTensor(),
+    #         transforms.Normalize((0.1307,), (0.3081,))])
+
+    #     train_dataset = datasets.MNIST(data_dir, train=True, download=True,
+    #                                    transform=apply_transform)
+
+    #     test_dataset = datasets.MNIST(data_dir, train=False, download=True,
+    #                                   transform=apply_transform)
+
+    #     # sample training data amongst users
+    #     if args.iid:
+    #         # Sample IID user data from Mnist
+    #         user_groups = mnist_iid(train_dataset, args.num_users)
+    #     else:
+    #         # Sample Non-IID user data from Mnist
+    #         if args.unequal:
+    #             # Chose uneuqal splits for every user
+    #             user_groups = mnist_noniid_unequal(train_dataset, args.num_users)
+    #         else:
+    #             # Chose euqal splits for every user
+    #             user_groups = mnist_noniid(train_dataset, args.num_users)
+
+    elif args["dataset"] == 'ham10000':
+        from .utils.ham10000 import SkinCancerDataset
+        from sklearn.model_selection import train_test_split
+        import pandas as pd 
+        metadata = pd.read_csv(args["metadata_path"])
+        metadata['age'] = metadata['age'].fillna(metadata['age'].mean())
+        metadata['sex'] = metadata['sex'].fillna('unknown')
+        metadata['age'] = metadata['age'].clip(lower=0, upper=100)
+            
+        image_dirs = args["image_dirs"]
         apply_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
             transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))])
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
 
-        train_dataset = datasets.MNIST(data_dir, train=True, download=True,
-                                       transform=apply_transform)
-
-        test_dataset = datasets.MNIST(data_dir, train=False, download=True,
-                                      transform=apply_transform)
-
-        # sample training data amongst users
-        if args.iid:
-            # Sample IID user data from Mnist
-            user_groups = mnist_iid(train_dataset, args.num_users)
+        train_df, val_df = train_test_split(metadata, test_size=0.2, stratify=metadata['dx'], random_state=42)
+        train_dataset = SkinCancerDataset(train_df, image_dirs, transform=apply_transform)
+        test_dataset = SkinCancerDataset(val_df, image_dirs, transform=apply_transform)
+        if args["iid"]:
+            # Sample IID user data from HAM10000
+            user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
+            # Sample Non-IID user data from HAM10000
+            if args["unequal"]:
                 # Chose uneuqal splits for every user
-                user_groups = mnist_noniid_unequal(train_dataset, args.num_users)
+                user_groups = mnist_noniid_unequal(train_dataset, args["num_users"])
             else:
                 # Chose euqal splits for every user
-                user_groups = mnist_noniid(train_dataset, args.num_users)
+                user_groups = mnist_noniid(train_dataset, args["num_users"])
 
     return train_dataset, test_dataset, user_groups
 

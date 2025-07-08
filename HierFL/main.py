@@ -167,15 +167,9 @@ def main():
         # Calculate avg training accuracy over all users at every epoch
         list_acc, list_loss = [], []
         global_model.eval()
-        for idx in range(config["num_users"]):
-            local_model = FedAvgClient(args=config, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-            user_model, _ = hierarchical_fl.get_model_for_client(idx, config["download"])
-            acc, loss = local_model.inference(model=user_model)
-            list_acc.append(acc)
-            list_loss.append(loss)
-        train_accuracy.append(sum(list_acc)/len(list_acc))
-        #
+        test_acc, test_loss = test_inference(config, global_model, test_dataset)
+        train_accuracy.append(test_acc)
+        
         # # print global training loss after every 'i' rounds
         if (epoch+1) % print_every == 0:
             print(f' \nAvg Training Stats after {epoch+1} global rounds:')
