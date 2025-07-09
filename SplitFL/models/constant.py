@@ -1,20 +1,22 @@
-from .CNNCifar import CifarClientModel, CifarServerModel, MergedModel
-from .CNNFashion_Mnist import CNNFashion_Mnist
-from .CNNMnist import CNNMnist
-from .MLP import MLP
-
+from .CNN_Cifar_ResNet50 import CifarClientModel, CifarServerModel, MergedModel
+from .CNN_HAM10000_ResNet50 import (HAM10000ClientModelResNet50,
+                                    HAM10000MergedModelResNet50,
+                                    HAM10000ServerModelResNet50)
+from .Alexnet_Cifar import (AlexNetClient_SplitFed, AlexNetServer_SplitFed,
+                            AlexNetMergedModel)
 model_dataset_map = {
-    "cnn":{
-        "mnist": CNNMnist,
-        "fmnist": CNNFashion_Mnist,
+    "resnet50":{
+        "ham1000": [HAM10000ClientModelResNet50, HAM10000ServerModelResNet50, HAM10000MergedModelResNet50],
         "cifar": [CifarClientModel, CifarServerModel, MergedModel]
     },
-    "mlp": MLP
+    "alexnet": {
+        "cifar": [AlexNetClient_SplitFed, AlexNetServer_SplitFed, AlexNetMergedModel]
+    }
 }
 
 
 def get_model(model, dataset):
     try:
         return model_dataset_map[model][dataset]
-    except:
-        exit("Error: unrecognized model")
+    except KeyError:
+        exit("Error: unrecognized model or dataset")

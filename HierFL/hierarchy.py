@@ -2,7 +2,6 @@ import copy
 
 import numpy as np
 import torch
-
 from clients import test_inference
 from servers import FedAvgAggregator
 

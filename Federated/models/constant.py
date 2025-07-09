@@ -1,14 +1,15 @@
-from .CNNCifar import CNNCifar
-from .CNNFashion_Mnist import CNNFashion_Mnist
-from .CNNMnist import CNNMnist
-from .MLP import MLP
+from .Alexnet_Cifar import AlexNetCIFAR10
 from .CNN_HAM10000 import CNNHAM10000
+from .CNNCifar import CNNCifar
+
 model_dataset_map = {
-    "resnet":{
+    "resnet50": {
         "cifar": CNNCifar,
         'ham10000': CNNHAM10000
     },
-    "mlp": MLP,
+    "alexnet": {
+        "cifar": AlexNetCIFAR10
+    }
 }
 
 

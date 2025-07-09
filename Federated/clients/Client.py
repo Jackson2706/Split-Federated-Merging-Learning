@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from sklearn.metrics import f1_score
+
 import torch
+from sklearn.metrics import f1_score
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 

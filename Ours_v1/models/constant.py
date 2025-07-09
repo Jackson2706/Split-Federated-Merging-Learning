@@ -1,15 +1,22 @@
-from .CNNCifar import ClientModel, CloudModel, EdgeModel
-from .CNNFashion_Mnist import CNNFashion_Mnist
-from .CNNMnist import CNNMnist
-from .MLP import MLP
+from .Alexnet_cifar import (AlexNetClient_Ours, AlexNetCloud_Ours,
+                            AlexNetEdge_Ours)
+from .CNN_Cifar_ResNet50 import ClientModel, CloudModel, EdgeModel
+from .CNN_ham10000_ResNet50 import (HAM10000ClientModelResNet50,
+                                    HAM10000CloudModelResNet50,
+                                    HAM10000EdgeModelResNet50)
 
 model_dataset_map = {
-    "cnn":{
-        "mnist": CNNMnist,
-        "fmnist": CNNFashion_Mnist,
-        "cifar": [ClientModel, EdgeModel, CloudModel]
+    "resnet50": {
+        "ham10000": [
+            HAM10000ClientModelResNet50,
+            HAM10000EdgeModelResNet50,
+            HAM10000CloudModelResNet50,
+        ],
+        "cifar": [ClientModel, EdgeModel, CloudModel],
     },
-    "mlp": MLP
+    "alexnet": {
+        "cifar": [AlexNetClient_Ours, AlexNetEdge_Ours, AlexNetCloud_Ours]
+    },
 }
 
 

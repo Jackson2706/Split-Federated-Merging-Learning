@@ -3,21 +3,20 @@ import copy
 import os
 import pickle
 import time
+import warnings
 
 import numpy as np
 import psutil
 import torch
-from fvcore.nn import FlopCountAnalysis
-from tensorboardX import SummaryWriter
-from tqdm import tqdm
-
 from clients import FedAvgClient, test_inference
 from config import ConfigLoader
 from data import get_dataset
+from fvcore.nn import FlopCountAnalysis
 from hierarchy import HierarchicalFL
 from models import get_model
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
-import warnings
 warnings.filterwarnings("ignore")
 
 
@@ -49,17 +48,7 @@ def main():
     device = torch.device("cuda") if config["is_gpu"] else "cpu"
 
     train_dataset, test_dataset, user_groups = get_dataset(config)
-    model = get_model(config["model"], config["dataset"])
-    if config["model"] == "cnn":
-        global_model = model(config)
-    elif config["model"] == "mlp":
-        img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in img_size:
-            len_in *= x
-        global_model = model(
-            dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"]
-        )
+    global_model = get_model(config["model"], config["dataset"])(config)
 
     global_model = global_model.to(device)
     global_model.train()
@@ -208,7 +197,7 @@ def main():
         "test_accuracy": test_acc,
         "test_loss": test_loss,
     }
-    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_HierFL_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
+    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_HierFL_{config["model"]}_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
    

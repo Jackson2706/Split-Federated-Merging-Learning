@@ -1,12 +1,12 @@
 import argparse
 import copy
 import os
+import sys
 import time
 
 import numpy as np
 import psutil
 import torch
-import sys
 from clients import get_client_update_strategy, test_inference
 from config import ConfigLoader
 from data import get_dataset
@@ -194,7 +194,7 @@ def main():
         "client_gpu_ram_list": client_gpu_ram_list,
 
     }
-    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_{config["strategy"]}_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
+    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_{config["strategy"]}_{config["model"]}_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
     # PLOTTING (optional)

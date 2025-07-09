@@ -1,8 +1,8 @@
 import torch
+from sklearn.metrics import f1_score
 from torch import nn
 from torch.utils.data import DataLoader
 
-from sklearn.metrics import f1_score
 
 def test_inference(args, model, test_dataset):
     """Returns the test F1 score (macro) and loss."""

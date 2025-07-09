@@ -1,15 +1,15 @@
 import copy
 import logging
+import os
+import time
+from collections import deque
 
 import numpy as np
+import psutil
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from collections import deque
-import psutil
-import os
-import time
 
 
 class FullPipelineModel(nn.Module):

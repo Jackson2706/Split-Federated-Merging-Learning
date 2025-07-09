@@ -1,17 +1,17 @@
 import copy
 import logging
+import os
+import random
+import time
+from collections import deque
 
 import numpy as np
+import psutil
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-from collections import deque
-import psutil
-import os
-import time
 
-import random
 
 class FullPipelineModel(nn.Module):
     def __init__(self, client_model, edge_model, cloud_model):
@@ -64,8 +64,9 @@ def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     return size_MB
 
 
-import torch
 import math
+
+import torch
 
 
 def add_dp_noise(

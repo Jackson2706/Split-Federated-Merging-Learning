@@ -1,6 +1,7 @@
 import argparse
 import time
 
+import pandas as pd
 import torch
 from config import ConfigLoader
 from data import get_dataset
@@ -8,7 +9,6 @@ from hierarchy import HierarchicalFL
 from models import get_model
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-import pandas as pd
 
 
 def main():

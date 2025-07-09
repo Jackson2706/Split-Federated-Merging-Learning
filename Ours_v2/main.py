@@ -1,6 +1,7 @@
 import argparse
 import time
 
+import pandas as pd
 import torch
 from config import ConfigLoader
 from data import get_dataset
@@ -8,7 +9,6 @@ from hierarchy import HierarchicalFL
 from models import get_model
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-import pandas as pd
 
 
 def main():
@@ -76,7 +76,7 @@ def main():
     exclude_keys = ["best_weight"]  # ví dụ các key bạn muốn bỏ
     filtered_output = {k: v for k, v in output.items() if k not in exclude_keys}
     with open(
-        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_ourv2_{config["num_users"]}_{config["epochs"]}_{config["t1"]}_{config["t2"]}_output.json',
+        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_ourv2_{config["num_users"]}_{config["epochs"]}_{config["t1"]}_{config["t2"]}_{config["epsilon"]}_{config["delta"]}_{config["clip_norm"]}_{config["clip"]}_output.json',
         "w",
     ) as f:
         json.dump(filtered_output, f, indent=4)

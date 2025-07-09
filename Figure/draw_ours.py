@@ -1,5 +1,7 @@
 import json
+
 import matplotlib.pyplot as plt
+
 
 def load_all_json(json_paths):
     data_list = {}

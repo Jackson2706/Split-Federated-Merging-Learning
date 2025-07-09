@@ -4,12 +4,13 @@
 # Python version: 3.6
 
 import copy
+import os
 
 import torch
 from torchvision import datasets, transforms
-import os
-from .sampling import (cifar_iid, cifar_noniid, mnist_iid, mnist_noniid,
-                       mnist_noniid_unequal, ham10000_iid)
+
+from .sampling import (cifar_iid, cifar_noniid, ham10000_iid, mnist_iid,
+                       mnist_noniid, mnist_noniid_unequal)
 
 
 def get_dataset(args):
@@ -74,9 +75,10 @@ def get_dataset(args):
     #             user_groups = mnist_noniid(train_dataset, args.num_users)
 
     elif args["dataset"] == 'ham10000':
-        from .utils.ham10000 import SkinCancerDataset
+        import pandas as pd
         from sklearn.model_selection import train_test_split
-        import pandas as pd 
+
+        from .utils.ham10000 import SkinCancerDataset 
         metadata = pd.read_csv(args["metadata_path"])
         metadata['age'] = metadata['age'].fillna(metadata['age'].mean())
         metadata['sex'] = metadata['sex'].fillna('unknown')
@@ -84,7 +86,7 @@ def get_dataset(args):
             
         image_dirs = args["image_dirs"]
         apply_transform = transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.Resize((112, 112)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
@@ -103,7 +105,7 @@ def get_dataset(args):
             else:
                 # Chose euqal splits for every user
                 user_groups = mnist_noniid(train_dataset, args["num_users"])
-
+    print(f"Train len: {len(train_dataset)}")
     return train_dataset, test_dataset, user_groups
 
 
