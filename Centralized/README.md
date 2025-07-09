@@ -1,1 +1,0 @@
-Hello, Jackson. This is main branch of Centrialized baseline
