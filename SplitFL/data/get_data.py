@@ -4,34 +4,14 @@
 # Python version: 3.6
 
 import copy
+import os
 
-# import time
-# import numpy as np
-# from LSTM_utilities import dataset, utility
-# from options import args_parser
-# from models import Basic_LSTM_2
 import torch
-from sklearn.model_selection import train_test_split
-from torch import nn
-from torch.utils.data import random_split
 from torchvision import datasets, transforms
 
 from .sampling import (cifar_iid, cifar_noniid, ham10000_iid, mnist_iid,
                        mnist_noniid, mnist_noniid_unequal)
 
-
-class TransformedDataset(torch.utils.data.Dataset):
-    def __init__(self, base_dataset, transform):
-        self.base = base_dataset
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.base)
-
-    def __getitem__(self, idx):
-        img, label = self.base[idx]
-        img = self.transform(img)
-        return img, label
 
 def get_dataset(args):
     """ Returns train and test datasets and a user group which is a dict where
@@ -39,31 +19,41 @@ def get_dataset(args):
     each of those users.
     """
 
-    if args["dataset"] == 'cifar':
+    if args["dataset"] == 'cifar10':
         data_dir = args["dataset_root"]
-        train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(32),   # or (224) if you're using a larger model
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ])
+        apply_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]
+        )
+        train_dataset = datasets.CIFAR10(data_dir, train=True, download=True, transform=apply_transform)
 
-        valid_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-        ])
+        test_dataset = datasets.CIFAR10(data_dir, train=False, download=True, transform=apply_transform)
 
-        train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
-                                       transform=None)
-        train_len = int(0.9 * len(train_dataset))
-        valid_len = len(train_dataset) - train_len
-        
-        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
-        train_dataset = TransformedDataset(train_dataset, train_transform)
-        valid_dataset = TransformedDataset(valid_dataset, valid_transform)
-        print(len(train_dataset)/len(valid_dataset))
-        test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
-                                      transform=valid_transform)
+        # sample training data amongst users
+        if args["iid"]:
+            # Sample IID user data from Mnist
+            user_groups = cifar_iid(train_dataset, args["num_users"])
+        else:
+            # Sample Non-IID user data from Mnist
+            if args.unequal:
+                # Chose uneuqal splits for every user
+                raise NotImplementedError()
+            else:
+                # Chose euqal splits for every user
+                user_groups = cifar_noniid(train_dataset, args.num_users)
+    elif args["dataset"] =='cifar100':
+        data_dir = args["dataset_root"]
+        apply_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]
+        )
+        train_dataset = datasets.CIFAR100(data_dir, train=True, download=True, transform=apply_transform)
+
+        test_dataset = datasets.CIFAR100(data_dir, train=False, download=True, transform=apply_transform)
 
         # sample training data amongst users
         if args["iid"]:
@@ -78,34 +68,6 @@ def get_dataset(args):
                 # Chose euqal splits for every user
                 user_groups = cifar_noniid(train_dataset, args.num_users)
 
-    # elif args["dataset"] == 'mnist' or args["dataset"] == 'fmnist':
-    #     if args["dataset"] == 'mnist':
-    #         data_dir = args["dataset_root"]
-    #     else:
-    #         data_dir = args["dataset_root"]
-
-    #     apply_transform = transforms.Compose([
-    #         transforms.ToTensor(),
-    #         transforms.Normalize((0.1307,), (0.3081,))])
-
-    #     train_dataset = datasets.MNIST(data_dir, train=True, download=True,
-    #                                    transform=apply_transform)
-
-    #     test_dataset = datasets.MNIST(data_dir, train=False, download=True,
-    #                                   transform=apply_transform)
-
-    #     # sample training data amongst users
-    #     if args.iid:
-    #         # Sample IID user data from Mnist
-    #         user_groups = mnist_iid(train_dataset, args["num_users"])
-    #     else:
-    #         # Sample Non-IID user data from Mnist
-    #         if args.unequal:
-    #             # Chose uneuqal splits for every user
-    #             user_groups = mnist_noniid_unequal(train_dataset, args["num_users"])
-    #         else:
-    #             # Chose equal splits for every user
-    #             user_groups = mnist_noniid(train_dataset, args["num_users"])
     elif args["dataset"] == 'ham10000':
         import pandas as pd
         from sklearn.model_selection import train_test_split
@@ -125,10 +87,6 @@ def get_dataset(args):
 
         train_df, val_df = train_test_split(metadata, test_size=0.2, stratify=metadata['dx'], random_state=42)
         train_dataset = SkinCancerDataset(train_df, image_dirs, transform=apply_transform)
-        train_len = int(0.9 * len(train_dataset))
-        valid_len = len(train_dataset) - train_len
-        
-        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
         test_dataset = SkinCancerDataset(val_df, image_dirs, transform=apply_transform)
         if args["iid"]:
             # Sample IID user data from HAM10000
@@ -141,7 +99,8 @@ def get_dataset(args):
             else:
                 # Chose euqal splits for every user
                 user_groups = mnist_noniid(train_dataset, args["num_users"])
-    return train_dataset, valid_dataset, test_dataset, user_groups
+    print(f"Train len: {len(train_dataset)}")
+    return train_dataset, test_dataset, user_groups
 
 
 def average_weights(w):

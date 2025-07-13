@@ -10,14 +10,37 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+import torch.nn.functional as F
 
+class ContrastiveLoss(torch.nn.Module):
+    """
+    Contrastive loss function.
+    Based on: http://yann.lecun.com/exdb/publis/pdf/hadsell-chopra-lecun-06.pdf
+    Modified from: https://hackernoon.com/facial-similarity-with-siamese-networks-in-pytorch-9642aa9db2f7
 
+    """ 
+
+    def __init__(self, margin=2.0):
+        super(ContrastiveLoss, self).__init__()
+        self.margin = margin
+
+    def forward(self, output1, output2, label):
+        # euclidean_distance = torch.nn.functional.pairwise_distance(output1, output2)
+        # loss_contrastive = torch.mean((1-label) * torch.pow(euclidean_distance, 2) +
+        #                               (label) * torch.pow(torch.clamp(self.margin - euclidean_distance, min=0.0), 2))
+        
+        cosine_distance = torch.nn.functional.cosine_similarity(output1, output2)
+        loss_contrastive = torch.mean((1-label) * torch.pow(cosine_distance, 2) +
+                                      (label) * torch.pow(torch.clamp(self.margin - cosine_distance, min=0.0), 2))
+        # loss_contrastive =  torch.nn.NLLLoss()(cosine_distance)
+
+        return loss_contrastive
 class FullPipelineModel(nn.Module):
     def __init__(self, client_model, edge_model, cloud_model):
         super().__init__()
-        self.client = client_model
-        self.edge = edge_model
-        self.cloud = cloud_model
+        self.client = client_model.eval()
+        self.edge = edge_model.eval()
+        self.cloud = cloud_model.eval()
 
     def forward(self, x):
         x = self.client(x)
@@ -35,8 +58,8 @@ class DatasetSplit(Dataset):
         return len(self.idxs)
 
     def __getitem__(self, index):
-        image, label = self.dataset[self.idxs[index]]
-        return image.clone(), torch.tensor(label)
+        return  self.dataset[self.idxs[index]]
+        # return image.clone(), torch.tensor(label)
 
 
 def estimate_gradient_size_MB(model, input_shape, device="cpu"):
@@ -228,7 +251,6 @@ class HierarchicalFL:
 
             # Save edge model and aggregated client model
             self.edge_cache[eid] = {
-                "client_model": avg_client_model,
                 "edge_model": edge_layer[eid].state_dict(),
             }
 
@@ -246,8 +268,6 @@ class HierarchicalFL:
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
         edge_to_cloud = self.connectivity[0]
-        client_layer = self.structure[-1]
-        client_to_edge = self.connectivity[-1]
 
         # Reverse mapping: cloud → list of edge servers
         cloud_to_edges = {}
@@ -256,26 +276,22 @@ class HierarchicalFL:
 
         for cid, edge_ids in cloud_to_edges.items():
             edge_models = []
-            client_models = []
 
             for eid in edge_ids:
                 cache = self.edge_cache.get(eid)
                 if cache:
                     edge_models.append(cache["edge_model"])
-                    client_models.append(cache["client_model"])
 
             # Aggregate
             avg_edge_model = self.average_state_dicts(edge_models)
-            avg_client_model = self.average_state_dicts(client_models)
 
             # Communication tracking
             size_edge_MB = self.get_model_size(avg_edge_model)
-            size_client_MB = self.get_model_size(avg_client_model)
             self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * (
-                size_edge_MB + size_client_MB
+                size_edge_MB
             )
             self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * (
-                size_edge_MB + size_client_MB
+                size_edge_MB 
             )
 
             # Send back aggregated models
@@ -283,22 +299,8 @@ class HierarchicalFL:
                 # Update edge server with aggregated edge model
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
-                # === ✅ Send back aggregated client model to relevant clients ===
-                # Find all clients connected to this edge server
-                for client_id, edge_id in client_to_edge.items():
-                    if edge_id == eid:
-                        client_layer[client_id].load_state_dict(
-                            avg_client_model
-                        )
-                self.comm_tracker["client_model_download_MB"] += (
-                    sum(
-                        1
-                        for edge_id in client_to_edge.values()
-                        if edge_id == eid
-                    )
-                    * size_client_MB
-                )
 
+            
     def print_comm_report(self):
         print("\n=== Communication Report ===")
         for k, v in self.comm_tracker.items():
@@ -308,7 +310,7 @@ class HierarchicalFL:
         self.optimizers = {}
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {
-                nid: torch.optim.Adam(
+                nid: torch.optim.AdamW(
                     model.parameters(),
                     lr=self.args["lr"],
                     weight_decay=self.args["weight_decay"],
@@ -323,6 +325,7 @@ class HierarchicalFL:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         criterion = nn.CrossEntropyLoss().to(device)
+        criterion_edge = ContrastiveLoss(margin=0.5).to(device)
         evalcriterion = nn.NLLLoss().to(device)
         num_users = config["num_users"]
         frac = config["frac"]
@@ -360,6 +363,7 @@ class HierarchicalFL:
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.empty_cache()
                 local_data = DatasetSplit(train_dataset, user_groups[cid])
+                # print(f"datalen: {len(local_data)}")
                 loader = DataLoader(
                     local_data, batch_size=local_bs, shuffle=True
                 )
@@ -367,18 +371,22 @@ class HierarchicalFL:
                 model = self.structure[-1][cid]
                 model.to(device).eval()
 
-                feats, labels = [], []
+                feats1, feats2, labels1, labels2 = [], [], [], []
                 with torch.no_grad():
-                    for data, target in loader:
+                    for (img1, img2), (label1, label2) in loader:
                         if input_shape_client is None:
-                            input_shape_client = data.shape
-                        data, target = data.to(device), target.to(device)
-                        out = model(data)
-                        feats.append(out.cpu())
-                        labels.append(target.cpu())
+                            input_shape_client = img1.shape
+                        img1, img2 = img1.to(device), img2.to(device)
+                        out1 = model(img1)
+                        out2 = model(img2)
 
-                fx, fy = torch.cat(feats), torch.cat(labels)
-                client_outputs[cid] = (fx, fy)
+                        feats1.append(out1)
+                        feats2.append(out2)
+                        labels1.append(label1)
+                        labels2.append(label2)
+                
+                fx1, fx2, fy1, fy2 = torch.cat(feats1), torch.cat(feats2), torch.cat(labels1), torch.cat(labels2)
+                client_outputs[cid] = (fx1, fx2, fy1, fy2)
                 cpu_after = psutil.cpu_percent(interval=None)
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
                     1024**2
@@ -405,9 +413,9 @@ class HierarchicalFL:
                 client_gpu_ram_usages
             )
 
-            print(f"Average CPU usage / client: {avg_cpu:.2f} %")
-            print(f"Average RAM usage/ client: {avg_ram:.2f} MB")
-            print(f"Average GPU RAM usage/ client: {avg_gpu_ram:.2f} MB")
+            # print(f"Average CPU usage / client: {avg_cpu:.2f} %")
+            # print(f"Average RAM usage/ client: {avg_ram:.2f} MB")
+            # print(f"Average GPU RAM usage/ client: {avg_gpu_ram:.2f} MB")
 
             client_ram_list.append(avg_ram)
             client_cpu_list.append(avg_cpu)
@@ -422,26 +430,80 @@ class HierarchicalFL:
             edge_cpu_usages = []
             edge_ram_usages = []
             edge_gpu_ram_usages = []
+            loss_all_edge = []
             for eid, cids in edge_to_clients.items():
+                for cid in cids:
+                        self.optimizers[-1][cid].zero_grad()
+                # print(eid)
+                # print(cids)
+                # exit()
                 cpu_before = psutil.cpu_percent(interval=None)
                 mem_before = psutil.Process(os.getpid()).memory_info().rss / (
                     1024**2
                 )
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.empty_cache()
-                model = self.structure[0][eid]
-                model.to(device).train()
-                X = torch.cat(
+                edge_model = self.structure[0][eid]
+                edge_model.to(device).train()
+                X1 = torch.cat(
                     [client_outputs[cid][0] for cid in cids], dim=0
                 ).to(device)
-                Y = torch.cat(
+                X2 = torch.cat(
                     [client_outputs[cid][1] for cid in cids], dim=0
                 ).to(device)
+                Y1 = torch.cat(
+                    [client_outputs[cid][2] for cid in cids], dim=0
+                ).to(device)
+                Y2 = torch.cat(
+                    [client_outputs[cid][3] for cid in cids], dim=0
+                ).to(device)
                 if input_shape_edge is None:
-                    input_shape_edge = X.shape
-                out = model(X)
-                size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
+                    input_shape_edge = X1.shape
+                optimizer = torch.optim.AdamW(
+                    edge_model.parameters(),
+                    lr=self.args["lr"],
+                    weight_decay=self.args["weight_decay"],
+                )
+                feats1, feats2, labels1, labels2 = [], [], [], []
+                loss_list = []
+                for x1, x2, y1, y2 in zip(
+                    torch.split(X1, self.args["local_bs"]), 
+                    torch.split(X2, self.args["local_bs"]),
+                    torch.split(Y1, self.args["local_bs"]),
+                    torch.split(Y2, self.args["local_bs"])
+                ):
+                    out1 = edge_model(x1)
+                    out2 = edge_model(x2)
+                    label = torch.where(y1==y2, 0.0, 1.0).to(device)
+                    
+                    loss = criterion_edge(
+                        edge_model.forward_contrastive(out1), 
+                        edge_model.forward_contrastive(out2),
+                        label
+                    )
+                    optimizer.zero_grad()
+                    loss.backward()
+                    loss_list.append(loss.item())
+                    
+                    optimizer.step()
+                    for cid in cids:
+                        self.optimizers[-1][cid].step()
+                    # After loss.backward()
+                    feats1.append(out1.cpu())
+                    feats2.append(out2.cpu())
+                    labels1.append(y1.cpu())
+                    labels2.append(y2.cpu())
+                out1 = torch.cat(feats1)
+                out2 = torch.cat(feats2)
+                y1 = torch.cat(labels1)
+                y2 = torch.cat(labels2)
+                avg_loss_per_edge = sum(loss_list) / len(loss_list)
+                # print(f"Loss at edge {eid}: {avg_loss_per_edge}")
+                loss_all_edge.append(avg_loss_per_edge)
+                size_MB = (X1.numel() + X2.numel() + Y1.numel() + Y2.numel()) * 4 / (1024**2)
                 self.comm_tracker["client_upload_smashed_MB"] += size_MB
+                out = torch.cat([out1, out2], dim = 0)
+                Y = torch.cat([y1, y2], dim=0)
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
                 model.cpu()
 
@@ -458,9 +520,10 @@ class HierarchicalFL:
                 edge_ram_usages.append(mem_used)
                 edge_cpu_usages.append(avg_cpu)
                 edge_gpu_ram_usages.append(mem_gpu_used)
-                del X, Y, out
+                del out1, out2, Y1, Y2, out, Y
                 torch.cuda.empty_cache()
-
+            print(f"Avg loss at edges: {sum(loss_all_edge) / len(loss_all_edge)}")
+                
             del client_outputs
             avg_edge_ram = (
                 sum(edge_ram_usages) / len(edge_ram_usages)
@@ -475,10 +538,10 @@ class HierarchicalFL:
             edge_ram_list.append(avg_edge_ram)
             edge_gpu_ram_list.append(avg_edge_gpu_ram)
 
-            print(f"Average Edge CPU usage: {avg_edge_cpu:.2f} %")
-            print(f"Average Edge RAM usage: {avg_edge_ram:.2f} MB")
-            print(f"Average Edge GPU RAM usage: {avg_edge_gpu_ram:.2f} MB")
-
+            # print(f"Average Edge CPU usage: {avg_edge_cpu:.2f} %")
+            # print(f"Average Edge RAM usage: {avg_edge_ram:.2f} MB")
+            # print(f"Average Edge GPU RAM usage: {avg_edge_gpu_ram:.2f} MB")
+            
             cloud_cpu_usage = psutil.cpu_percent(interval=None)
             cloud_ram_usage = psutil.Process(os.getpid()).memory_info().rss / (
                 1024**2
@@ -487,8 +550,8 @@ class HierarchicalFL:
             torch.cuda.empty_cache()
 
             cloud_model = self.structure[len(self.args["mid_server"])][0]
-            cloud_model.to(device).train()
-
+            cloud_model = cloud_model.to(device)
+            cloud_model = cloud_model.train()
             all_X = torch.cat(
                 [fx for fx, _ in edge_outputs.values()], dim=0
             ).to(device)
@@ -497,15 +560,31 @@ class HierarchicalFL:
             ).to(device)
             size_MB = (all_X.numel() + all_Y.numel()) * 4 / (1024**2)
             self.comm_tracker["edge_upload_smashed_MB"] += size_MB
-            pred = cloud_model(all_X)
-            loss = criterion(pred, all_Y)
+            loss_list = []
+            cloud_optimizer = torch.optim.AdamW(
+                cloud_model.parameters(),
+                lr=self.args["lr"],
+                weight_decay=self.args["weight_decay"],
+            )
+            criterion = nn.CrossEntropyLoss().to(device)
+            loss_list = []
+            for x, y in zip(torch.split(all_X, self.args["local_bs"]), torch.split(all_Y,self.args["local_bs"])):
+                if x.size(0) < self.args["local_bs"]:
+                    continue
+                cloud_optimizer.zero_grad()
+                x, y = x.to(device), y.to(device)
+                pred = cloud_model(x)
+                loss = criterion(pred, y)
 
-            self.optimizers[len(self.args["mid_server"])][0].zero_grad()
-            loss.backward()
-            out_cl = nn.functional.log_softmax(pred, dim=1)
-            loss = evalcriterion(out_cl, all_Y)
-            self.optimizers[len(self.args["mid_server"])][0].step()
-            train_loss.append(loss.item())
+                loss.backward()
+                loss_list.append(loss.item())
+                cloud_optimizer.step()
+                out_cl = nn.functional.log_softmax(pred, dim=1)
+                evalloss = evalcriterion(out_cl, y)
+                loss_list.append(evalloss.item())
+            self.structure[len(self.args["mid_server"])][0] = cloud_model
+            print(f"Loss at cloud: {sum(loss_list)/len(loss_list)}")
+            # train_loss.append(sum(loss_list)/len(loss_list))
             # === Track gradient sent from cloud → edge ===
             for eid in edge_outputs:
                 edge_model = self.structure[0][eid].to(device)
@@ -538,20 +617,14 @@ class HierarchicalFL:
             cloud_ram_list.append(cloud_ram_usage)
             cloud_gpu_ram_list.append(mem_gpu_used)
             client_compute_times.append(time_taken)
-            print(f"Cloud CPU usage: {cloud_cpu_usage:.2f} %")
-            print(f"Cloud RAM usage: {cloud_ram_usage:.2f} MB")
-            print(f"Cloud GPU RAM usage: {mem_gpu_used:.2f} MB")
-            print(f"Time taken for cloud aggregation: {time_taken:.2f} seconds")
+            # print(f"Cloud CPU usage: {cloud_cpu_usage:.2f} %")
+            # print(f"Cloud RAM usage: {cloud_ram_usage:.2f} MB")
+            # print(f"Cloud GPU RAM usage: {mem_gpu_used:.2f} MB")
+            # print(f"Time taken for cloud aggregation: {time_taken:.2f} seconds")
             del all_X, all_Y, pred, loss
             torch.cuda.empty_cache()
 
-            for eid in edge_outputs:
-                self.optimizers[0][eid].zero_grad()
-                self.optimizers[0][eid].step()
-
-            for cid in idxs_users:
-                self.optimizers[-1][cid].zero_grad()
-                self.optimizers[-1][cid].step()
+            
 
             del edge_outputs
             torch.cuda.empty_cache()
@@ -575,11 +648,11 @@ class HierarchicalFL:
             client_model = self.structure[-1][cid]
             eid = self.connectivity[-1][0]
             edge_model = self.structure[0][eid]
-            cloud_model = self.structure[len(self.args["mid_server"])][0]
-            client_model.to(device).eval()
-            edge_model.to(device).eval()
-            cloud_model.to(device).eval()
-            loader = DataLoader(valid_dataset, batch_size=256, shuffle=False)
+            # cloud_model = self.structure[len(self.args["mid_server"])][0]
+            client_model = client_model.to(device)
+            edge_model = edge_model.to(device)
+            cloud_model = cloud_model.to(device)
+            loader = DataLoader(test_dataset, batch_size=256, shuffle=False)
 
             from sklearn.metrics import f1_score
 
@@ -589,18 +662,17 @@ class HierarchicalFL:
             evalcriterion = nn.NLLLoss()
             with torch.no_grad():
                 for data, target in loader:
+                    client_model.eval()
+                    edge_model.eval()
+                    cloud_model.eval()
                     data, target = data.to(device), target.to(device)
                     out_c = client_model(data)
                     out_e = edge_model(out_c)
                     out_cl = cloud_model(out_e)
+                    
                     pred = out_cl.argmax(dim=1)
                     all_preds.extend(pred.cpu().numpy())
                     all_targets.extend(target.cpu().numpy())
-
-                    out_cl = nn.functional.log_softmax(out_cl, dim=1)
-                    loss = evalcriterion(out_cl, target)
-
-                    total_loss += loss.item() * data.size(0)
             # Compute F1 score (macro, micro, or weighted depending on your task)
             f1 = f1_score(
                 all_targets, all_preds, average="macro"
@@ -615,11 +687,16 @@ class HierarchicalFL:
                     cloud_model=copy.deepcopy(cloud_model),
                 )
                 best_f1 = f1
-            else:
-                continue
+            pipeline_model = pipeline_model.eval()
             test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+            from torchvision import transforms
+            inv_normalize = transforms.Normalize(
+                mean=[-m/s for m, s in zip((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))],
+                std=[1/s for s in (0.2023, 0.1994, 0.2010)]
+            )
+
             with torch.no_grad():
-                for data, target in test_loader:
+                for idx, (data, target) in enumerate(test_loader):
                     data, target = data.to(device), target.to(device)
                     out = pipeline_model(data)
                     pred = out.argmax(dim=1)

@@ -16,9 +16,10 @@ class HAM10000ClientModelResNet50(nn.Module):
             resnet.layer1,
             resnet.layer2,  # CUT here
         )
-        
+
     def forward(self, x):
         return self.client_part(x)
+
 
 class HAM10000ServerModelResNet50(nn.Module):
     def __init__(self, args):
@@ -30,7 +31,7 @@ class HAM10000ServerModelResNet50(nn.Module):
             resnet.avgpool,
         )
         self.fc = nn.Linear(resnet.fc.in_features, args["num_classes"])
-        
+
     def forward(self, x):
         x = self.server_part(x)
         x = torch.flatten(x, 1)
@@ -47,7 +48,7 @@ class HAM10000MergedModelResNet50(nn.Module):
     def load_weight(self, client_model_weight, server_model_weight):
         self.client_side_model.load_state_dict(client_model_weight)
         self.server_side_model.load_state_dict(server_model_weight)
-    
+
     def forward(self, x):
         out = self.client_side_model(x)
         return self.server_side_model(out)

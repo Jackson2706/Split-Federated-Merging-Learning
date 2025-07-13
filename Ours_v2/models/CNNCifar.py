@@ -44,10 +44,7 @@ class CloudModel(nn.Module):
         super(CloudModel, self).__init__()
         resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
 
-        self.feature_part = nn.Sequential(
-            resnet.layer4,
-            resnet.avgpool
-        )
+        self.feature_part = nn.Sequential(resnet.layer4, resnet.avgpool)
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
             nn.Linear(resnet.fc.in_features, 512),
@@ -55,7 +52,7 @@ class CloudModel(nn.Module):
             nn.Dropout(0.5),
             nn.Linear(512, 256),
             nn.LeakyReLU(),
-            nn.Linear(256, args["num_classes"])
+            nn.Linear(256, args["num_classes"]),
         )
         set_requires_grad(self.feature_part, freeze=freeze_backbone)
 
@@ -64,7 +61,6 @@ class CloudModel(nn.Module):
         x = x.view(x.size(0), -1)
         logits = self.classifier(x)
         return logits
-
 
 
 # Example usage

@@ -197,61 +197,9 @@ def main():
         "test_accuracy": test_acc,
         "test_loss": test_loss,
     }
-    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_HierFL_{config["model"]}_{config["num_users"]}_{config["epochs"]}_{config["local_ep"]}_output.json', 'w') as f:
+    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/HierFL_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users.json', 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
    
-    # PLOTTING (optional)
-    import matplotlib.pyplot as plt
-
-    # Plot Loss curve
-    plt.figure()
-    plt.title('Training Loss vs Communication rounds')
-    plt.plot(range(len(train_loss)), train_loss, color='r')
-    plt.ylabel('Training loss')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_loss.png'.
-                format(config["dataset"], config["epochs"]))
-    #
-    # # Plot Average Accuracy vs Communication rounds
-    plt.figure()
-    plt.title('Average F1 Score vs Communication rounds')
-    plt.plot(range(len(train_accuracy)), train_accuracy, color='k')
-    plt.ylabel('Average F1 Score')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_f1.png'.
-                format(config["dataset"], config["epochs"]))
-    
-    plt.figure()
-    plt.title('Average training time in each rounds')
-    plt.plot(range(len(client_time_list)), client_time_list, color='k')
-    plt.ylabel('Average Training Time')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_training_time.png'.
-                format(config["dataset"], config["epochs"]))
-    
-    plt.figure()
-    plt.title('Average CPU usage in each rounds')
-    plt.plot(range(len(client_cpu_list)), client_cpu_list, color='k')
-    plt.ylabel('Average CPU Usage')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_cpu_usage.png'.
-                format(config["dataset"], config["epochs"]))
-    
-    plt.figure()
-    plt.title('Average RAM Usage in each rounds')
-    plt.plot(range(len(client_ram_list)), client_ram_list, color='k')
-    plt.ylabel('Average RAM Usage')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_ram_usage.png'.
-                format(config["dataset"], config["epochs"]))
-    
-    plt.figure()
-    plt.title('Average GPU RAM Usage in each rounds')
-    plt.plot(range(len(client_gpu_ram_list)), client_gpu_ram_list, color='k')
-    plt.ylabel('Average GPU RAM Usage')
-    plt.xlabel('Communication Rounds')
-    plt.savefig('./save/hierFed_{}_{}_gpu_ram_usage.png'.
-                format(config["dataset"], config["epochs"]))
 if __name__ == "__main__":
     main()

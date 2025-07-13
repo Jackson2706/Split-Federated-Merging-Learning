@@ -4,14 +4,9 @@
 # Python version: 3.6
 
 import copy
+import os
 
-# import time
-# import numpy as np
-# from LSTM_utilities import dataset, utility
-# from options import args_parser
-# from models import Basic_LSTM_2
 import torch
-from torch import nn
 from torchvision import datasets, transforms
 
 from .sampling import (cifar_iid, cifar_noniid, ham10000_iid, mnist_iid,
@@ -24,17 +19,17 @@ def get_dataset(args):
     each of those users.
     """
 
-    if args["dataset"] == 'cifar':
+    if args["dataset"] == 'cifar10':
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]
+        )
+        train_dataset = datasets.CIFAR10(data_dir, train=True, download=True, transform=apply_transform)
 
-        train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
-                                       transform=apply_transform)
-
-        test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
-                                      transform=apply_transform)
+        test_dataset = datasets.CIFAR10(data_dir, train=False, download=True, transform=apply_transform)
 
         # sample training data amongst users
         if args["iid"]:
@@ -48,36 +43,30 @@ def get_dataset(args):
             else:
                 # Chose euqal splits for every user
                 user_groups = cifar_noniid(train_dataset, args.num_users)
+    elif args["dataset"] =='cifar100':
+        data_dir = args["dataset_root"]
+        apply_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            ]
+        )
+        train_dataset = datasets.CIFAR100(data_dir, train=True, download=True, transform=apply_transform)
 
-    # elif args["dataset"] == 'mnist' or 'fmnist':
-    #     pass
-    #     if args["dataset"] == 'mnist':
-    #         data_dir = args["dataset_root"]
-    #     else:
-    #         data_dir = args["dataset_root"]
+        test_dataset = datasets.CIFAR100(data_dir, train=False, download=True, transform=apply_transform)
 
-    #     apply_transform = transforms.Compose([
-    #         transforms.ToTensor(),
-    #         transforms.Normalize((0.1307,), (0.3081,))])
-
-    #     train_dataset = datasets.MNIST(data_dir, train=True, download=True,
-    #                                    transform=apply_transform)
-
-    #     test_dataset = datasets.MNIST(data_dir, train=False, download=True,
-    #                                   transform=apply_transform)
-
-    #     # sample training data amongst users
-    #     if args.iid:
-    #         # Sample IID user data from Mnist
-    #         user_groups = mnist_iid(train_dataset, args.num_users)
-    #     else:
-    #         # Sample Non-IID user data from Mnist
-    #         if args.unequal:
-    #             # Chose uneuqal splits for every user
-    #             user_groups = mnist_noniid_unequal(train_dataset, args.num_users)
-    #         else:
-    #             # Chose euqal splits for every user
-    #             user_groups = mnist_noniid(train_dataset, args.num_users)
+        # sample training data amongst users
+        if args["iid"]:
+            # Sample IID user data from Mnist
+            user_groups = cifar_iid(train_dataset, args["num_users"])
+        else:
+            # Sample Non-IID user data from Mnist
+            if args.unequal:
+                # Chose uneuqal splits for every user
+                raise NotImplementedError()
+            else:
+                # Chose euqal splits for every user
+                user_groups = cifar_noniid(train_dataset, args.num_users)
 
     elif args["dataset"] == 'ham10000':
         import pandas as pd

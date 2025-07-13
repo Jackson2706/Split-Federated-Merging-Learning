@@ -71,15 +71,7 @@ def main():
     train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
     model = get_model(config["model"], config["dataset"])
 
-    if config["model"] == "cnn":
-        client_model_abs, main_server_model, merge_model = model[0](), model[1](config), model[2](config)
-    elif config["model"] == "mlp":
-        img_size = train_dataset[0][0].shape
-        len_in = np.prod(img_size)
-        client_model_abs = model(dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"])
-        main_server_model = copy.deepcopy(client_model_abs)
-        merge_model = copy.deepcopy(client_model_abs)
-
+    client_model_abs, main_server_model, merge_model = model[0](), model[1](config), model[2](config)
     client_model_abs = client_model_abs.to(device)
     main_server_model = main_server_model.to(device)
     merge_model = merge_model.to(device)
@@ -241,7 +233,7 @@ def main():
         "final_test_loss": avg_test_loss,
     }
 
-    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config['dataset']}_SplitFed_{config['num_users']}_{config['epochs']}_{config['local_ep']}_output.json"
+    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/SplitFL_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users.json.json"
     os.makedirs("/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure", exist_ok=True)
     with open(json_path, "w") as f:
         json.dump(metrics_dict, f, indent=4)

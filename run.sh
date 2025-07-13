@@ -15,52 +15,59 @@ run_and_log() {
     echo "----------------------------------------" >> "$LOG_FILE"
 }
 
-####### CIFAR10
-### AlexNet
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedavg_alexnet.yaml"   "logs/cifar_fedavg_alexnet.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fednova_alexnet.yaml"  "logs/cifar_fednova_alexnet.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedprox_alexnet.yaml"  "logs/cifar_fedprox_alexnet.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedsgd_alexnet.yaml"   "logs/cifar_fedsgd_alexnet.txt"
+### AlexNet - CIFAR10
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedavg_alexnet.yaml"   "logs/cifar10_fedavg_alexnet.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fednova_alexnet.yaml"  "logs/cifar10_fednova_alexnet.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedprox_alexnet.yaml"  "logs/cifar10_fedprox_alexnet.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedsgd_alexnet.yaml"   "logs/cifar10_fedsgd_alexnet.txt"
+run_and_log "python3 HierFL/main.py --cfg HierFL/config/cifar_hierfl_alexnet.yaml"         "logs/cifar10_hierfl_alexnet.txt"
+run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/cifar_splitfed_alexnet.yaml"     "logs/cifar10_splitfed_alexnet.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_alexnet_5_10.yaml"           "logs/cifar10_hspl_alexnet_5_10.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_alexnet_10_20.yaml"          "logs/cifar10_hspl_alexnet_10_20.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_alexnet_25_50.yaml"          "logs/cifar10_hspl_alexnet_25_50.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_5_10.yaml"     "logs/cifar10_our_alexnet_5_10.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_10_20.yaml"    "logs/cifar10_our_alexnet_10_20.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_25_50.yaml"    "logs/cifar10_our_alexnet_25_50.txt"
+### ResNet50 - CIFAR100
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedavg_resnet50.yaml"  "logs/cifar100_fedavg_resnet50.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fednova_resnet50.yaml" "logs/cifar100_fednova_resnet50.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedprox_resnet50.yaml" "logs/cifar100_fedprox_resnet50.txt"
+run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedsgd_resnet50.yaml"  "logs/cifar100_fedsgd_resnet50.txt"
+run_and_log "python3 HierFL/main.py --cfg HierFL/config/cifar_hierfl_resnet50.yaml"        "logs/cifar100_hierfl_resnet50.txt"
+run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/cifar_splitfed_resnet50.yaml"    "logs/cifar100_splitfed_resnet50.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_resnet50_5_10.yaml"          "logs/cifar100_hspl_resnet50_5_10.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_resnet50_10_20.yaml"         "logs/cifar100_hspl_resnet50_10_20.txt"
+run_and_log "python3 HSPL/main.py --cfg HSPL/config/cifar_our_resnet50_25_50.yaml"         "logs/cifar100_hspl_resnet50_25_50.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_5_10.yaml"    "logs/cifar100_ours_v1_resnet50_5_10.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_10_20.yaml"   "logs/cifar100_ours_v1_resnet50_10_20.txt"
+run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_25_50.yaml"   "logs/cifar100_ours_v1_resnet50_25_50.txt"
 
-run_and_log "python3 HierFL/main.py --cfg HierFL/config/cifar_hierfl_alexnet.yaml"         "logs/cifar_hierfl_alexnet.txt"
 
-run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/cifar_splitfed_alexnet.yaml"       "logs/cifar_splitfed_alexnet.txt"
+# ######### HAM10000
+# ### ResNet50
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedavg_resnet50.yaml"   "logs/ham10000_fedavg_resnet50.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fednova_resnet50.yaml"  "logs/ham10000_fednova_resnet50.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedprox_resnet50.yaml"  "logs/ham10000_fedprox_resnet50.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedsgd_resnet50.yaml"   "logs/ham10000_fedsgd_resnet50.txt"
 
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_5_10.yaml"       "logs/cifar_our_alexnet_5_10.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_10_20.yaml"       "logs/cifar_our_alexnet_10_20.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_alexnet_25_50.yaml"       "logs/cifar_our_alexnet_25_50.txt"
+# run_and_log "python3 HierFL/main.py --cfg HierFL/config/ham10000_hierfl_resnet50.yaml"         "logs/ham10000_hierfl_resnet50.txt"
 
-### ResNet50
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedavg_resnet50.yaml"   "logs/cifar_fedavg_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fednova_resnet50.yaml"  "logs/cifar_fednova_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedprox_resnet50.yaml"  "logs/cifar_fedprox_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/cifar_fedsgd_resnet50.yaml"   "logs/cifar_fedsgd_resnet50.txt"
+# run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/ham10000_splitfed_resnet50.yaml"       "logs/ham10000_splitfed_resnet50.txt"
 
-run_and_log "python3 HierFL/main.py --cfg HierFL/config/cifar_hierfl_resnet50.yaml"         "logs/cifar_hierfl_resnet50.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_5_10.yaml"       "logs/ham10000_our_resnet50_5_10.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_10_20.yaml"       "logs/ham10000_our_resnet50_10_20.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_25_50.yaml"       "logs/ham10000_our_resnet50_25_50.txt"
 
-run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/cifar_splitfed_resnet50.yaml"       "logs/cifar_splitfed_resnet50.txt"
+# ### VGG
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedavg_vgg.yaml"   "logs/ham10000_fedavg_vgg.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fednova_vgg.yaml"  "logs/ham10000_fednova_vgg.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedprox_vgg.yaml"  "logs/ham10000_fedprox_vgg.txt"
+# run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedsgd_vgg.yaml"   "logs/ham10000_fedsgd_vgg.txt"
 
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_5_10.yaml"       "logs/cifar_our_resnet50_5_10.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_10_20.yaml"       "logs/cifar_our_resnet50_10_20.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/cifar_our_resnet50_25_50.yaml"       "logs/cifar_our_resnet50_25_50.txt"
+# run_and_log "python3 HierFL/main.py --cfg HierFL/config/ham10000_hierfl_vgg.yaml"         "logs/ham10000_hierfl_vgg.txt"
 
-run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a1.yaml"       "logs/cifar_fedavg_ours_v2_a1.txt"
-run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a2.yaml"       "logs/cifar_fedavg_ours_v2_a2.txt"
-run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a3.yaml"       "logs/cifar_fedavg_ours_v2_a3.txt"
-run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a4.yaml"       "logs/cifar_fedavg_ours_v2_a4.txt"
-run_and_log "python3 Ours_v2/main.py --cfg Ours_v2/config/cifar_ourv2_a5.yaml"       "logs/cifar_fedavg_ours_v2_a5.txt"
+# run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/ham10000_splitfed_vgg.yaml"       "logs/ham10000_splitfed_vgg.txt"
 
-######### HAM10000
-### ResNet50
-run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedavg_resnet50.yaml"   "logs/ham10000_fedavg_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fednova_resnet50.yaml"  "logs/ham10000_fednova_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedprox_resnet50.yaml"  "logs/ham10000_fedprox_resnet50.txt"
-run_and_log "python3 Federated/main.py --cfg Federated/config/ham10000_fedsgd_resnet50.yaml"   "logs/ham10000_fedsgd_resnet50.txt"
-
-run_and_log "python3 HierFL/main.py --cfg HierFL/config/ham10000_hierfl_resnet50.yaml"         "logs/ham10000_hierfl_resnet50.txt"
-
-run_and_log "python3 SplitFL/main.py --cfg SplitFL/config/ham10000_splitfed_resnet50.yaml"       "logs/ham10000_splitfed_resnet50.txt"
-
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_5_10.yaml"       "logs/ham10000_our_resnet50_5_10.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_10_20.yaml"       "logs/ham10000_our_resnet50_10_20.txt"
-run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_resnet50_25_50.yaml"       "logs/ham10000_our_resnet50_25_50.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_vgg_5_10.yaml"       "logs/ham10000_our_vgg_5_10.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_vgg_10_20.yaml"       "logs/ham10000_our_vgg_10_20.txt"
+# run_and_log "python3 Ours_v1/main.py --cfg Ours_v1/config/ham10000_our_vgg_25_50.yaml"       "logs/ham10000_our_vgg_25_50.txt"

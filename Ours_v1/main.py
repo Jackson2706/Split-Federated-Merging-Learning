@@ -37,20 +37,12 @@ def main():
     client_model, egde_model, cloud_model = get_model(
         config["model"], config["dataset"]
     )
-    if config["model"] == "cnn":
-        client_model, egde_model, cloud_model = (
-            client_model(),
-            egde_model(),
-            cloud_model(config),
-        )
-    elif config["model"] == "mlp":
-        img_size = train_dataset[0][0].shape
-        len_in = 1
-        for x in img_size:
-            len_in *= x
-        global_model = model(
-            dim_in=len_in, dim_hidden=64, dim_out=config["num_classes"]
-        )
+    client_model, egde_model, cloud_model = (
+        client_model(),
+        egde_model(),
+        cloud_model(config),
+    )
+
     hierachical_fl = HierarchicalFL(
         args=config,
         client_model=client_model,
@@ -76,7 +68,7 @@ def main():
     exclude_keys = ["best_weight"]  # ví dụ các key bạn muốn bỏ
     filtered_output = {k: v for k, v in output.items() if k not in exclude_keys}
     with open(
-        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/{config["dataset"]}_ourv1_{config["num_users"]}_{config["epochs"]}_{config["t1"]}_{config["t2"]}_output.json',
+        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/OursV1_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users_t1:{config["t1"]}_t2:{config["t2"]}.json',
         "w",
     ) as f:
         json.dump(filtered_output, f, indent=4)
@@ -84,6 +76,9 @@ def main():
     train_loss = output["train_loss"]
     train_accuracy = output["train_accuracy"]
     best_model = output["best_weight"]
+    torch.save(
+        best_model, 
+        f"./{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users_t1:{config["t1"]}_t2:{config["t2"]}.pt")
     client_time_list = output["client_time_list"]
     client_ram_list = output["client_ram"]
     client_gpu_ram_list = output["client_gpu_ram"]
@@ -105,92 +100,13 @@ def main():
             all_targets.extend(target.cpu().numpy())
 
     # Compute macro-F1 (recommended for imbalanced classes)
-    f1 = f1_score(all_targets, all_preds, average='macro')  # or 'micro', 'weighted' as needed
+    f1 = f1_score(
+        all_targets, all_preds, average="macro"
+    )  # or 'micro', 'weighted' as needed
 
     print(f' \n Results after {config["epochs"]} global rounds of training:')
     print("|---- Avg Train F1 Score: {:.2f}%".format(100 * train_accuracy[-1]))
     print("|---- Test F1 Score: {:.2f}%".format(100 * f1))
-    # PLOTTING (optional)
-    import os
-
-    import matplotlib.pyplot as plt
-
-    os.makedirs("./save", exist_ok=True)
-
-    # Plot Loss curve
-    plt.figure()
-    plt.title("Training Loss vs Communication rounds")
-    plt.plot(
-        [config["t2"] * (i + 1) for i in range(len(train_loss))],
-        train_loss,
-        color="r",
-    )
-    plt.ylabel("Training loss")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_loss.png".format(
-            config["dataset"], config["epochs"]
-        )
-    )
-    #
-    # # Plot Average Accuracy vs Communication rounds
-    plt.figure()
-    plt.title("Average F1 Score vs Communication Rounds")
-    plt.plot(
-        [config["t2"] * (i + 1) for i in range(len(train_accuracy))],
-        train_accuracy,
-        color="k",
-    )
-    plt.ylabel("Average F1 Score")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_f1.png".format(config["dataset"], config["epochs"])
-    )
-
-    plt.figure()
-    plt.title("Average training time in each rounds")
-    plt.plot(range(len(client_time_list)), client_time_list, color="k")
-    plt.ylabel("Average Training Time")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_training_time.png".format(
-            config["dataset"], config["epochs"]
-        )
-    )
-
-    plt.figure()
-    plt.title("Average CPU usage in each rounds")
-    plt.plot(range(len(client_time_list)), client_time_list, color="k")
-    plt.ylabel("Average CPU Usage")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_cpu_usage.png".format(
-            config["dataset"], config["epochs"]
-        )
-    )
-
-    plt.figure()
-    plt.title("Average RAM Usage in each rounds")
-    plt.plot(range(len(client_ram_list)), client_ram_list, color="k")
-    plt.ylabel("Average RAM Usage")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_ram_usage.png".format(
-            config["dataset"], config["epochs"]
-        )
-    )
-
-    plt.figure()
-    plt.title("Average GPU RAM Usage in each rounds")
-    plt.plot(range(len(client_gpu_ram_list)), client_gpu_ram_list, color="k")
-    plt.ylabel("Average GPU RAM Usage")
-    plt.xlabel("Communication Rounds")
-    plt.savefig(
-        "./save/Oursv1_{}_{}_gpu_ram_usage.png".format(
-            config["dataset"], config["epochs"]
-        )
-    )
-
-
+ 
 if __name__ == "__main__":
     main()
