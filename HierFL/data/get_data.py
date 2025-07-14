@@ -36,13 +36,8 @@ def get_dataset(args):
             # Sample IID user data from Mnist
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                raise NotImplementedError()
-            else:
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_users)
+            # Chose euqal splits for every user
+            user_groups = cifar_noniid(train_dataset, args["num_users"])
     elif args["dataset"] =='cifar100':
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
@@ -60,13 +55,8 @@ def get_dataset(args):
             # Sample IID user data from Mnist
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                raise NotImplementedError()
-            else:
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_users)
+            # Chose euqal splits for every user
+            user_groups = cifar_noniid(train_dataset, args.num_users)
 
     elif args["dataset"] == 'ham10000':
         import pandas as pd
@@ -92,13 +82,7 @@ def get_dataset(args):
             # Sample IID user data from HAM10000
             user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from HAM10000
-            if args["unequal"]:
-                # Chose uneuqal splits for every user
-                user_groups = mnist_noniid_unequal(train_dataset, args["num_users"])
-            else:
-                # Chose euqal splits for every user
-                user_groups = mnist_noniid(train_dataset, args["num_users"])
+            user_groups = mnist_noniid(train_dataset, args["num_users"])
     print(f"Train len: {len(train_dataset)}")
     return train_dataset, test_dataset, user_groups
 

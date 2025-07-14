@@ -66,10 +66,10 @@ def main():
 
     exclude_keys = ["best_weight"]  # ví dụ các key bạn muốn bỏ
     filtered_output = {k: v for k, v in output.items() if k not in exclude_keys}
-    with open(
-        f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/HSPL_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users_t1:{config["t1"]}_t2:{config["t2"]}.json',
-        "w",
-    ) as f:
+    import os
+    filename = f"HSPL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']} users_t1:{config['t1']}_t2:{config['t2']}.json"
+    path = os.path.join("Figure", "data", filename)
+    with open(path, 'w') as f:
         json.dump(filtered_output, f, indent=4)
 
     train_loss = output["train_loss"]

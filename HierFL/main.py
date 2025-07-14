@@ -174,15 +174,6 @@ def main():
     print(f' \n Results after {config["epochs"]} global rounds of training:')
     print("|---- Avg Train F1 Score: {:.2f}%".format(100*train_accuracy[-1]))
     print("|---- Test F1 Score: {:.2f}%".format(100*test_acc))
-
-    # Saving the objects train_loss and train_accuracy:
-    file_name = './save/objects/{}_{}_{}_C[{}]_iid[{}]_E[{}]_B[{}].pkl'.\
-        format(config["dataset"], config["model"], config["epochs"], config["frac"], config["iid"],
-               config["local_ep"], config["local_bs"])
-    
-    with open(file_name, 'wb') as f:
-        pickle.dump([train_loss, train_accuracy], f)
-
     print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
 
     
@@ -197,7 +188,10 @@ def main():
         "test_accuracy": test_acc,
         "test_loss": test_loss,
     }
-    with open(f'/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/HierFL_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users.json', 'w') as f:
+    with open(
+        f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/HierFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']} users.json",
+         'w'
+    ) as f:
         json.dump(filtered_output, f, indent=4)
 
    

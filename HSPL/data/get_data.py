@@ -8,7 +8,7 @@ import os
 
 import torch
 from torchvision import datasets, transforms
-
+from torch.utils.data import random_split
 from .sampling import (cifar_iid, cifar_noniid, ham10000_iid, mnist_iid,
                        mnist_noniid, mnist_noniid_unequal)
 
@@ -28,7 +28,11 @@ def get_dataset(args):
             ]
         )
         train_dataset = datasets.CIFAR10(data_dir, train=True, download=True, transform=apply_transform)
-
+        train_len = int(0.9 * len(train_dataset))
+        valid_len = len(train_dataset) - train_len
+        
+        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
+        
         test_dataset = datasets.CIFAR10(data_dir, train=False, download=True, transform=apply_transform)
 
         # sample training data amongst users
@@ -36,13 +40,8 @@ def get_dataset(args):
             # Sample IID user data from Mnist
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                raise NotImplementedError()
-            else:
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_users)
+            # Chose euqal splits for every user
+            user_groups = cifar_noniid(train_dataset, args.num_users)
     elif args["dataset"] =='cifar100':
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
@@ -52,7 +51,11 @@ def get_dataset(args):
             ]
         )
         train_dataset = datasets.CIFAR100(data_dir, train=True, download=True, transform=apply_transform)
-
+        train_len = int(0.9 * len(train_dataset))
+        valid_len = len(train_dataset) - train_len
+        
+        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
+        
         test_dataset = datasets.CIFAR100(data_dir, train=False, download=True, transform=apply_transform)
 
         # sample training data amongst users
@@ -60,13 +63,8 @@ def get_dataset(args):
             # Sample IID user data from Mnist
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                raise NotImplementedError()
-            else:
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_users)
+            # Chose euqal splits for every user
+            user_groups = cifar_noniid(train_dataset, args.num_users)
 
     elif args["dataset"] == 'ham10000':
         import pandas as pd
@@ -92,15 +90,9 @@ def get_dataset(args):
             # Sample IID user data from HAM10000
             user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from HAM10000
-            if args["unequal"]:
-                # Chose uneuqal splits for every user
-                user_groups = mnist_noniid_unequal(train_dataset, args["num_users"])
-            else:
-                # Chose euqal splits for every user
-                user_groups = mnist_noniid(train_dataset, args["num_users"])
+            user_groups = mnist_noniid(train_dataset, args["num_users"])
     print(f"Train len: {len(train_dataset)}")
-    return train_dataset, test_dataset, user_groups
+    return train_dataset, valid_dataset, test_dataset, user_groups
 
 
 def average_weights(w):

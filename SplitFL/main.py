@@ -233,9 +233,9 @@ def main():
         "final_test_loss": avg_test_loss,
     }
 
-    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/SplitFL_{config["dataset"]}_iid:{config["iid"]}_{config["model"]}_{config["num_users"]} users.json.json"
+    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure/data/SplitFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']} users.json"
     os.makedirs("/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure", exist_ok=True)
-    with open(json_path, "w") as f:
+    with open(json_path, 'w') as f:
         json.dump(metrics_dict, f, indent=4)
 
     print(f"\n📦 Metrics saved to JSON: {json_path}")
