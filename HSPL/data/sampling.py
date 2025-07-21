@@ -21,35 +21,6 @@ def ham10000_iid(dataset, num_users):
                                              replace=False))
         all_idxs = list(set(all_idxs) - dict_users[i])
     return dict_users
-def ham10000_noniid(dataset, num_users):
-    total_samples = len(dataset)  # ~45000
-
-    num_shards = num_users * 2    # 2000 shards
-    num_imgs = total_samples // num_shards  # 22 images per shard
-
-    idx_shard = list(range(num_shards))
-    dict_users = {i: np.array([], dtype='int64') for i in range(num_users)}
-
-    # Lấy label đúng cách
-    full_targets = dataset.base.dataset.targets
-    subset_indices = dataset.base.indices
-    labels = np.array([full_targets[i] for i in subset_indices])
-    idxs = np.arange(len(labels))
-
-    # Sort theo label
-    idxs_labels = np.vstack((idxs[:num_shards * num_imgs], labels[:num_shards * num_imgs]))
-    idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]
-    idxs = idxs_labels[0, :]
-
-    for i in range(num_users):
-        rand_set = set(np.random.choice(idx_shard, 2, replace=False))
-        idx_shard = list(set(idx_shard) - rand_set)
-        for rand in rand_set:
-            start = rand * num_imgs
-            end = start + num_imgs
-            dict_users[i] = np.concatenate((dict_users[i], idxs[start:end]), axis=0)
-
-    return dict_users
 
 def mnist_iid(dataset, num_users):
     """
@@ -203,34 +174,34 @@ def cifar_iid(dataset, num_users):
         all_idxs = list(set(all_idxs) - dict_users[i])
     return dict_users
 
+
 def cifar_noniid(dataset, num_users):
-    total_samples = len(dataset)  # ~45000
+    """
+    Sample non-I.I.D client data from CIFAR10 dataset
+    :param dataset:
+    :param num_users:
+    :return:
+    """
+    num_shards, num_imgs = 200, 250
+    idx_shard = [i for i in range(num_shards)]
+    dict_users = {i: np.array([]) for i in range(num_users)}
+    idxs = np.arange(num_shards*num_imgs)
+    # labels = dataset.train_labels.numpy()
+    # labels = np.array(dataset.train_labels)
+    labels = np.array(dataset.targets)
 
-    num_shards = num_users * 2    # 2000 shards
-    num_imgs = total_samples // num_shards  # 22 images per shard
-
-    idx_shard = list(range(num_shards))
-    dict_users = {i: np.array([], dtype='int64') for i in range(num_users)}
-
-    # Lấy label đúng cách
-    full_targets = dataset.base.dataset.targets
-    subset_indices = dataset.base.indices
-    labels = np.array([full_targets[i] for i in subset_indices])
-    idxs = np.arange(len(labels))
-
-    # Sort theo label
-    idxs_labels = np.vstack((idxs[:num_shards * num_imgs], labels[:num_shards * num_imgs]))
+    # sort labels
+    idxs_labels = np.vstack((idxs, labels))
     idxs_labels = idxs_labels[:, idxs_labels[1, :].argsort()]
     idxs = idxs_labels[0, :]
 
+    # divide and assign
     for i in range(num_users):
         rand_set = set(np.random.choice(idx_shard, 2, replace=False))
         idx_shard = list(set(idx_shard) - rand_set)
         for rand in rand_set:
-            start = rand * num_imgs
-            end = start + num_imgs
-            dict_users[i] = np.concatenate((dict_users[i], idxs[start:end]), axis=0)
-
+            dict_users[i] = np.concatenate(
+                (dict_users[i], idxs[rand*num_imgs:(rand+1)*num_imgs]), axis=0)
     return dict_users
 
 

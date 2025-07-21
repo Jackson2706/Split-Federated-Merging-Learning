@@ -268,7 +268,7 @@ class HierarchicalFL:
                 size_edge_MB
             )
             self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * (
-                size_edge_MB 
+                size_edge_MB
             )
 
             # Send back aggregated models
@@ -276,8 +276,6 @@ class HierarchicalFL:
                 # Update edge server with aggregated edge model
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
-
-            
     def print_comm_report(self):
         print("\n=== Communication Report ===")
         for k, v in self.comm_tracker.items():
@@ -296,7 +294,13 @@ class HierarchicalFL:
             }
 
     def train_end_to_end(
-        self, train_dataset, valid_dataset, test_dataset, user_groups, config, epochs
+        self,
+        train_dataset,
+        valid_dataset,
+        test_dataset,
+        user_groups,
+        config,
+        epochs,
     ):
         self.initialize_optimizers()
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -356,9 +360,13 @@ class HierarchicalFL:
                         out = model(data)
                         feats.append(out.cpu())
                         labels.append(target.cpu())
+                        del data, target, out
+                        torch.cuda.empty_cache()
 
                 fx, fy = torch.cat(feats), torch.cat(labels)
                 client_outputs[cid] = (fx, fy)
+                del fx, fy
+                torch.cuda.empty_cache()
                 cpu_after = psutil.cpu_percent(interval=None)
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
                     1024**2
@@ -419,10 +427,22 @@ class HierarchicalFL:
                 ).to(device)
                 if input_shape_edge is None:
                     input_shape_edge = X.shape
-                out = model(X)
-                size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
-                self.comm_tracker["client_upload_smashed_MB"] += size_MB
+                feats, labels = [], []
+                for x, y in zip(
+                    torch.split(X, local_bs), torch.split(Y, local_bs)
+                ):
+                    x, y = x.to(device), y.to(device)
+                    out = model(x)
+                    feats.append(out.cpu())
+                    del x, out
+                    labels.append(y.cpu())
+                    del y
+                out = torch.cat(feats, dim=0)
+                Y = torch.cat(labels, dim=0)
                 edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
+                size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
+                torch.cuda.empty_cache()
+                self.comm_tracker["client_upload_smashed_MB"] += size_MB
                 model.cpu()
 
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
@@ -489,13 +509,17 @@ class HierarchicalFL:
             # === Track gradient sent from cloud → edge ===
             for eid in edge_outputs:
                 edge_model = self.structure[0][eid].to(device)
-                grad_to_edge_MB = estimate_gradient_size_MB(edge_model, input_shape_edge)
+                grad_to_edge_MB = estimate_gradient_size_MB(
+                    edge_model, input_shape_edge
+                )
                 self.comm_tracker["cloud_download_grad_MB"] += grad_to_edge_MB
 
             # === Track gradient sent from edge → client ===
             for cid in idxs_users:
                 client_model = self.structure[-1][cid].to(device)
-                grad_to_client_MB = estimate_gradient_size_MB(client_model, input_shape_client)
+                grad_to_client_MB = estimate_gradient_size_MB(
+                    client_model, input_shape_client
+                )
                 self.comm_tracker["edge_download_grad_MB"] += grad_to_client_MB
             cloud_model.cpu()
             end_time = time.time()
@@ -611,6 +635,22 @@ class HierarchicalFL:
             print(f"F1: {f1 * 100} %")
             for k, v in self.comm_tracker.items():
                 print(f"{k}: {v:.2f} MB")
+            del (
+                client_model,
+                edge_model,
+                cloud_model,
+                out_c,
+                out_e,
+                out_cl,
+                out,
+                pred,
+                data,
+                target,
+                all_preds,
+                all_targets,
+                loss,
+            )
+            torch.cuda.empty_cache()
         print("\n=== Communication Summary ===")
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")

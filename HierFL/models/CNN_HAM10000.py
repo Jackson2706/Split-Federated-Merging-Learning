@@ -9,7 +9,7 @@ class CNNHAM10000(nn.Module):
         super(CNNHAM10000, self).__init__()
 
         # Load pretrained ResNet-50
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
 
         # Remove the original classification head (fc layer)
         self.feature_extractor = nn.Sequential(

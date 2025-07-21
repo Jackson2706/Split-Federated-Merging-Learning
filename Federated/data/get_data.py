@@ -9,8 +9,7 @@ import os
 import torch
 from torchvision import datasets, transforms
 
-from .sampling import (cifar_iid, cifar_noniid, ham10000_iid, mnist_iid,
-                       mnist_noniid, mnist_noniid_unequal)
+from .sampling import *
 
 
 def get_dataset(args):
@@ -37,7 +36,7 @@ def get_dataset(args):
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
             # Chose euqal splits for every user
-            user_groups = cifar_noniid(train_dataset, args.num_users)
+            user_groups = cifar_noniid(train_dataset, args["num_users"])
     elif args["dataset"] =='cifar100':
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
@@ -56,7 +55,7 @@ def get_dataset(args):
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
             # Chose euqal splits for every user
-            user_groups = cifar_noniid(train_dataset, args.num_users)
+            user_groups = cifar_noniid(train_dataset, args["num_users"])
 
     elif args["dataset"] == 'ham10000':
         import pandas as pd
@@ -82,7 +81,7 @@ def get_dataset(args):
             # Sample IID user data from HAM10000
             user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
-            user_groups = mnist_noniid(train_dataset, args["num_users"])
+            user_groups = ham10000_noniid(train_dataset, args["num_users"])
     print(f"Train len: {len(train_dataset)}")
     return train_dataset, test_dataset, user_groups
 

@@ -7,14 +7,18 @@ from torchvision import models
 class CifarClientModel(nn.Module):
     def __init__(self):
         super().__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet18(weights=None)
+        
+        # Modify for CIFAR input (32x32)
+        resnet.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        resnet.maxpool = nn.Identity()  # Remove pooling to preserve spatial size
+
         self.client_part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
             resnet.relu,
-            resnet.maxpool,
             resnet.layer1,
-            resnet.layer2,  # CUT here
+            resnet.layer2,  # <-- Split point
         )
 
     def forward(self, x):
@@ -24,7 +28,9 @@ class CifarClientModel(nn.Module):
 class CifarServerModel(nn.Module):
     def __init__(self, args):
         super().__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet18(weights=None)
+        
+        # Skip conv1 and layer1/2
         self.server_part = nn.Sequential(
             resnet.layer3,
             resnet.layer4,

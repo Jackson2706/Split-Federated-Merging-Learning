@@ -11,7 +11,7 @@ def set_requires_grad(module, freeze=True):
 class HAM10000ClientModelResNet50(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(HAM10000ClientModelResNet50, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
@@ -28,7 +28,7 @@ class HAM10000ClientModelResNet50(nn.Module):
 class HAM10000EdgeModelResNet50(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(HAM10000EdgeModelResNet50, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.part = nn.Sequential(
             resnet.layer2,
             resnet.layer3,
@@ -42,7 +42,7 @@ class HAM10000EdgeModelResNet50(nn.Module):
 class HAM10000CloudModelResNet50(nn.Module):
     def __init__(self, args, freeze_backbone=False):
         super(HAM10000CloudModelResNet50, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
 
         self.feature_part = nn.Sequential(resnet.layer4, resnet.avgpool)
         self.classifier = nn.Sequential(

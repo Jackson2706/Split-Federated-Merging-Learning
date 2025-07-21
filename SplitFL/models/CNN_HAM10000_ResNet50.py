@@ -7,7 +7,7 @@ from torchvision import models
 class HAM10000ClientModelResNet50(nn.Module):
     def __init__(self):
         super().__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.client_part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
@@ -24,7 +24,7 @@ class HAM10000ClientModelResNet50(nn.Module):
 class HAM10000ServerModelResNet50(nn.Module):
     def __init__(self, args):
         super().__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.server_part = nn.Sequential(
             resnet.layer3,
             resnet.layer4,

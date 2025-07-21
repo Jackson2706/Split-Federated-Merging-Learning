@@ -1,10 +1,10 @@
 from .Alexnet_Cifar import AlexNetCIFAR10
 from .CNN_HAM10000 import CNNHAM10000
-from .CNNCifar import CNNCifar
+from .CNNCifar import ResNet18_CIFAR100
 from .VGG_HAM10000 import VGGHAM10000
 model_dataset_map = {
     "resnet50": {
-        "cifar100": CNNCifar,
+        "cifar100": ResNet18_CIFAR100,
         'ham10000': CNNHAM10000
     },
     "alexnet": {

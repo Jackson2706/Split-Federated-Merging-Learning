@@ -362,8 +362,12 @@ class HierarchicalFL:
                 )
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.empty_cache()
-                local_data = DatasetSplit(train_dataset, user_groups[cid])
-                # print(f"datalen: {len(local_data)}")
+                # print(f"Training client {cid}, {user_groups[cid]} at epoch {epoch}")
+                if self.args["iid"]:
+                    local_data = DatasetSplit(train_dataset, user_groups[cid])
+                else:
+                    local_data = user_groups[cid]
+                # print(f"Training client {cid}, {len(local_data)} samples at epoch {epoch}")
                 loader = DataLoader(
                     local_data, batch_size=local_bs, shuffle=True
                 )
@@ -378,15 +382,18 @@ class HierarchicalFL:
                             input_shape_client = img1.shape
                         img1, img2 = img1.to(device), img2.to(device)
                         out1 = model(img1)
-                        out2 = model(img2)
+                        feats1.append(out1.cpu())
+                        del out1
 
-                        feats1.append(out1)
-                        feats2.append(out2)
-                        labels1.append(label1)
-                        labels2.append(label2)
-                
+                        out2 = model(img2)
+                        feats2.append(out2.cpu())
+                        del out2
+                        labels1.append(label1.cpu())
+                        labels2.append(label2.cpu())
+                        del img1, img2, label1, label2
                 fx1, fx2, fy1, fy2 = torch.cat(feats1), torch.cat(feats2), torch.cat(labels1), torch.cat(labels2)
                 client_outputs[cid] = (fx1, fx2, fy1, fy2)
+                del fx1, fx2, fy1, fy2
                 cpu_after = psutil.cpu_percent(interval=None)
                 mem_after = psutil.Process(os.getpid()).memory_info().rss / (
                     1024**2

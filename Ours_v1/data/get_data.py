@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch import nn
 from torch.utils.data import random_split
 from torchvision import datasets, transforms
-from .utils import CIFAR10PairDataset, CIFAR100PairDataset
+from .utils import CIFAR10PairDataset, CIFAR100PairDataset, SkinCancerPairDataset, SkinCancerDataset
 from .sampling import *
 
 
@@ -73,7 +73,7 @@ def get_dataset(args):
         print(len(train_dataset)/len(valid_dataset))
         valid_transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
         ])
 
         test_dataset = datasets.CIFAR100(data_dir, train=False, download=True,
@@ -104,23 +104,14 @@ def get_dataset(args):
         ])
 
         train_df, val_df = train_test_split(metadata, test_size=0.2, stratify=metadata['dx'], random_state=42)
-        train_dataset = SkinCancerDataset(train_df, image_dirs, transform=apply_transform)
-        train_len = int(0.9 * len(train_dataset))
-        valid_len = len(train_dataset) - train_len
-        
-        train_dataset, valid_dataset = random_split(train_dataset, [train_len, valid_len])
+        train_dataset = SkinCancerPairDataset(train_df, image_dirs, transform=apply_transform)
         test_dataset = SkinCancerDataset(val_df, image_dirs, transform=apply_transform)
+        valid_dataset = SkinCancerDataset(val_df, image_dirs, transform=apply_transform)
         if args["iid"]:
             # Sample IID user data from HAM10000
             user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
-            # Sample Non-IID user data from HAM10000
-            # if args["unequal"]:
-            #     # Chose uneuqal splits for every user
-            #     user_groups = mnist_noniid_unequal(train_dataset, args["num_users"])
-            # else:
-                # Chose euqal splits for every user
-                user_groups = ham10000_noniid(train_dataset, args["num_users"])
+            user_groups = ham10000_noniid(train_dataset, args["num_users"])
     return train_dataset, valid_dataset, test_dataset, user_groups
 
 

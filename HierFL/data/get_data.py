@@ -56,7 +56,7 @@ def get_dataset(args):
             user_groups = cifar_iid(train_dataset, args["num_users"])
         else:
             # Chose euqal splits for every user
-            user_groups = cifar_noniid(train_dataset, args.num_users)
+            user_groups = cifar_noniid(train_dataset, args["num_users"])
 
     elif args["dataset"] == 'ham10000':
         import pandas as pd

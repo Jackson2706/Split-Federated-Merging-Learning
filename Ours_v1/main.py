@@ -10,6 +10,25 @@ from models import get_model
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 import os
+
+import numpy as np
+from collections import Counter
+import torch
+
+def get_labels_from_pair_subset(subset):
+    labels = []
+    for (img1, img2), (label1, label2) in subset:
+        labels.append(label1.item())
+        labels.append(label2.item())
+    return labels
+
+def check_noniid_pair_dataset(user_groups):
+    print("=== Label Distribution Per Client (from Pairs) ===")
+    for cid, subset in user_groups.items():
+        labels = get_labels_from_pair_subset(subset)
+        counter = Counter(labels)
+        sorted_counts = dict(sorted(counter.items()))
+        print(f"Client {cid:2d}: {sorted_counts}")
 def main():
     start_time = time.time()
     parser = argparse.ArgumentParser(description='Run with config file')
@@ -33,6 +52,8 @@ def main():
     train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(
         config
     )
+    if config["iid"] == False:
+        check_noniid_pair_dataset(user_groups)
     client_model, egde_model, cloud_model = get_model(
         config['model'], config['dataset']
     )

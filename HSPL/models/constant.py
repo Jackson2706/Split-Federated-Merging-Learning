@@ -3,7 +3,7 @@ from .Alexnet_cifar import (
     AlexNetCloud_Ours,
     AlexNetEdge_Ours,
 )
-from .CNN_Cifar_ResNet50 import ClientModel, CloudModel, EdgeModel
+from .CNN_Cifar import ClientModel, CloudModel, EdgeModel
 from .CNN_ham10000_ResNet50 import (
     HAM10000ClientModelResNet50,
     HAM10000CloudModelResNet50,

@@ -11,7 +11,7 @@ def set_requires_grad(module, freeze=True):
 class ClientModel(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(ClientModel, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
@@ -28,7 +28,7 @@ class ClientModel(nn.Module):
 class EdgeModel(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(EdgeModel, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
         self.part = nn.Sequential(
             resnet.layer2,
             resnet.layer3,
@@ -42,7 +42,7 @@ class EdgeModel(nn.Module):
 class CloudModel(nn.Module):
     def __init__(self, args, freeze_backbone=False):
         super(CloudModel, self).__init__()
-        resnet = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+        resnet = models.resnet50(weights=models.ResNet18_Weights.DEFAULT)
 
         self.feature_part = nn.Sequential(resnet.layer4, resnet.avgpool)
         self.classifier = nn.Sequential(

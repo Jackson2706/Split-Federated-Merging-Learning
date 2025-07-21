@@ -1,4 +1,4 @@
-from .CNN_Cifar_ResNet50 import CifarClientModel, CifarServerModel, MergedModel
+from .CNN_Cifar import CifarClientModel, CifarServerModel, MergedModel
 from .CNN_HAM10000_ResNet50 import (
     HAM10000ClientModelResNet50,
     HAM10000MergedModelResNet50,
