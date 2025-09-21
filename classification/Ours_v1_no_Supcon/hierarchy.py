@@ -316,7 +316,7 @@ class HierarchicalFL:
         self.optimizers = {}
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {
-                nid: torch.optim.AdamW(
+                nid: torch.optim.Adam(
                     model.parameters(),
                     lr=self.args["lr"],
                     weight_decay=self.args["weight_decay"],
@@ -337,7 +337,6 @@ class HierarchicalFL:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         criterion = nn.CrossEntropyLoss().to(device)
-        criterion_edge = ContrastiveLoss(margin=self.args["margin"]).to(device)
         evalcriterion = nn.NLLLoss().to(device)
         num_users = config["num_users"]
         frac = config["frac"]
@@ -357,7 +356,6 @@ class HierarchicalFL:
         input_shape_edge = None
         input_shape_client = None
         for epoch in tqdm(range(1, epochs + 1)):
-            torch.cuda.empty_cache()
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
 
@@ -484,11 +482,6 @@ class HierarchicalFL:
                 ).to(device)
                 if input_shape_edge is None:
                     input_shape_edge = X1.shape
-                optimizer = torch.optim.AdamW(
-                    edge_model.parameters(),
-                    lr=self.args["lr"],
-                    weight_decay=self.args["weight_decay"],
-                )
                 feats1, feats2, labels1, labels2 = [], [], [], []
                 loss_list = []
                 for x1, x2, y1, y2 in zip(
@@ -499,21 +492,6 @@ class HierarchicalFL:
                 ):
                     out1 = edge_model(x1)
                     out2 = edge_model(x2)
-                    label = torch.where(y1 == y2, 0.0, 1.0).to(device)
-
-                    loss = criterion_edge(
-                        edge_model.forward_contrastive(out1),
-                        edge_model.forward_contrastive(out2),
-                        label,
-                    )
-                    optimizer.zero_grad()
-                    loss.backward()
-                    loss_list.append(loss.item())
-
-                    optimizer.step()
-                    for cid in cids:
-                        self.optimizers[-1][cid].step()
-                    # After loss.backward()
                     feats1.append(out1.cpu())
                     feats2.append(out2.cpu())
                     labels1.append(y1.cpu())
@@ -522,9 +500,6 @@ class HierarchicalFL:
                 out2 = torch.cat(feats2)
                 y1 = torch.cat(labels1)
                 y2 = torch.cat(labels2)
-                avg_loss_per_edge = sum(loss_list) / len(loss_list)
-                # print(f"Loss at edge {eid}: {avg_loss_per_edge}")
-                loss_all_edge.append(avg_loss_per_edge)
                 size_MB = (
                     (X1.numel() + X2.numel() + Y1.numel() + Y2.numel())
                     * 4
@@ -551,9 +526,6 @@ class HierarchicalFL:
                 edge_gpu_ram_usages.append(mem_gpu_used)
                 del out1, out2, Y1, Y2, out, Y
                 torch.cuda.empty_cache()
-            print(
-                f"Avg loss at edges: {sum(loss_all_edge) / len(loss_all_edge)}"
-            )
 
             del client_outputs
             avg_edge_ram = (
@@ -613,6 +585,14 @@ class HierarchicalFL:
                 loss.backward()
                 loss_list.append(loss.item())
                 cloud_optimizer.step()
+                for eid in edge_outputs:
+                    self.optimizers[0][eid].zero_grad()
+                    self.optimizers[0][eid].step()
+
+                for cid in idxs_users:
+                    self.optimizers[-1][cid].zero_grad()
+                    self.optimizers[-1][cid].step()
+
                 out_cl = nn.functional.log_softmax(pred, dim=1)
                 evalloss = evalcriterion(out_cl, y)
                 loss_list.append(evalloss.item())

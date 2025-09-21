@@ -89,7 +89,7 @@ def main():
 
     exclude_keys = ["best_weight"]  # ví dụ các key bạn muốn bỏ
     filtered_output = {k: v for k, v in output.items() if k not in exclude_keys}
-    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Figure/data/OursV1_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']} users_t1:{config['t1']}_t2:{config['t2']}_margin:{config['margin']}.json"
+    json_path = f"/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Figure/data/OursV1_no_Supcon_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']} users_t1:{config['t1']}_t2:{config['t2']}.json"
     os.makedirs(
         "/home/jackson/Desktop/Split-Federated-Merging-Learning/Figure",
         exist_ok=True,
