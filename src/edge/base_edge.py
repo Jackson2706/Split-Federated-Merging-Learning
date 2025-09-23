@@ -1,6 +1,8 @@
 import time
 from abc import ABC, abstractmethod
 
+import torch
+
 from src.utils.logger import Logger
 
 
@@ -9,10 +11,11 @@ class BaseEdge(ABC):
         self.edge_id = edge_id
         self.clients = clients
         self.config = config
-        # 
+        self.model = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @abstractmethod
-    def aggregate(self):
+    def aggregate(self, updates):
         pass
     
     @abstractmethod

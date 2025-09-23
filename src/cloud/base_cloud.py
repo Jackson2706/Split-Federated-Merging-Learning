@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
-from torch.utils.data import DataLoader
+
 import torch
+from torch.utils.data import DataLoader
+
+
 class BaseCloud(ABC):
     def __init__(self, global_model, clients, edges=None, config=None, test_dataset=None):
         self.global_model = global_model
@@ -8,7 +11,9 @@ class BaseCloud(ABC):
         self.edges = edges or 0
         self.config = config
         self.test_dataset=test_dataset
-
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.global_model.to(self.device)
+        
     @abstractmethod
     def run(self, rounds, **kwargs):
         """Run the FL simulation for a number of rounds"""

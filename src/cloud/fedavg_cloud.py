@@ -1,15 +1,16 @@
 import copy
 import time
+
 import torch
+
 from src.utils.logger import Logger
+
 from .base_cloud import BaseCloud
 
 
 class FedAvgCloud(BaseCloud):
     def __init__(self, global_model, clients, edges=None, config=None, test_dataset=None):
         super().__init__(global_model, clients, edges, config, test_dataset)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.global_model.to(self.device)
         self.logger = Logger(log_dir="logs/FedAvg", name="cloud")
 
     def run(self, rounds, test_dataset=None, **kwargs):
@@ -21,11 +22,11 @@ class FedAvgCloud(BaseCloud):
 
             updates = []
             for client in self.clients:
-                client_update = client.local_train(
+                client.local_train(
                     epochs=self.config["training"]["local_epochs"],
                     lr=self.config["training"]["lr"]
                 )
-                updates.append(client_update)
+                updates.append(client.send_update())
 
             new_weights = self.aggregate(updates)
             self.global_model.load_state_dict(new_weights)

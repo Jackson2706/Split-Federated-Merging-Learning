@@ -11,7 +11,6 @@ from .base_client import BaseClient
 class HierFedAvgClient(BaseClient):
     def __init__(self, client_id, data_loader, model, config):
         super().__init__(client_id, data_loader, model, config)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger = Logger(log_dir=f"logs/HierFedAvg", name=f"client_{client_id}")
 
     def local_train(self, epochs=1, lr=0.01):
@@ -45,8 +44,6 @@ class HierFedAvgClient(BaseClient):
             acc = 100.0 * correct / total
 
             self.logger.log(step=f"epoch_{e+1}", loss=avg_loss, acc=acc, step_start=epoch_start)
-
-        return copy.deepcopy(self.model.state_dict())
 
     def send_update(self):
         """Send local weights to cloud"""

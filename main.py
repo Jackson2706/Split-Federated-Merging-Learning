@@ -4,13 +4,17 @@ import yaml
 
 from src.baseline_factory import get_baseline
 from src.dataset.mnist_dataset import MNISTDataset
+from src.dataset.cifar100_dataset import CIFAR100Dataset
 from src.models.model_factory import get_model
+
 
 def main(config_path):
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
-
-    dataset = MNISTDataset(config)
+    if config["experiment"]["dataset"]== "MNIST":
+        dataset = MNISTDataset(config)
+    elif config["experiment"]["dataset"] == "CIFAR100":
+        dataset = CIFAR100Dataset(config)
     clients, test_dataset = dataset.prepare()
 
     # Global model

@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 
+import torch
+
 
 class BaseClient(ABC):
     def __init__(self, client_id, data_loader, model=None, config=None):
@@ -7,6 +9,7 @@ class BaseClient(ABC):
         self.data_loader = data_loader
         self.model = model
         self.config = config
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     @abstractmethod
     def local_train(self, epochs, lr):

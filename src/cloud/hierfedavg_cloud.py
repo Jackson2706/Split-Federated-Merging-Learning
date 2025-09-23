@@ -1,9 +1,13 @@
 import copy
 import time
+
 import torch
-from src.utils.logger import Logger
-from .base_cloud import BaseCloud
+
 from src.edge.hierfedavg_edge import HierFedAvgEdge
+from src.utils.logger import Logger
+
+from .base_cloud import BaseCloud
+
 
 def split_into_clusters(lst, n):
     k, m = divmod(len(lst), n)
@@ -15,10 +19,7 @@ def split_into_clusters(lst, n):
 class HierFedAvgCloud(BaseCloud):
     def __init__(self, global_model, clients, edges, config=None, test_dataset=None):
         super().__init__(global_model, clients, edges, config, test_dataset)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.global_model.to(self.device)
         self.logger = Logger(log_dir="logs/HierFedAvg", name="cloud")
-        print(self.edges)
         clusters = split_into_clusters(self.clients, self.edges)
         self.silos = [
             HierFedAvgEdge(edge_id=i, clients=silo, config=config)
@@ -36,13 +37,14 @@ class HierFedAvgCloud(BaseCloud):
             for silo in self.silos:
                 silo_updates = []
                 for client in silo.clients:
-                    client_update = client.local_train(
+                    client.local_train(
                         epochs=self.config["training"]["local_epochs"],
                         lr=self.config["training"]["lr"]
                     )
-                    silo_updates.append(client_update)
-                new_weights = silo.aggregate(silo_updates)
-                updates.append(new_weights)
+                    silo_updates.append(client.send_update())
+                silo.aggregate(silo_updates)
+                updates.append(silo.send_update())
+            new_weights = self.aggregate(updates)
             self.global_model.load_state_dict(new_weights)
             self.distribute()
 
