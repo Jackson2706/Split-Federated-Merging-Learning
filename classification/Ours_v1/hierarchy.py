@@ -459,9 +459,7 @@ class HierarchicalFL:
             for eid, cids in edge_to_clients.items():
                 for cid in cids:
                     self.optimizers[-1][cid].zero_grad()
-                # print(eid)
-                # print(cids)
-                # exit()
+
                 cpu_before = psutil.cpu_percent(interval=None)
                 mem_before = psutil.Process(os.getpid()).memory_info().rss / (
                     1024**2
