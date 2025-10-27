@@ -1,1 +1,0 @@
-from .ham10000 import SkinCancerDataset
