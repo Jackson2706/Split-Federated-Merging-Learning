@@ -362,6 +362,7 @@ class HierarchicalFL:
     # --- Các hàm tổng hợp (Aggregation) - Giai đoạn 4 ---
     def edge_server_aggregation(self):
         # ... (Mã gốc của bạn - không đổi) ...
+        print("Edge Aggregation Started")
         client_layer = self.structure[-1]
         edge_layer = self.structure[0]
         client_to_edge = self.connectivity[-1]
@@ -389,6 +390,7 @@ class HierarchicalFL:
 
     def cloud_aggregation(self):
         # ... (Mã gốc của bạn - không đổi) ...
+        print("Cloud Aggregation Started")
         edge_layer = self.structure[0]
         edge_to_cloud = self.connectivity[0]
         cloud_to_edges = {}
