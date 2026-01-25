@@ -109,6 +109,7 @@ def get_dataset(args):
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
             [
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(
                     (0.4850, 0.4560, 0.4060), (0.2290, 0.2240, 0.2250)
@@ -116,11 +117,11 @@ def get_dataset(args):
             ]
         )
         train_dataset = datasets.ImageNet(
-            data_dir, train=True, download=True, transform=apply_transform
+            root=data_dir, split='val', transform=apply_transform
         )
 
         test_dataset = datasets.ImageNet(
-            data_dir, train=False, download=True, transform=apply_transform
+            root=data_dir, split='val', transform=apply_transform
         )
 
         # sample training data amongst users
