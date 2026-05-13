@@ -43,11 +43,12 @@ REGISTRY = {
         "hsfl":       "classification/HSFL",
     },
     "segmentation": {
+        "h-sfp":      "segmentation/H-SFP",       # PRIMARY METHOD
         "federated":  "segmentation/Federated",
         "hierfl":     "segmentation/HierFL",
         "splitfl":    "segmentation/SplitFL",
+        "hetero-sfl": "segmentation/HeteroSFL",
         "hsfl":       "segmentation/HSFL",
-        # h-sfp for segmentation: planned (see serverless/ roadmap)
     },
 }
 

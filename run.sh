@@ -133,6 +133,14 @@ fi
 if [[ "$TASK_FILTER" == "all" || "$TASK_FILTER" == "segmentation" ]]; then
 
     echo "############################################################"
+    echo "# SEGMENTATION — H-SFP (Primary Method)"
+    echo "############################################################"
+    for cfg in configs/segmentation/h-sfp/*.yaml; do
+        [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
+        run_experiment segmentation h-sfp "$cfg"
+    done
+
+    echo "############################################################"
     echo "# SEGMENTATION — Federated Baselines"
     echo "############################################################"
     for cfg in configs/segmentation/federated/*.yaml; do
@@ -154,6 +162,14 @@ if [[ "$TASK_FILTER" == "all" || "$TASK_FILTER" == "segmentation" ]]; then
     for cfg in configs/segmentation/splitfl/*.yaml; do
         [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
         run_experiment segmentation splitfl "$cfg"
+    done
+
+    echo "############################################################"
+    echo "# SEGMENTATION — HeteroSFL"
+    echo "############################################################"
+    for cfg in configs/segmentation/hetero-sfl/*.yaml; do
+        [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
+        run_experiment segmentation hetero-sfl "$cfg"
     done
 
     echo "############################################################"
