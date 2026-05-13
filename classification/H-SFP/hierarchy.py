@@ -11,9 +11,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import kornia.augmentation as K
-import kornia.geometry.transform as K_T
 from sklearn.metrics import f1_score
-from lars_optimizer import LARS
 # =============================================================================
 # SECTION 1: CÁC HÀM TIỆN ÍCH (UTILS)
 # =============================================================================
@@ -105,19 +103,22 @@ def calculate_prototypes_and_distribution(fx: torch.Tensor, fy: torch.Tensor):
 
 # --- Các hàm SSL (Self-Supervised Learning) ---
 
-ssl_transforms_4d = nn.Sequential(
-    K_T.Resize((32, 32)),
-    K.RandomResizedCrop(size=(32,32), scale=(0.5, 1.0)),
-    K.RandomHorizontalFlip(p=0.5),
-    K.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8),
-    K.RandomGrayscale(p=0.2)
-)
+def build_client_ssl_transforms(input_size):
+    """Build client SSL augmentations adaptive to input image size."""
+    return nn.Sequential(
+        K.RandomResizedCrop(size=(input_size, input_size), scale=(0.5, 1.0)),
+        K.RandomHorizontalFlip(p=0.5),
+        K.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1, p=0.8),
+        K.RandomGrayscale(p=0.2)
+    )
 
-ssl_transforms_edge_4d = nn.Sequential(
-    K.RandomHorizontalFlip(p=0.5),
-    K.RandomResizedCrop(size=(8,8), scale=(0.8, 1.0)), # (!!!) CHỈNH LẠI size=(H, W)
-    K.RandomGaussianBlur(kernel_size=(3,3), sigma=(0.1, 2.0), p=0.5)
-)
+def build_edge_ssl_transforms(spatial_size):
+    """Build edge SSL augmentations adaptive to feature map spatial dims."""
+    return nn.Sequential(
+        K.RandomHorizontalFlip(p=0.5),
+        K.RandomResizedCrop(size=(spatial_size, spatial_size), scale=(0.8, 1.0)),
+        K.RandomGaussianBlur(kernel_size=(3, 3), sigma=(0.1, 2.0), p=0.5)
+    )
 
 def info_nce_loss_4d(z1, z2, temperature=0.5):
     """Tính InfoNCE loss cho đầu ra 4D (feature map)."""
@@ -272,8 +273,11 @@ class HierarchicalFL:
         self.total_layers = len(args["mid_server"]) + 1
         self.test_dataset = test_dataset
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.ssl_transforms = ssl_transforms_4d.to(self.device)
-        self.ssl_transforms_edge = ssl_transforms_edge_4d.to(self.device)
+        # Build client SSL transforms adaptive to input image size
+        input_size = args.get("input_size", 32)
+        self.ssl_transforms = build_client_ssl_transforms(input_size).to(self.device)
+        # Edge SSL transforms built lazily when we first see feature map dims
+        self.ssl_transforms_edge = None
         self.criterion = nn.CrossEntropyLoss().to(self.device)
         
         # --- (MỚI) Cập nhật Comm Tracker ---
@@ -462,31 +466,21 @@ class HierarchicalFL:
             print(f"{k}: {v:.2f} MB")
 
     def initialize_optimizers(self):
-        """Khởi tạo optimizers VÀ GradScalers cho tất cả model."""
+        """Khởi tạo optimizers VÀ GradScalers cho tất cả model.
+        Paper Section 4: 'All models use the Adam optimizer (lr = 1e-4)'
+        """
         self.optimizers = {}
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {}
             for nid, model in nodes.items():
-                if layer == 1:
-                    self.optimizers[layer][nid] = {
-                        'optimizer': LARS(
-                            model.parameters(),
-                            lr=0.3 * self.args["local_bs"]/256,
-                            weight_decay=self.args["weight_decay"],
-                        ),
-                        # Sửa lỗi 'device_type'
-                        'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))   
-                    }
-                else:
-                    self.optimizers[layer][nid] = {
-                        'optimizer': torch.optim.Adam(
-                            model.parameters(),
-                            lr=self.args["lr"],
-                            weight_decay=self.args["weight_decay"],
-                        ),
-                        # Sửa lỗi 'device_type'
-                        'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))   
-                    }
+                self.optimizers[layer][nid] = {
+                    'optimizer': torch.optim.Adam(
+                        model.parameters(),
+                        lr=self.args["lr"],
+                        weight_decay=self.args["weight_decay"],
+                    ),
+                    'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+                }
 
     # --- Các hàm con cho vòng lặp Huấn luyện (ĐÃ TỐI ƯU) ---
 
@@ -598,7 +592,12 @@ class HierarchicalFL:
             for features, labels in syn_loader_L1:
                 features = features.to(self.device)
                 labels = labels.to(self.device)
-                
+
+                # Build edge SSL transforms lazily from actual feature map spatial dims
+                if self.ssl_transforms_edge is None:
+                    spatial_size = features.shape[-1]  # H dimension of feature map
+                    self.ssl_transforms_edge = build_edge_ssl_transforms(spatial_size).to(self.device)
+
                 with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
                     view_1 = self.ssl_transforms_edge(features)
                     view_2 = self.ssl_transforms_edge(features)
@@ -738,8 +737,8 @@ class HierarchicalFL:
         cloud_model.to(self.device).eval()
         
         loader = DataLoader(
-            valid_dataset, 
-            batch_size=1, 
+            valid_dataset,
+            batch_size=64,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True
@@ -831,6 +830,7 @@ class HierarchicalFL:
         # Khởi tạo lưu trữ metrics
         validation_f1_list, cloud_loss_list = [], []
         best_f1 = 0
+        best_pipeline_model = None
         start_epoch = 1
 
         # --- TỐI ƯU DATALOADER ---
@@ -922,6 +922,7 @@ class HierarchicalFL:
                 
                 if model_snapshot is not None:
                     best_f1 = current_best_f1
+                    best_pipeline_model = model_snapshot
                     # LƯU CHECKPOINT MODEL TỐT NHẤT
                     torch.save({
                         'epoch': epoch,
@@ -950,5 +951,6 @@ class HierarchicalFL:
             "validation_f1": validation_f1_list,
             "cloud_loss": cloud_loss_list,
             "best_f1": best_f1,
+            "best_weight": best_pipeline_model,
             "comm_report": self.comm_tracker
         }

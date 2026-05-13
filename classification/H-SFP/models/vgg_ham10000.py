@@ -27,22 +27,25 @@ class VGGEedge_Ours(nn.Module):
         return self.edge_part(x)
 
 class VGGCloud_Ours(nn.Module):
+    """
+    Cloud head for VGG split architecture.
+
+    Receives 2D flattened features (256-dim) from the edge's prototype
+    extraction phase (AdaptiveAvgPool2d + flatten) and classifies them.
+    """
+
     def __init__(self, args):
         super().__init__()
-        self.cloud_part = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 14x14
-            nn.Conv2d(512, 512, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1), nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, 2),  # 7x7
-            nn.Flatten(),
-            nn.Linear(512 * 7 * 7, 4096), nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, 4096), nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(4096, args["num_classes"])  # HAM10000 has 7 classes
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(256, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(1024, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, args["num_classes"]),
         )
 
     def forward(self, x):
-        return self.cloud_part(x)
+        x = x.view(x.size(0), -1)
+        return self.classifier(x)

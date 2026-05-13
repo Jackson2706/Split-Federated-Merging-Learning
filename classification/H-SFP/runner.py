@@ -50,28 +50,37 @@ def run(cfg_path: str):
         epochs=config["epochs"],
     )
 
-    filtered_output = {k: v for k, v in output.items() if k != "best_weight"}
+    # Save metrics (exclude non-serializable model)
+    filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
     filename = (
         f"HSFP_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
         f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
     )
-    os.makedirs(os.path.join("Figure", "data"), exist_ok=True)
-    with open(os.path.join("Figure", "data", filename), "w") as f:
+    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, filename), "w") as f:
         json.dump(filtered_output, f, indent=4)
 
-    best_model = output["best_weight"].to(device)
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
+    # Test best model
+    best_model = output.get("best_weight")
+    if best_model is not None:
+        best_model = best_model.to(device).eval()
+        test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, drop_last=False)
 
-    all_preds, all_targets = [], []
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            pred = best_model(data).argmax(dim=1)
-            all_preds.extend(pred.cpu().numpy())
-            all_targets.extend(target.cpu().numpy())
+        all_preds, all_targets = [], []
+        with torch.no_grad():
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                pred = best_model(data).argmax(dim=1)
+                all_preds.extend(pred.cpu().numpy())
+                all_targets.extend(target.cpu().numpy())
 
-    f1 = f1_score(all_targets, all_preds, average="macro")
-    print(f"\nResults after {config['epochs']} global rounds:")
-    print("|---- Avg Train F1 Score: {:.2f}%".format(100 * output["train_accuracy"][-1]))
-    print("|---- Test F1 Score: {:.2f}%".format(100 * f1))
+        f1 = f1_score(all_targets, all_preds, average="macro")
+        print(f"\nResults after {config['epochs']} global rounds:")
+        print("|---- Best Validation F1: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Test F1 Score: {:.2f}%".format(100 * f1))
+    else:
+        print("\nNo best model was saved during training.")
+        print("|---- Best Validation F1: {:.2f}%".format(100 * output["best_f1"]))
+
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))
