@@ -15,6 +15,11 @@ from server import get_strategy
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 def get_weight_size_mb(weights):
     return sum(torch.numel(v) for v in weights.values()) * 4 / (1024**2)
@@ -102,6 +107,18 @@ def run(cfg_path: str):
         test_acc, _ = test_inference(args=config, model=global_model, test_dataset=test_dataset)
         train_accuracy.append(test_acc)
 
+        if wandb is not None and wandb.run is not None:
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": training_loss[-1],
+                "f1": train_accuracy[-1],
+                "avg_client_time_s": avg_time,
+                "avg_client_cpu_pct": avg_cpu,
+                "avg_client_ram_MB": avg_ram,
+                "avg_client_gpu_ram_MB": avg_gpu_ram,
+                **{k: v for k, v in comm_cost_dict.items()},
+            })
+
         if (epoch + 1) % print_every == 0:
             print(f"Avg Training Stats after {epoch+1} rounds:")
             print(f"  Loss: {np.mean(np.array(training_loss)):.4f}  F1: {100*train_accuracy[-1]:.2f}%")
@@ -110,10 +127,15 @@ def run(cfg_path: str):
             print(f"  {k}: {v:.2f} MB")
 
     test_acc, _ = test_inference(args=config, model=global_model, test_dataset=test_dataset)
+    total_time = time.time() - start_time
     print(f"\nResults after {config['epochs']} global rounds:")
     print("|---- Avg Train F1: {:.2f}%".format(100 * train_accuracy[-1]))
     print("|---- Test F1: {:.2f}%".format(100 * test_acc))
-    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.4f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_f1"] = test_acc
+        wandb.summary["total_time_s"] = total_time
 
     out = {
         "train_loss": training_loss, "train_accuracy": train_accuracy,

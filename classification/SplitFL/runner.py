@@ -18,6 +18,11 @@ from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
@@ -149,6 +154,18 @@ def run(cfg_path: str):
             best_model_weights = copy.deepcopy(merge_model.state_dict())
             print(f"New Best F1: {best_f1:.4f} at Epoch {epoch+1}")
 
+        if wandb is not None and wandb.run is not None:
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": training_loss[-1],
+                "f1": eval_f1,
+                "best_f1": best_f1,
+                "avg_cpu_pct": round_cpu_usages[-1],
+                "avg_ram_pct": round_ram_usages[-1],
+                "avg_gpu_ram_MB": round_gpu_usages[-1],
+                **{k: v for k, v in comm_cost_dict.items()},
+            })
+
         if (epoch + 1) % config["print_every"] == 0:
             print(f"Epoch {epoch+1}: Loss={training_loss[-1]:.4f}  F1={eval_f1:.4f}")
         for k, v in comm_cost_dict.items():
@@ -166,8 +183,14 @@ def run(cfg_path: str):
             test_labels.extend(label.cpu().numpy())
 
     test_f1 = f1_score(test_labels, test_preds, average="macro")
+    total_time = time.time() - start_time
     print(f"\nFinal Test F1: {test_f1*100:.2f}%")
-    print("Total Run Time: {:.2f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.2f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_f1"] = test_f1
+        wandb.summary["best_f1"] = best_f1
+        wandb.summary["total_time_s"] = total_time
 
     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
     os.makedirs(out_dir, exist_ok=True)

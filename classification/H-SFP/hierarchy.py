@@ -12,6 +12,11 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import kornia.augmentation as K
 from sklearn.metrics import f1_score
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
 # =============================================================================
 # SECTION 1: CÁC HÀM TIỆN ÍCH (UTILS)
 # =============================================================================
@@ -932,7 +937,21 @@ class HierarchicalFL:
                     }, checkpoint_path)
                     print(f"*** Checkpoint saved: {checkpoint_path} (F1: {best_f1*100:.2f}%)")
 
-            print(f"Epoch {epoch} hoàn tất trong {time.time() - epoch_start_time:.2f}s")
+            epoch_time = time.time() - epoch_start_time
+            if wandb is not None and wandb.run is not None:
+                log_data = {
+                    "epoch": epoch,
+                    "cloud_loss": cloud_loss,
+                    "epoch_time_s": epoch_time,
+                    "client_to_edge_MB": self.comm_tracker["client_to_edge_data_MB"],
+                    "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_data_MB"],
+                }
+                if validation_f1_list:
+                    log_data["validation_f1"] = validation_f1_list[-1]
+                    log_data["best_f1"] = best_f1
+                wandb.log(log_data)
+
+            print(f"Epoch {epoch} hoàn tất trong {epoch_time:.2f}s")
 
         # --- KẾT THÚC: TEST CUỐI CÙNG ---
         print("\n" + "="*50)

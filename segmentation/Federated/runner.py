@@ -15,6 +15,11 @@ from server import get_strategy
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 def get_weight_size_mb(weights):
     return sum(torch.numel(v) for v in weights.values()) * 4 / (1024**2)
@@ -103,16 +108,35 @@ def run(cfg_path: str):
         test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
         train_accuracy.append(test_iou)
 
+        if wandb is not None and wandb.run is not None:
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": training_loss[-1],
+                "iou": test_iou,
+                "dice": test_dice,
+                "avg_client_time_s": avg_time,
+                "avg_client_cpu_pct": avg_cpu,
+                "avg_client_ram_MB": avg_ram,
+                "avg_client_gpu_ram_MB": avg_gpu_ram,
+                **{k: v for k, v in comm_cost_dict.items()},
+            })
+
         if (epoch + 1) % print_every == 0:
             print(f"Avg Stats after {epoch+1} rounds: Loss={np.mean(np.array(training_loss)):.4f}  IoU={100*train_accuracy[-1]:.2f}%")
         for k, v in comm_cost_dict.items():
             print(f"  {k}: {v:.2f} MB")
 
     test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
+    total_time = time.time() - start_time
     print(f"\nResults after {config['epochs']} global rounds:")
     print("|---- Avg Train IoU: {:.2f}%".format(100 * train_accuracy[-1]))
     print("|---- Test IoU: {:.2f}%  Test Dice: {:.2f}%".format(100 * test_iou, 100 * test_dice))
-    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.4f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_iou"] = test_iou
+        wandb.summary["test_dice"] = test_dice
+        wandb.summary["total_time_s"] = total_time
 
     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
     os.makedirs(out_dir, exist_ok=True)

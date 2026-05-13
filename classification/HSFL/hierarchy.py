@@ -11,6 +11,11 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 class FullPipelineModel(nn.Module):
     def __init__(self, client_model, edge_model, cloud_model):
@@ -635,6 +640,18 @@ class HierarchicalFL:
             print(f"F1: {f1 * 100} %")
             for k, v in self.comm_tracker.items():
                 print(f"{k}: {v:.2f} MB")
+
+            if wandb is not None and wandb.run is not None:
+                wandb.log({
+                    "epoch": epoch,
+                    "f1": f1,
+                    "best_f1": best_f1,
+                    "train_loss": train_loss[-1] if train_loss else None,
+                    "avg_client_cpu_pct": client_cpu_list[-1] if client_cpu_list else None,
+                    "avg_client_ram_MB": client_ram_list[-1] if client_ram_list else None,
+                    "avg_client_gpu_ram_MB": client_gpu_ram_list[-1] if client_gpu_ram_list else None,
+                    **{k: v for k, v in self.comm_tracker.items()},
+                })
             del (
                 client_model,
                 edge_model,

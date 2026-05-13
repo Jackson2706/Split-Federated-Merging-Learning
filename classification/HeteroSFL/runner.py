@@ -16,6 +16,11 @@ from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
@@ -183,10 +188,22 @@ def run(cfg_path: str):
                     all_labels.extend(label.cpu().numpy())
 
             eval_f1 = f1_score(all_labels, all_preds, average="macro")
-            print(f"Epoch {epoch+1}: F1={eval_f1:.4f}  Acc={accuracy_score(all_labels, all_preds):.4f}")
+            eval_acc = accuracy_score(all_labels, all_preds)
+            print(f"Epoch {epoch+1}: F1={eval_f1:.4f}  Acc={eval_acc:.4f}")
             if eval_f1 > best_f1:
                 best_f1 = eval_f1
                 print(f" -> New Best F1: {best_f1:.4f}")
+
+            if wandb is not None and wandb.run is not None:
+                wandb.log({
+                    "epoch": epoch + 1,
+                    "f1": eval_f1,
+                    "accuracy": eval_acc,
+                    "best_f1": best_f1,
+                    "train_loss": np.mean(epoch_losses),
+                    **{k: v for k, v in comm_cost_dict.items()},
+                })
+
             client_model_wide.train()
             main_server_model.train()
 
@@ -203,6 +220,12 @@ def run(cfg_path: str):
             test_labels.extend(label.cpu().numpy())
 
     final_f1 = f1_score(test_labels, test_preds, average="macro")
+    total_time = time.time() - start_time
     print(f"\nFinal Test F1: {final_f1:.4f}  Acc: {accuracy_score(test_labels, test_preds):.4f}")
     print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
-    print("Total Run Time: {:.2f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.2f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_f1"] = final_f1
+        wandb.summary["best_f1"] = best_f1
+        wandb.summary["total_time_s"] = total_time

@@ -15,6 +15,11 @@ from models import get_model
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
 warnings.filterwarnings("ignore")
 
 
@@ -91,15 +96,35 @@ def run(cfg_path: str):
         test_iou, test_dice, test_loss = test_inference(config, global_model, test_dataset)
         train_accuracy.append(test_iou)
 
+        if wandb is not None and wandb.run is not None:
+            log_data = {
+                "epoch": epoch + 1,
+                "train_loss": train_loss[-1],
+                "iou": test_iou,
+                "dice": test_dice,
+                "avg_client_time_s": avg_time,
+                "avg_client_cpu_pct": avg_cpu,
+                "avg_client_ram_MB": avg_ram,
+                "avg_client_gpu_ram_MB": avg_gpu_ram,
+            }
+            log_data.update(hierarchical_fl.get_communication_status())
+            wandb.log(log_data)
+
         if (epoch + 1) % print_every == 0:
             print(f"Avg Stats after {epoch+1} rounds: IoU={test_iou:.2f}%  Dice={test_dice:.2f}%")
         for k, v in hierarchical_fl.get_communication_status().items():
             print(f"  {k}: {v:.2f} MB")
 
     test_iou, test_dice, test_loss = test_inference(config, global_model, test_dataset)
+    total_time = time.time() - start_time
     print(f"\nResults after {config['epochs']} global rounds:")
     print("|---- Test IoU: {:.2f}%  Dice: {:.2f}%".format(test_iou, test_dice))
-    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.4f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_iou"] = test_iou
+        wandb.summary["test_dice"] = test_dice
+        wandb.summary["total_time_s"] = total_time
 
     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
     os.makedirs(out_dir, exist_ok=True)
