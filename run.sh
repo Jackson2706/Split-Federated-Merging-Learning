@@ -47,27 +47,34 @@ run_experiment() {
     local task="$1"
     local method="$2"
     local cfg="$3"
+    local ablation="${4:-}"
 
     local name
     name="$(basename "$cfg" .yaml)"
     local dataset
     dataset="$(echo "$name" | cut -d'_' -f1)"
-    local log_file="${LOG_DIR}/${task}_${dataset}_${method}_${name}.log"
+    local ablation_suffix=""
+    local ablation_flag=""
+    if [[ -n "$ablation" ]]; then
+        ablation_suffix="_${ablation}"
+        ablation_flag="--ablation $ablation"
+    fi
+    local log_file="${LOG_DIR}/${task}_${dataset}_${method}_${name}${ablation_suffix}.log"
 
     TOTAL=$((TOTAL + 1))
     echo "========================================"
-    echo "[${TOTAL}] task=${task}  method=${method}"
+    echo "[${TOTAL}] task=${task}  method=${method}  ablation=${ablation:-none}"
     echo "     cfg=${cfg}"
     echo "     log=${log_file}"
     echo "========================================"
 
-    if python main.py --task "$task" --method "$method" --cfg "$cfg" $WANDB_ARGS 2>&1 | tee "$log_file"; then
+    if python main.py --task "$task" --method "$method" --cfg "$cfg" $ablation_flag $WANDB_ARGS 2>&1 | tee "$log_file"; then
         PASSED=$((PASSED + 1))
-        echo "[PASS] ${task}/${method}/${name}"
+        echo "[PASS] ${task}/${method}/${name}${ablation_suffix}"
     else
         FAILED=$((FAILED + 1))
-        FAILED_LIST+=("${task}/${method}/${name}")
-        echo "[FAIL] ${task}/${method}/${name}"
+        FAILED_LIST+=("${task}/${method}/${name}${ablation_suffix}")
+        echo "[FAIL] ${task}/${method}/${name}${ablation_suffix}"
     fi
     echo ""
 }
@@ -178,6 +185,35 @@ if [[ "$TASK_FILTER" == "all" || "$TASK_FILTER" == "segmentation" ]]; then
     for cfg in configs/segmentation/hsfl/*.yaml; do
         [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
         run_experiment segmentation hsfl "$cfg"
+    done
+
+fi
+
+# ============================================================================
+# E-HSFP Ablation Studies
+# ============================================================================
+if [[ "$TASK_FILTER" == "all" || "$TASK_FILTER" == "ablation" ]]; then
+
+    ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+
+    echo "############################################################"
+    echo "# E-HSFP ABLATION — Classification"
+    echo "############################################################"
+    for ablation in "${ABLATION_MODES[@]}"; do
+        for cfg in configs/classification/h-sfp/*.yaml; do
+            [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
+            run_experiment classification h-sfp "$cfg" "$ablation"
+        done
+    done
+
+    echo "############################################################"
+    echo "# E-HSFP ABLATION — Segmentation"
+    echo "############################################################"
+    for ablation in "${ABLATION_MODES[@]}"; do
+        for cfg in configs/segmentation/h-sfp/*.yaml; do
+            [[ "$(basename "$cfg")" == "default.yaml" ]] && continue
+            run_experiment segmentation h-sfp "$cfg" "$ablation"
+        done
     done
 
 fi

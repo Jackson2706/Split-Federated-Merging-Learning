@@ -18,6 +18,22 @@ try:
 except ImportError:
     wandb = None
 
+# E-HSFP extensions
+from ehsfp import (
+    get_ehsfp_config,
+    EpisodicPrototypeMemory,
+    mix_current_and_memory,
+    PrototypeReliabilityNetwork,
+    reliability_weighted_aggregate,
+    train_reliability_bootstrap,
+    prototype_replay_consistency_loss,
+    dropout_consistency_loss,
+    PrototypeDropout,
+    ServerlessMetricsTracker,
+    ResidualPrototypeGenerator,
+    EHSFPMetricsLogger,
+)
+
 
 # =============================================================================
 # SECTION 1: UTILS
@@ -258,6 +274,49 @@ class HierarchicalFL:
         self.optimizers = {}
         self.num_workers = 2 if os.name != "nt" else 0
 
+        # --- E-HSFP components ---
+        self.ecfg = get_ehsfp_config(args)
+        self.ehsfp_logger = EHSFPMetricsLogger()
+
+        if self.ecfg["use_episodic_memory"]:
+            self.client_memory = EpisodicPrototypeMemory(
+                max_size=self.ecfg["memory_size"], max_age=self.ecfg["max_prototype_age"],
+            )
+            self.edge_memory = EpisodicPrototypeMemory(
+                max_size=self.ecfg["memory_size"], max_age=self.ecfg["max_prototype_age"],
+            )
+        else:
+            self.client_memory = None
+            self.edge_memory = None
+
+        if self.ecfg["aggregation_mode"] == "learnable_reliability":
+            self.reliability_net = PrototypeReliabilityNetwork(
+                hidden_dim=self.ecfg["reliability_hidden_dim"],
+            ).to(self.device)
+            self.reliability_optimizer = torch.optim.Adam(
+                self.reliability_net.parameters(),
+                lr=self.ecfg["reliability_lr"],
+                weight_decay=self.ecfg["reliability_weight_decay"],
+            )
+        else:
+            self.reliability_net = None
+            self.reliability_optimizer = None
+
+        if self.ecfg["use_prototype_dropout"]:
+            self.proto_dropout = PrototypeDropout(
+                rate=self.ecfg["prototype_dropout_rate"],
+                mode=self.ecfg["dropout_mode"],
+            )
+        else:
+            self.proto_dropout = None
+
+        if self.ecfg["use_serverless_simulation"]:
+            self.serverless_tracker = ServerlessMetricsTracker(self.ecfg)
+        else:
+            self.serverless_tracker = None
+
+        self.residual_generator = None
+
     def _build_hierarchy(self):
         structure = {}
         connectivity = {}
@@ -468,10 +527,19 @@ class HierarchicalFL:
         optimizer, scaler = opt_dict["optimizer"], opt_dict["scaler"]
 
         edge_specific_client_outputs = {cid: client_outputs[cid] for cid in cids if cid in client_outputs}
-        syn_features_L1, syn_labels_L1 = _aggregate_prototypes_and_generate_data(
+
+        # E-HSFP: prototype dropout at client level
+        if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("client_prototype", "both"):
+            edge_specific_client_outputs = self.proto_dropout.apply_to_source_outputs(edge_specific_client_outputs)
+
+        # E-HSFP: reliability-weighted aggregation
+        syn_features_L1, syn_labels_L1 = reliability_weighted_aggregate(
             input_outputs=edge_specific_client_outputs,
             num_samples_per_class=syn_samples_per_class,
             device=self.device,
+            reliability_net=self.reliability_net,
+            memory=self.client_memory,
+            generator=self.residual_generator,
         )
 
         if syn_features_L1.shape[0] == 0:
@@ -504,6 +572,20 @@ class HierarchicalFL:
                     all_features = torch.cat([z1_flat, z2_flat], dim=0)
                     all_labels = torch.cat([labels, labels], dim=0)
                     loss = supervised_contrastive_loss(all_features, all_labels)
+
+                    # E-HSFP: PRC loss at edge level
+                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
+                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
+                        cur_p = {c: client_outputs[c][0] for c in cids if c in client_outputs and client_outputs[c] is not None}
+                        cur_d = {c: client_outputs[c][1] for c in cids if c in client_outputs and client_outputs[c] is not None}
+                        if cur_p and mem_p:
+                            def edge_repr_fn(x):
+                                return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
+                            prc = prototype_replay_consistency_loss(
+                                cur_p, cur_d, mem_p, mem_d,
+                                edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+                            )
+                            loss = loss + self.ecfg["lambda_prc"] * prc
 
                 optimizer.zero_grad()
                 scaler.scale(loss).backward()
@@ -538,10 +620,18 @@ class HierarchicalFL:
         opt_dict = self.optimizers[len(self.args["mid_server"])][cloud_id]
         optimizer, scaler = opt_dict["optimizer"], opt_dict["scaler"]
 
-        syn_features_L2, syn_labels_L2 = _aggregate_prototypes_and_generate_data(
+        # E-HSFP: prototype dropout at edge level
+        if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("edge_prototype", "both"):
+            edge_outputs = self.proto_dropout.apply_to_source_outputs(edge_outputs)
+
+        # E-HSFP: reliability-weighted aggregation
+        syn_features_L2, syn_labels_L2 = reliability_weighted_aggregate(
             input_outputs=edge_outputs,
             num_samples_per_class=syn_samples_per_class,
             device=self.device,
+            reliability_net=self.reliability_net,
+            memory=self.edge_memory,
+            generator=self.residual_generator,
         )
 
         if syn_features_L2.shape[0] == 0:
@@ -564,6 +654,18 @@ class HierarchicalFL:
                 with torch.amp.autocast(device_type="cuda", enabled=(self.device.type == "cuda")):
                     logits = model(features)
                     loss = self.criterion(logits, labels)
+
+                    # E-HSFP: PRC loss at cloud level
+                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
+                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
+                        cur_p = {eid: edge_outputs[eid][0] for eid in edge_outputs if edge_outputs[eid] is not None}
+                        cur_d = {eid: edge_outputs[eid][1] for eid in edge_outputs if edge_outputs[eid] is not None}
+                        if cur_p and mem_p:
+                            prc = prototype_replay_consistency_loss(
+                                cur_p, cur_d, mem_p, mem_d,
+                                model, self.ecfg["prc_num_samples"], self.device,
+                            )
+                            loss = loss + self.ecfg["lambda_prc"] * prc
 
                 optimizer.zero_grad()
                 scaler.scale(loss).backward()
@@ -696,6 +798,11 @@ class HierarchicalFL:
         for epoch in range(1, epochs + 1):
             print(f"\n{'='*20} EPOCH {epoch}/{epochs} {'='*20}")
             epoch_start_time = time.time()
+            self.ehsfp_logger.reset_epoch()
+
+            # E-HSFP: Begin serverless episode
+            if self.serverless_tracker is not None:
+                self.serverless_tracker.begin_episode(epoch)
 
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
@@ -705,6 +812,13 @@ class HierarchicalFL:
             print(f"-> Phase 1: Clients Processing ({len(idxs_users)} nodes)...")
             for cid in idxs_users:
                 self.client_cache.append(cid)
+
+                # E-HSFP: Simulate serverless invocation
+                if self.serverless_tracker is not None:
+                    inv = self.serverless_tracker.simulate_invocation("client", cid, epoch)
+                    if inv.timed_out:
+                        continue
+
                 local_data = DatasetSplit(train_dataset, user_groups[cid])
                 loader = DataLoader(local_data, shuffle=True, **dl_kwargs)
                 client_outputs[cid] = self._client_ssl_extraction_phase(
@@ -712,6 +826,30 @@ class HierarchicalFL:
                 )
                 cost = get_proto_dist_size_MB(client_outputs[cid])
                 self.comm_tracker["client_to_edge_data_MB"] += cost
+
+                # E-HSFP: Store client prototypes in memory
+                if self.client_memory is not None and client_outputs[cid] is not None:
+                    proto_dict, dist_dict = client_outputs[cid]
+                    self.client_memory.add_from_proto_dicts(
+                        proto_dict, dist_dict,
+                        source_id=f"client_{cid}", round_idx=epoch,
+                    )
+                    if self.serverless_tracker is not None:
+                        self.serverless_tracker.record_prototype_processing(len(proto_dict))
+
+            # E-HSFP: Mix client outputs with memory prototypes
+            if self.client_memory is not None and len(self.client_memory) > 0:
+                for cid in list(client_outputs.keys()):
+                    if client_outputs[cid] is not None:
+                        proto_dict, dist_dict = client_outputs[cid]
+                        mixed_p, mixed_d = mix_current_and_memory(
+                            proto_dict, dist_dict, self.client_memory,
+                            alpha=self.ecfg["memory_replay_ratio"],
+                            top_k=self.ecfg["memory_top_k"],
+                        )
+                        client_outputs[cid] = (mixed_p, mixed_d)
+                if self.serverless_tracker is not None:
+                    self.serverless_tracker.record_memory_replay(len(client_outputs))
 
             torch.cuda.empty_cache()
             gc.collect()
@@ -725,6 +863,13 @@ class HierarchicalFL:
 
             edge_outputs = {}
             for eid, cids in edge_to_clients.items():
+                # E-HSFP: Simulate serverless invocation for edge
+                if self.serverless_tracker is not None:
+                    inv = self.serverless_tracker.simulate_invocation("edge", eid, epoch)
+                    if inv.timed_out:
+                        edge_outputs[eid] = None
+                        continue
+
                 edge_outputs[eid] = self._edge_ssl_extraction_phase(
                     eid, cids, client_outputs,
                     ssl_epochs=config.get("ssl_epochs_edge", 10),
@@ -733,12 +878,37 @@ class HierarchicalFL:
                 cost = get_proto_dist_size_MB(edge_outputs[eid])
                 self.comm_tracker["edge_to_cloud_data_MB"] += cost
 
+                # E-HSFP: Store edge prototypes in memory
+                if self.edge_memory is not None and edge_outputs[eid] is not None:
+                    proto_dict, dist_dict = edge_outputs[eid]
+                    self.edge_memory.add_from_proto_dicts(
+                        proto_dict, dist_dict,
+                        source_id=f"edge_{eid}", round_idx=epoch,
+                    )
+
+            # E-HSFP: Mix edge outputs with memory
+            if self.edge_memory is not None and len(self.edge_memory) > 0:
+                for eid in list(edge_outputs.keys()):
+                    if edge_outputs[eid] is not None:
+                        proto_dict, dist_dict = edge_outputs[eid]
+                        mixed_p, mixed_d = mix_current_and_memory(
+                            proto_dict, dist_dict, self.edge_memory,
+                            alpha=self.ecfg["memory_replay_ratio"],
+                            top_k=self.ecfg["memory_top_k"],
+                        )
+                        edge_outputs[eid] = (mixed_p, mixed_d)
+
             del client_outputs
             torch.cuda.empty_cache()
             gc.collect()
 
             # --- PHASE 3: CLOUD PROCESSING ---
             print("-> Phase 3: Cloud Supervised Training...")
+
+            # E-HSFP: Simulate serverless invocation for cloud
+            if self.serverless_tracker is not None:
+                self.serverless_tracker.simulate_invocation("cloud", 0, epoch)
+
             cloud_loss = self._cloud_supervised_phase(
                 0, edge_outputs,
                 syn_epochs=config.get("syn_epochs_cloud", 10),
@@ -756,6 +926,18 @@ class HierarchicalFL:
                 train_dataset, user_groups, idxs_users,
                 decoder_epochs=config.get("decoder_epochs", 5),
             )
+
+            # --- E-HSFP: Age memories and train reliability ---
+            if self.client_memory is not None:
+                self.client_memory.age_all()
+            if self.edge_memory is not None:
+                self.edge_memory.age_all()
+            if self.reliability_net is not None and self.client_memory is not None:
+                rel_loss = train_reliability_bootstrap(
+                    self.reliability_net, self.reliability_optimizer,
+                    self.client_memory, self.device,
+                )
+                self.ehsfp_logger.log("ehsfp/reliability_train_loss", rel_loss)
 
             # --- PHASE 4: AGGREGATION & VALIDATION ---
             if epoch % t1 == 0:
@@ -781,21 +963,51 @@ class HierarchicalFL:
                     }, checkpoint_path)
                     print(f"*** Checkpoint saved: {checkpoint_path} (IoU: {best_iou*100:.2f}%)")
 
+            # E-HSFP: End serverless episode
+            if self.serverless_tracker is not None:
+                self.serverless_tracker.end_episode()
+
+            # --- E-HSFP: Log metrics ---
+            if self.client_memory is not None:
+                mem_records = self.client_memory.get_recent()
+                avg_age = sum(r.age for r in mem_records) / max(len(mem_records), 1)
+                avg_rel = sum(r.reliability for r in mem_records) / max(len(mem_records), 1)
+                self.ehsfp_logger.log_memory_stats(
+                    num_current=0, num_memory=len(self.client_memory),
+                    replay_ratio=self.ecfg["memory_replay_ratio"],
+                    avg_age=avg_age, avg_reliability=avg_rel,
+                )
+            if self.proto_dropout is not None:
+                stats = self.proto_dropout.stats
+                self.ehsfp_logger.log_dropout_stats(
+                    self.ecfg["prototype_dropout_rate"], stats["dropped_prototypes"],
+                )
+            self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
+            self.ehsfp_logger.log("ehsfp/decoder_loss", decoder_loss)
+            self.ehsfp_logger.log_communication(
+                self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
+                sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB"),
+            )
+
             epoch_time = time.time() - epoch_start_time
+            log_data = {
+                "epoch": epoch,
+                "cloud_loss": cloud_loss,
+                "decoder_loss": decoder_loss,
+                "epoch_time_s": epoch_time,
+                "client_to_edge_MB": self.comm_tracker["client_to_edge_data_MB"],
+                "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_data_MB"],
+            }
+            if validation_iou_list:
+                log_data["validation_iou"] = validation_iou_list[-1]
+                log_data["validation_dice"] = validation_dice_list[-1]
+                log_data["best_iou"] = best_iou
+            # Merge E-HSFP metrics
+            log_data.update(self.ehsfp_logger.get_current())
+            if self.serverless_tracker is not None:
+                log_data.update(self.serverless_tracker.get_summary())
 
             if wandb is not None and wandb.run is not None:
-                log_data = {
-                    "epoch": epoch,
-                    "cloud_loss": cloud_loss,
-                    "decoder_loss": decoder_loss,
-                    "epoch_time_s": epoch_time,
-                    "client_to_edge_MB": self.comm_tracker["client_to_edge_data_MB"],
-                    "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_data_MB"],
-                }
-                if validation_iou_list:
-                    log_data["validation_iou"] = validation_iou_list[-1]
-                    log_data["validation_dice"] = validation_dice_list[-1]
-                    log_data["best_iou"] = best_iou
                 wandb.log(log_data)
 
             print(f"Epoch {epoch} completed in {epoch_time:.2f}s")
@@ -804,11 +1016,15 @@ class HierarchicalFL:
         print("TRAINING FINISHED.")
         self.print_comm_report()
 
-        return {
+        output = {
             "validation_iou": validation_iou_list,
             "validation_dice": validation_dice_list,
             "cloud_loss": cloud_loss_list,
             "best_iou": best_iou,
             "best_weight": best_pipeline_model,
             "comm_report": self.comm_tracker,
+            "ehsfp_metrics": self.ehsfp_logger.finalize(),
         }
+        if self.serverless_tracker is not None:
+            output["serverless_metrics"] = self.serverless_tracker.get_summary()
+        return output

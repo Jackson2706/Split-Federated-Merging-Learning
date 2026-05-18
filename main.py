@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-H-SFP: Hierarchical Split-Federated Learning with Prototypes — ECCV 2026
+E-HSFP: Episodic Hierarchical Split-Federated Prototyping
+(extending H-SFP — ECCV 2026)
 Unified experiment runner.
 
 Usage:
     python main.py --task <task> --method <method> --cfg <config>
+    python main.py --task <task> --method h-sfp --cfg <config> --ablation full_e_hsfp
     python main.py --list
     python main.py --list-configs [--task <task>] [--method <method>]
 
@@ -12,18 +14,24 @@ Examples:
     python main.py --task classification --method h-sfp \\
         --cfg configs/classification/h-sfp/ham10000_our_vgg_5_10.yaml
 
-    python main.py --task classification --method federated \\
-        --cfg configs/classification/federated/cifar_fedavg_resnet50.yaml
+    python main.py --task classification --method h-sfp \\
+        --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \\
+        --ablation full_e_hsfp
 
-    python main.py --task segmentation --method hierfl \\
-        --cfg configs/segmentation/hierfl/isic_hierfl_resnet50.yaml
+    python main.py --task segmentation --method h-sfp \\
+        --cfg configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml \\
+        --ablation hsfp_memory_reliability_prc
 """
 
 import argparse
 import glob as _glob
 import importlib.util
 import os
+import random
 import sys
+
+import numpy as np
+import torch
 
 try:
     import wandb
@@ -139,7 +147,19 @@ def _init_wandb(task, method, cfg_path, wandb_project, wandb_entity):
     return True
 
 
-def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=None):
+def _set_seed(seed: int):
+    """Set random seed for reproducibility across all frameworks."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
+def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=None, ablation=None, seed=None):
     task_methods = REGISTRY.get(task)
     if task_methods is None:
         print(f"Error: unknown task '{task}'. Available: {list(REGISTRY)}")
@@ -157,6 +177,31 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         print(f"Tip: python main.py --list-configs --task {task} --method {method}")
         sys.exit(1)
 
+    # Inject ablation mode and/or seed into a temp config YAML
+    use_tmp_cfg = (ablation and method == "h-sfp") or (seed is not None)
+    if use_tmp_cfg:
+        import tempfile
+        import yaml
+        with open(cfg_path, "r") as f:
+            cfg_data = yaml.safe_load(f) or {}
+        if ablation and method == "h-sfp":
+            cfg_data["ablation_mode"] = ablation
+            print(f"[E-HSFP] Ablation mode: {ablation}")
+        if seed is not None:
+            cfg_data["seed"] = seed
+            print(f"[Runner] Seed: {seed}")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", prefix="exp_",
+            dir=os.path.dirname(cfg_path), delete=False,
+        )
+        yaml.dump(cfg_data, tmp, default_flow_style=False)
+        tmp.close()
+        cfg_path = tmp.name
+
+    # Set global seed before anything else
+    if seed is not None:
+        _set_seed(seed)
+
     wandb_active = False
     if use_wandb:
         wandb_active = _init_wandb(task, method, cfg_path, wandb_project, wandb_entity)
@@ -172,6 +217,12 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         _cleanup_runner(method_dir)
         if wandb_active and wandb.run is not None:
             wandb.finish()
+        # Clean up temp config
+        if use_tmp_cfg:
+            try:
+                os.unlink(cfg_path)
+            except OSError:
+                pass
 
 
 def main():
@@ -188,6 +239,16 @@ def main():
     parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
     parser.add_argument("--wandb-project", default="H-SFP", help="W&B project name (default: H-SFP)")
     parser.add_argument("--wandb-entity", default=None, help="W&B team/entity name")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
+    parser.add_argument(
+        "--ablation",
+        choices=[
+            "baseline_hsfp", "hsfp_memory", "hsfp_memory_dropout",
+            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+        ],
+        default=None,
+        help="E-HSFP ablation mode (only applies to h-sfp method)",
+    )
 
     args = parser.parse_args()
 
@@ -207,7 +268,9 @@ def main():
     run(args.task, args.method, args.cfg,
         use_wandb=args.wandb,
         wandb_project=args.wandb_project,
-        wandb_entity=args.wandb_entity)
+        wandb_entity=args.wandb_entity,
+        ablation=args.ablation,
+        seed=args.seed)
 
 
 if __name__ == "__main__":

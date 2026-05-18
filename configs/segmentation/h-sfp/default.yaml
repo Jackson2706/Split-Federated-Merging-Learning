@@ -20,3 +20,45 @@ ssl_epochs_edge: 10
 syn_epochs_cloud: 10
 syn_samples_per_class: 50
 decoder_epochs: 5
+
+# --- E-HSFP extensions (all disabled by default = baseline H-SFP) ---
+# Episodic Prototype Memory
+use_episodic_memory: false
+memory_size: 500
+memory_replay_ratio: 0.3
+memory_top_k: 5
+max_prototype_age: 20
+
+# Learnable Reliability-Aware Aggregation
+aggregation_mode: "average"           # "average" | "learnable_reliability"
+reliability_hidden_dim: 32
+reliability_lr: !!float 1e-3
+reliability_weight_decay: !!float 1e-4
+
+# Prototype Replay Consistency Loss
+use_prc_loss: false
+lambda_prc: 0.1
+prc_num_samples: 16
+
+# Serverless Prototype Dropout
+use_prototype_dropout: false
+prototype_dropout_rate: 0.2
+dropout_mode: "client_prototype"      # "client_prototype" | "edge_prototype" | "both"
+use_dropout_consistency: false
+lambda_dropout: 0.1
+
+# Serverless Episode Simulator
+use_serverless_simulation: false
+cold_start_probability: 0.15
+function_timeout_probability: 0.05
+max_episode_duration: 30.0
+latency_mean: 0.5
+latency_std: 0.2
+
+# Residual Prototype Generator
+use_residual_generator: false
+generator_hidden_dim: 64
+generator_scale: 0.1
+
+# Ablation mode (overrides individual flags when set)
+# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
