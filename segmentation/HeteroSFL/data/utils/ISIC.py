@@ -40,8 +40,8 @@ from torch.utils.data import Dataset
 class ISICSegmentationDataset(Dataset):
     def __init__(
         self,
-        image_data_folder_path="/mnt/Data/ISIC2018/ISIC2018_Task1-2_Training_Input",
-        mask_data_folder_path="/mnt/Data/ISIC2018/ISIC2018_Task1_Training_GroundTruth",
+        image_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1-2_Training_Input",
+        mask_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1_Training_GroundTruth",
         phase="train",
     ):
         self.image_data_folder_path = image_data_folder_path

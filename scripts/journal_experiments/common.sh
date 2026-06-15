@@ -113,7 +113,7 @@ run_one() {
     local seed="$5"
     shift 5
     local ablation="${1:-}"
-    [[ -n "$ablation" ]] && shift || true
+    shift  # always consume the ablation slot (may be empty)
     local extra_args=("$@")
 
     _TOTAL=$((_TOTAL + 1))

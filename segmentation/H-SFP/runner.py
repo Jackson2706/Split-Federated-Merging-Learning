@@ -3,7 +3,7 @@ import os
 import time
 
 import torch
-from config import ConfigLoader
+from config.config_loader import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
 from models import get_model, get_decoder
