@@ -46,15 +46,15 @@ class DatasetSplit(Dataset):
 
 def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     """
-    Ước lượng kích thước gradient truyền về (tức kích thước output cuối của model).
+    Estimate the size of the gradient sent back (i.e. the model's final output size).
 
     Args:
         model: nn.Module (client, edge, or cloud model)
-        input_shape: tuple, ví dụ (3, 32, 32)
-        device: 'cuda' hoặc 'cpu'
+        input_shape: tuple, e.g. (3, 32, 32)
+        device: 'cuda' or 'cpu'
 
     Returns:
-        size_MB: float - kích thước output cuối cùng theo MB
+        size_MB: float - final output size in MB
     """
     model = model.to(device).eval()
     dummy_input = torch.randn(*input_shape).to(device)
@@ -63,7 +63,7 @@ def estimate_gradient_size_MB(model, input_shape, device="cpu"):
         output = model(dummy_input)
 
     numel = output.numel()
-    element_size = output.element_size()  # thường là 4 bytes (float32)
+    element_size = output.element_size()  # usually 4 bytes (float32)
     size_MB = (numel * element_size) / (1024**2)
     return size_MB
 
@@ -116,23 +116,31 @@ class HierarchicalFL:
             if layer_idx == -1:
                 num_clients = self.args["num_users"]
                 num_edges = self.args["mid_server"][0]
-                clients_per_edge = num_clients // num_edges
-                all_clients = list(range(num_clients))
+                # camera-ready: honor a partitioner-provided client->edge mapping
+                # (two-level Dirichlet) when present; otherwise random assignment.
+                provided = self.args.get("_client_to_edge")
+                if provided is not None:
+                    for cid in range(num_clients):
+                        layer_dict[cid] = copy.deepcopy(self.client_model)
+                        conn_dict[cid] = int(provided[cid])
+                else:
+                    clients_per_edge = num_clients // num_edges
+                    all_clients = list(range(num_clients))
 
-                for edge_id in range(num_edges):
-                    assigned = (
-                        all_clients
-                        if edge_id == num_edges - 1
-                        else list(
-                            np.random.choice(
-                                all_clients, clients_per_edge, replace=False
+                    for edge_id in range(num_edges):
+                        assigned = (
+                            all_clients
+                            if edge_id == num_edges - 1
+                            else list(
+                                np.random.choice(
+                                    all_clients, clients_per_edge, replace=False
+                                )
                             )
                         )
-                    )
-                    for cid in assigned:
-                        layer_dict[cid] = copy.deepcopy(self.client_model)
-                        conn_dict[cid] = edge_id
-                    all_clients = list(set(all_clients) - set(assigned))
+                        for cid in assigned:
+                            layer_dict[cid] = copy.deepcopy(self.client_model)
+                            conn_dict[cid] = edge_id
+                        all_clients = list(set(all_clients) - set(assigned))
 
             elif layer_idx == len(self.args["mid_server"]):
                 layer_dict[0] = copy.deepcopy(self.cloud_model)

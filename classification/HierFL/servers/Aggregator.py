@@ -8,7 +8,7 @@ class Aggregator(ABC):
     @abstractmethod
     def aggregate(self, client_updates):
         """
-        client_updates: dữ liệu cập nhật từ các client,
-        có thể là list of state_dict hoặc list of tuples tuỳ thuật toán
+        client_updates: update data from the clients,
+        may be a list of state_dicts or list of tuples depending on the algorithm
         """
         pass

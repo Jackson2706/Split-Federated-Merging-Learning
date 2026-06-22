@@ -46,15 +46,15 @@ class DatasetSplit(Dataset):
 
 def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     """
-    Ước lượng kích thước gradient truyền về (tức kích thước output cuối của model).
+    Estimate the size of the gradient sent back (i.e. the model's final output size).
 
     Args:
         model: nn.Module (client, edge, or cloud model)
-        input_shape: tuple, ví dụ (3, 32, 32)
-        device: 'cuda' hoặc 'cpu'
+        input_shape: tuple, e.g. (3, 32, 32)
+        device: 'cuda' or 'cpu'
 
     Returns:
-        size_MB: float - kích thước output cuối cùng theo MB
+        size_MB: float - final output size in MB
     """
     model = model.to(device).eval()
     dummy_input = torch.randn(*input_shape).to(device)
@@ -63,7 +63,7 @@ def estimate_gradient_size_MB(model, input_shape, device="cpu"):
         output = model(dummy_input)
 
     numel = output.numel()
-    element_size = output.element_size()  # thường là 4 bytes (float32)
+    element_size = output.element_size()  # usually 4 bytes (float32)
     size_MB = (numel * element_size) / (1024**2)
     return size_MB
 

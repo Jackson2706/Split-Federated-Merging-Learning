@@ -9,7 +9,7 @@ class FedAvgAggregator(Aggregator):
     def aggregate(self, _1, _2, client_updates):
         """
         client_updates: list of state_dicts
-        Trả về trung bình weights
+        Return the averaged weights
         """
         w_avg = copy.deepcopy(client_updates[0])
         for key in w_avg.keys():

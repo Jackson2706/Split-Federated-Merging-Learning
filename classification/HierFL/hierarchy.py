@@ -87,25 +87,38 @@ class HierarchicalFL:
 
                 if layer_idx == 0:
                     # Edge servers connected to clients
-                    all_clients = list(range(self.args["num_users"]))
-                    clients_per_server = self.args["num_users"] // num_servers
+                    # camera-ready: honor a partitioner-provided client->edge
+                    # mapping (two-level Dirichlet) when present.
+                    provided = self.args.get("_client_to_edge")
+                    if provided is not None:
+                        edge_members = {s: set() for s in range(num_servers)}
+                        for cid, eid in provided.items():
+                            edge_members[int(eid)].add(int(cid))
+                        for server_id in range(num_servers):
+                            layer_dict[server_id] = [
+                                edge_members[server_id],
+                                self.global_weights,
+                            ]
+                    else:
+                        all_clients = list(range(self.args["num_users"]))
+                        clients_per_server = self.args["num_users"] // num_servers
 
-                    for server_id in range(num_servers):
-                        if server_id == num_servers - 1:
-                            assigned_clients = set(all_clients)
-                        else:
-                            assigned_clients = set(
-                                np.random.choice(
-                                    all_clients,
-                                    clients_per_server,
-                                    replace=False,
+                        for server_id in range(num_servers):
+                            if server_id == num_servers - 1:
+                                assigned_clients = set(all_clients)
+                            else:
+                                assigned_clients = set(
+                                    np.random.choice(
+                                        all_clients,
+                                        clients_per_server,
+                                        replace=False,
+                                    )
                                 )
-                            )
-                        layer_dict[server_id] = [
-                            assigned_clients,
-                            self.global_weights,
-                        ]
-                        all_clients = list(set(all_clients) - assigned_clients)
+                            layer_dict[server_id] = [
+                                assigned_clients,
+                                self.global_weights,
+                            ]
+                            all_clients = list(set(all_clients) - assigned_clients)
 
                 else:
                     # Middle servers connected to previous layer's servers

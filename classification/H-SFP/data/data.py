@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader, Dataset
 import torch
 
-# --- Định nghĩa Dataset ---
+# --- Dataset definition ---
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
@@ -12,5 +12,5 @@ class DatasetSplit(Dataset):
 
     def __getitem__(self, index):
         image, label = self.dataset[self.idxs[index]]
-        # Đảm bảo trả về tensor, một số dataset cũ trả về PIL Image
+        # Ensure a tensor is returned; some older datasets return a PIL Image
         return image.clone(), torch.tensor(label)

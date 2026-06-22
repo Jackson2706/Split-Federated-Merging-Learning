@@ -131,6 +131,11 @@ def get_dataset(args):
         else:
             # Chose euqal splits for every user
             user_groups = cifar_noniid(train_dataset, args["num_users"])
+    # --- camera-ready: optional Dirichlet / two-level Dirichlet partition ---
+    # Active only when args["partition"] is set; preserves default behavior otherwise.
+    if args.get("partition") in ("dirichlet", "two_level_dirichlet"):
+        from camera_ready.partition import partition_from_config
+        user_groups = partition_from_config(train_dataset, args)
     print(f"Train len: {len(train_dataset)}")
     return train_dataset, test_dataset, test_dataset, user_groups
 

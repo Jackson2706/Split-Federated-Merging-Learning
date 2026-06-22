@@ -36,7 +36,7 @@ class VGGHAM10000(nn.Module):
             nn.Dropout(),
             nn.Linear(4096, 4096), nn.ReLU(inplace=True),
             nn.Dropout(),
-            nn.Linear(4096, args["num_classes"])  # HAM10000 có 7 lớp
+            nn.Linear(4096, args["num_classes"])  # HAM10000 has 7 classes
         )
 
     def forward(self, x):

@@ -159,7 +159,35 @@ def _set_seed(seed: int):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=None, ablation=None, seed=None):
+def _coerce(value: str):
+    """Coerce a CLI string to bool/int/float when possible, else keep as str."""
+    low = value.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    if low in ("none", "null"):
+        return None
+    for caster in (int, float):
+        try:
+            return caster(value)
+        except ValueError:
+            pass
+    return value
+
+
+def _parse_overrides(pairs):
+    """Parse ['key=value', ...] into a dict with coerced values."""
+    out = {}
+    for p in pairs or []:
+        if "=" not in p:
+            print(f"Error: --set expects KEY=VALUE, got '{p}'")
+            sys.exit(1)
+        k, v = p.split("=", 1)
+        out[k.strip()] = _coerce(v.strip())
+    return out
+
+
+def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=None,
+        ablation=None, seed=None, overrides=None):
     task_methods = REGISTRY.get(task)
     if task_methods is None:
         print(f"Error: unknown task '{task}'. Available: {list(REGISTRY)}")
@@ -177,8 +205,9 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         print(f"Tip: python main.py --list-configs --task {task} --method {method}")
         sys.exit(1)
 
-    # Inject ablation mode and/or seed into a temp config YAML
-    use_tmp_cfg = (ablation and method == "h-sfp") or (seed is not None)
+    # Inject ablation mode, seed, and/or arbitrary key=value overrides into a temp config YAML
+    overrides = overrides or {}
+    use_tmp_cfg = (ablation and method == "h-sfp") or (seed is not None) or bool(overrides)
     if use_tmp_cfg:
         import tempfile
         import yaml
@@ -190,6 +219,9 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         if seed is not None:
             cfg_data["seed"] = seed
             print(f"[Runner] Seed: {seed}")
+        if overrides:
+            cfg_data.update(overrides)
+            print(f"[Runner] Overrides: {overrides}")
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".yaml", prefix="exp_",
             dir=os.path.dirname(cfg_path), delete=False,
@@ -241,6 +273,11 @@ def main():
     parser.add_argument("--wandb-entity", default=None, help="W&B team/entity name")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
     parser.add_argument(
+        "--set", dest="overrides", action="append", default=[], metavar="KEY=VALUE",
+        help="Override a config key (repeatable), e.g. --set partition=two_level_dirichlet "
+             "--set alpha_edge=0.1 --set iid=false",
+    )
+    parser.add_argument(
         "--ablation",
         choices=[
             "baseline_hsfp", "hsfp_memory", "hsfp_memory_dropout",
@@ -270,7 +307,8 @@ def main():
         wandb_project=args.wandb_project,
         wandb_entity=args.wandb_entity,
         ablation=args.ablation,
-        seed=args.seed)
+        seed=args.seed,
+        overrides=_parse_overrides(args.overrides))
 
 
 if __name__ == "__main__":

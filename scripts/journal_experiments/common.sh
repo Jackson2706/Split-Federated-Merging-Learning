@@ -86,7 +86,7 @@ check_env() {
     fi
 
     if ! python -c "import torch" &>/dev/null; then
-        log_error "PyTorch not installed. Run: pip install -r requirement.txt"
+        log_error "PyTorch not installed. Run: pip install -r requirements.txt"
         exit 1
     fi
 

@@ -33,41 +33,47 @@ from ehsfp import (
     ResidualPrototypeGenerator,
     EHSFPMetricsLogger,
 )
+
+# camera-ready: optional fine-grained phase profiling (gated by config["profile"])
+try:
+    from camera_ready.profiling import ProfileLog
+except Exception:  # pragma: no cover - keeps legacy contexts working
+    ProfileLog = None
 # =============================================================================
-# SECTION 1: CÁC HÀM TIỆN ÍCH (UTILS)
+# SECTION 1: UTILITY FUNCTIONS
 # =============================================================================
 
 @torch.no_grad()
 def generate_synthetic_data(prototypes, distributions_std, num_samples_per_class):
     """
-    Tối ưu bộ nhớ bằng cách tạo dữ liệu trực tiếp trên thiết bị của prototypes.
+    Memory-efficient: generate data directly on the prototypes' device.
     """
     num_classes = prototypes.shape[0]
     shape = prototypes.shape[1:]
     device = prototypes.device
     
-    # Sử dụng torch.addmm hoặc broadcasting thông minh để tránh tạo tensor epsilon quá lớn rồi mới cộng
+    # Use broadcasting to avoid materializing an overly large epsilon tensor
     # Shape: [C, N, ...]
     means = prototypes.unsqueeze(1) 
     stds = distributions_std.unsqueeze(1)
     
-    # Tạo trực tiếp trên GPU, sử dụng dtype phù hợp để tiết kiệm VRAM
+    # Create directly on GPU with a matching dtype to save VRAM
     epsilon = torch.randn(num_classes, num_samples_per_class, *shape, 
                           device=device, dtype=prototypes.dtype)
     
-    # In-place operation để tiết kiệm bộ nhớ
+    # In-place operation to save memory
     epsilon.mul_(stds).add_(means)
     
     return epsilon.flatten(0, 1) # [C*N, ...]
 
 def _aggregate_prototypes_and_generate_data(input_outputs, num_samples_per_class, device):
     """
-    Gom nhóm và tạo dữ liệu nhanh hơn bằng cách giảm bớt các vòng lặp Python.
+    Group and synthesize data faster by reducing Python loops.
     """
     if not input_outputs:
         return torch.empty(0, device=device), torch.empty(0, device=device)
 
-    # Gom nhóm theo label nhanh hơn bằng dictionary
+    # Group by label using a dictionary (faster)
     merged = {}
     for sid, outputs in input_outputs.items():
         if outputs is None: continue
@@ -89,7 +95,7 @@ def _aggregate_prototypes_and_generate_data(input_outputs, num_samples_per_class
         for l in final_labels
     ]).to(device)
 
-    # Giải phóng dictionary ngay lập tức
+    # Free the dictionary immediately
     del merged
     
     features = generate_synthetic_data(final_protos, final_dists, num_samples_per_class)
@@ -100,8 +106,8 @@ def _aggregate_prototypes_and_generate_data(input_outputs, num_samples_per_class
     
 def calculate_prototypes_and_distribution(fx: torch.Tensor, fy: torch.Tensor):
     """
-    Tính toán prototype và distribution.
-    (fx (features) trên GPU, fy (labels) trên CPU).
+    Compute per-class prototype and distribution.
+    (fx (features) on GPU, fy (labels) on CPU).
     """
     unique_classes = torch.unique(fy) 
     prototypes = {}
@@ -113,16 +119,16 @@ def calculate_prototypes_and_distribution(fx: torch.Tensor, fy: torch.Tensor):
         class_features = fx[mask]
         
         if class_features.shape[0] > 0:
-            # Sửa cảnh báo FutureWarning
+            # Avoid FutureWarning
             with torch.amp.autocast(device_type='cuda', enabled=(fx.device.type == 'cuda')):
                 prototypes[cls_label] = torch.mean(class_features, dim=0)
                 distributions_std[cls_label] = torch.std(class_features, dim=0, unbiased=False)
         else:
-            print(f"Cảnh báo: Lớp {cls_label} không có mẫu nào trong dữ liệu đã xử lý.")
+            print(f"Warning: class {cls_label} has no samples in the processed data.")
 
     return prototypes, distributions_std
 
-# --- Các hàm SSL (Self-Supervised Learning) ---
+# --- SSL (Self-Supervised Learning) helpers ---
 
 def build_client_ssl_transforms(input_size):
     """Build client SSL augmentations adaptive to input image size."""
@@ -142,29 +148,29 @@ def build_edge_ssl_transforms(spatial_size):
     )
 
 def info_nce_loss_4d(z1, z2, temperature=0.5):
-    """Tính InfoNCE loss cho đầu ra 4D (feature map)."""
+    """Compute InfoNCE loss for 4D output (feature map)."""
     z1 = torch.flatten(nn.AdaptiveAvgPool2d((1,1))(z1), start_dim=1)
     z2 = torch.flatten(nn.AdaptiveAvgPool2d((1,1))(z2), start_dim=1)
     
     z1 = nn.functional.normalize(z1, dim=1)
     z2 = nn.functional.normalize(z2, dim=1)
     
-    sim_matrix = torch.matmul(z1, z2.mT) / temperature # Sửa .T
+    sim_matrix = torch.matmul(z1, z2.mT) / temperature # batched transpose via .mT
     labels = torch.arange(z1.shape[0]).to(z1.device)
     loss_a = nn.CrossEntropyLoss()(sim_matrix, labels)
-    loss_b = nn.CrossEntropyLoss()(sim_matrix.mT, labels) # Sửa .T
+    loss_b = nn.CrossEntropyLoss()(sim_matrix.mT, labels) # batched transpose via .mT
     
     return (loss_a + loss_b) / 2
 
 def info_nce_loss_2d(z1, z2, temperature=0.5):
-    """Tính InfoNCE loss cho đầu vào 2D (vector feature)."""
+    """Compute InfoNCE loss for 2D input (feature vector)."""
     z1 = nn.functional.normalize(z1, dim=1)
     z2 = nn.functional.normalize(z2, dim=1)
     
-    sim_matrix = torch.matmul(z1, z2.mT) / temperature # Sửa .T
+    sim_matrix = torch.matmul(z1, z2.mT) / temperature # batched transpose via .mT
     labels = torch.arange(z1.shape[0]).to(z1.device)
     loss_a = nn.CrossEntropyLoss()(sim_matrix, labels)
-    loss_b = nn.CrossEntropyLoss()(sim_matrix.mT, labels) # Sửa .T
+    loss_b = nn.CrossEntropyLoss()(sim_matrix.mT, labels) # batched transpose via .mT
     
     return (loss_a + loss_b) / 2
 
@@ -198,7 +204,7 @@ def supervised_contrastive_loss(features, labels, temperature=0.5):
 
     return loss
 
-# --- Các hàm tiện ích của class (HFL Utils) ---
+# --- Class utility functions (HFL utils) ---
 
 def average_state_dicts(state_dicts):
     if not state_dicts: return {}
@@ -210,29 +216,29 @@ def average_state_dicts(state_dicts):
     return avg_dict
 
 def get_model_size_MB(state_dict):
-    """Tính kích thước model (MB) từ state_dict."""
+    """Compute model size (MB) from a state_dict."""
     return (sum(param.numel() for param in state_dict.values()) * 4 / 1e6)
 
 def get_proto_dist_size_MB(proto_dist_tuple: tuple) -> float:
-    """(MỚI) Tính toán kích thước (MB) của tuple (proto_dict, dist_dict)."""
+    """Compute the size (MB) of a (proto_dict, dist_dict) tuple."""
     if proto_dist_tuple is None:
         return 0.0
         
     proto_dict, dist_dict = proto_dist_tuple
     total_bytes = 0
     
-    # Tính kích thước của tất cả tensor trong dict prototypes
+    # Size of all tensors in the prototypes dict
     for tensor in proto_dict.values():
         total_bytes += tensor.numel() * tensor.element_size()
         
-    # Tính kích thước của tất cả tensor trong dict distributions
+    # Size of all tensors in the distributions dict
     for tensor in dist_dict.values():
         total_bytes += tensor.numel() * tensor.element_size()
         
     return total_bytes / (1024**2)
 
 # =============================================================================
-# SECTION 2: ĐỊNH NGHĨA DỮ LIỆU VÀ MÔ HÌNH
+# SECTION 2: DATA AND MODEL DEFINITIONS
 # =============================================================================
 
 class FullPipelineModel(nn.Module):
@@ -267,7 +273,7 @@ class DatasetSplit(Dataset):
 
 
 # =============================================================================
-# SECTION 3: LỚP HIERARCHICAL FL CHÍNH
+# SECTION 3: MAIN HIERARCHICAL FL CLASS
 # =============================================================================
 
 class HierarchicalFL:
@@ -301,17 +307,17 @@ class HierarchicalFL:
         self.ssl_transforms_edge = None
         self.criterion = nn.CrossEntropyLoss().to(self.device)
         
-        # --- (MỚI) Cập nhật Comm Tracker ---
+        # --- Communication tracker ---
         self.comm_tracker = {
-            "client_to_edge_data_MB": 0.0,  # (MỚI) Chi phí gửi (proto, dist)
-            "edge_to_cloud_data_MB": 0.0,   # (MỚI) Chi phí gửi (proto, dist)
-            "client_model_upload_MB": 0.0,  # (CŨ) Chi phí FedAvg model
+            "client_to_edge_data_MB": 0.0,  # cost of sending (proto, dist)
+            "edge_to_cloud_data_MB": 0.0,   # cost of sending (proto, dist)
+            "client_model_upload_MB": 0.0,  # FedAvg model cost
             "client_model_download_MB": 0.0,
             "edge_model_upload_MB": 0.0,
             "edge_model_download_MB": 0.0,
-            "total_comm_MB": 0.0           # (MỚI) Tổng chi phí
+            "total_comm_MB": 0.0           # total cost
         }
-        # --- KẾT THÚC SỬA ---
+        # --- end ---
         
         self.client_cache = deque(maxlen=20)
         self.optimizers = {}
@@ -321,7 +327,7 @@ class HierarchicalFL:
         self.input_shape_cloud = None
 
         self.num_workers = 2 if os.name != 'nt' else 0
-        print(f"Sử dụng {self.num_workers} workers cho DataLoader.")
+        print(f"Using {self.num_workers} workers for the DataLoader.")
 
         # --- E-HSFP components ---
         self.ecfg = get_ehsfp_config(args)
@@ -373,9 +379,22 @@ class HierarchicalFL:
         # Residual generator (disabled by default)
         self.residual_generator = None
 
+        # camera-ready: fine-grained phase profiler (None unless config["profile"])
+        self.profiler = ProfileLog() if (args.get("profile") and ProfileLog) else None
+
+
+    def _prof_now(self):
+        """CUDA-synchronized perf_counter timestamp (only meaningful when profiling)."""
+        if self.profiler is not None and torch.cuda.is_available():
+            torch.cuda.synchronize()
+        return time.perf_counter()
+
+    def _prof_add(self, name, t0, round_idx=None):
+        if self.profiler is not None:
+            self.profiler.add(name, self._prof_now() - t0, round_idx)
 
     def _build_hierarchy(self):
-        # ... (Mã gốc của bạn - không đổi) ...
+        # ... (original code - unchanged) ...
         structure = {}
         connectivity = {}
 
@@ -386,23 +405,31 @@ class HierarchicalFL:
             if layer_idx == -1:
                 num_clients = self.args["num_users"]
                 num_edges = self.args["mid_server"][0]
-                clients_per_edge = num_clients // num_edges
-                all_clients = list(range(num_clients))
+                # camera-ready: honor a partitioner-provided client->edge mapping
+                # (two-level Dirichlet) when present; otherwise random assignment.
+                provided = self.args.get("_client_to_edge")
+                if provided is not None:
+                    for cid in range(num_clients):
+                        layer_dict[cid] = copy.deepcopy(self.client_model)
+                        conn_dict[cid] = int(provided[cid])
+                else:
+                    clients_per_edge = num_clients // num_edges
+                    all_clients = list(range(num_clients))
 
-                for edge_id in range(num_edges):
-                    assigned = (
-                        all_clients
-                        if edge_id == num_edges - 1
-                        else list(
-                            np.random.choice(
-                                all_clients, clients_per_edge, replace=False
+                    for edge_id in range(num_edges):
+                        assigned = (
+                            all_clients
+                            if edge_id == num_edges - 1
+                            else list(
+                                np.random.choice(
+                                    all_clients, clients_per_edge, replace=False
+                                )
                             )
                         )
-                    )
-                    for cid in assigned:
-                        layer_dict[cid] = copy.deepcopy(self.client_model)
-                        conn_dict[cid] = edge_id
-                    all_clients = list(set(all_clients) - set(assigned))
+                        for cid in assigned:
+                            layer_dict[cid] = copy.deepcopy(self.client_model)
+                            conn_dict[cid] = edge_id
+                        all_clients = list(set(all_clients) - set(assigned))
 
             elif layer_idx == len(self.args["mid_server"]):
                 layer_dict[0] = copy.deepcopy(self.cloud_model)
@@ -445,7 +472,7 @@ class HierarchicalFL:
         return structure, connectivity
 
     def print_structure(self):
-        # ... (Mã gốc của bạn - không đổi) ...
+        # ... (original code - unchanged) ...
         for layer_idx in sorted(self.structure.keys()):
             layer_nodes = self.structure[layer_idx]
             layer_type = (
@@ -470,9 +497,9 @@ class HierarchicalFL:
                 )
                 logging.info(f"  Node ID {node_id}: {model_type}")
 
-    # --- Các hàm tổng hợp (Aggregation) - Giai đoạn 4 ---
+    # --- Aggregation functions - Phase 4 ---
     def edge_server_aggregation(self):
-        # ... (Mã gốc của bạn - không đổi) ...
+        # ... (original code - unchanged) ...
         print("Edge Aggregation Started")
         client_layer = self.structure[-1]
         edge_layer = self.structure[0]
@@ -500,7 +527,7 @@ class HierarchicalFL:
             self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
 
     def cloud_aggregation(self):
-        # ... (Mã gốc của bạn - không đổi) ...
+        # ... (original code - unchanged) ...
         print("Cloud Aggregation Started")
         edge_layer = self.structure[0]
         edge_to_cloud = self.connectivity[0]
@@ -525,7 +552,7 @@ class HierarchicalFL:
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
     def print_comm_report(self):
-        """(MỚI) In báo cáo chi phí giao tiếp và tính tổng."""
+        """Print the communication-cost report and total."""
         total = 0.0
         for k, v in self.comm_tracker.items():
             if k != "total_comm_MB":
@@ -537,7 +564,7 @@ class HierarchicalFL:
             print(f"{k}: {v:.2f} MB")
 
     def initialize_optimizers(self):
-        """Khởi tạo optimizers VÀ GradScalers cho tất cả model.
+        """Initialize optimizers AND GradScalers for all models.
         Paper Section 4: 'All models use the Adam optimizer (lr = 1e-4)'
         """
         self.optimizers = {}
@@ -553,7 +580,7 @@ class HierarchicalFL:
                     'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
                 }
 
-    # --- Các hàm con cho vòng lặp Huấn luyện (ĐÃ TỐI ƯU) ---
+    # --- Helper methods for the training loop (optimized) ---
 
     def _client_ssl_extraction_phase(self, cid, loader, ssl_epochs):
         model = self.structure[-1][cid].to(self.device)
@@ -584,43 +611,43 @@ class HierarchicalFL:
                 scaler.step(optimizer)
                 scaler.update()
 
-        # 2. Extraction - Không lưu toàn bộ features vào list nếu không cần
+        # 2. Extraction - avoid storing all features in a list when unnecessary
         model.eval()
         all_protos, all_stds = {}, {}
         
-        # Tối ưu: Tính toán tích lũy theo batch để tránh lưu tensor khổng lồ
-        # Tuy nhiên để đơn giản và chính xác với std, ta dùng class-wise grouping
+        # Optimization: accumulate per batch to avoid huge tensors
+        # For simplicity and correct std, use class-wise grouping
         feats_by_cls = {}
         with torch.no_grad(), torch.amp.autocast(device_type=self.device.type):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
                 out = model(data)
                 
-                # Chuyển target sang CPU một lần
+                # Move target to CPU once
                 target_cpu = target.numpy()
                 for i, cls_id in enumerate(target_cpu):
                     if cls_id not in feats_by_cls: feats_by_cls[cls_id] = []
                     feats_by_cls[cls_id].append(out[i])
 
-        # Tính mean/std cho từng class
+        # Compute mean/std per class
         for cls_id, tensors in feats_by_cls.items():
             stacked = torch.stack(tensors)
-            all_protos[cls_id] = stacked.mean(0).cpu() # Đẩy về CPU để tiết kiệm VRAM
+            all_protos[cls_id] = stacked.mean(0).cpu() # Move to CPU to save VRAM
             all_stds[cls_id] = stacked.std(0, unbiased=False).cpu()
         
-        # Dọn dẹp thủ công
+        # Manual cleanup
         del feats_by_cls
         gc.collect() 
         return all_protos, all_stds
 
     def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
-        """(Giai đoạn 2) Chạy SSL và trích xuất (proto, dist) cho 1 Edge."""
+        """(Phase 2) Run SSL and extract (proto, dist) for one edge."""
         model = self.structure[0][eid]
         opt_dict = self.optimizers[0][eid]
         optimizer = opt_dict['optimizer']
         scaler = opt_dict['scaler']
 
-        # --- 2a. Thu thập và Tạo Data L1 ---
+        # --- 2a. Collect and synthesize L1 data ---
         edge_specific_client_outputs = {cid: client_outputs[cid] for cid in cids if cid in client_outputs}
 
         # E-HSFP: Apply prototype dropout at client level
@@ -638,18 +665,18 @@ class HierarchicalFL:
         )
 
         if syn_features_L1.shape[0] == 0:
-             print(f"Edge {eid}: Không có prototype nào từ client, bỏ qua.")
+             print(f"Edge {eid}: no prototypes from clients, skipping.")
              return None
 
-        print(f"Edge {eid}: Đã tạo {syn_features_L1.shape[0]} mẫu L1 (với nhãn gốc). Bắt đầu SSL...")
+        print(f"Edge {eid}: generated {syn_features_L1.shape[0]} L1 samples (original labels). Starting SSL...")
 
-        # --- 2b. Huấn luyện SSL ---
+        # --- 2b. SSL training ---
         model.to(self.device).train()
         
-        # Chuyển data về CPU
+        # Move data to CPU
         syn_dataset_L1 = torch.utils.data.TensorDataset(
             syn_features_L1.cpu(), 
-            syn_labels_L1.cpu() # <-- SỬA LỖI LOGIC (Thêm labels)
+            syn_labels_L1.cpu() # include labels
         )
         del syn_features_L1, syn_labels_L1
         
@@ -657,10 +684,10 @@ class HierarchicalFL:
             syn_dataset_L1, 
             batch_size=self.args['local_bs'], 
             shuffle=True,
-            # --- SỬA LỖI AttributeError ---
-            num_workers=0, # Dữ liệu đã ở trong RAM
+            # --- fix AttributeError ---
+            num_workers=0, # data already in RAM
             pin_memory=False,
-            # --- KẾT THÚC SỬA ---
+            # --- end ---
             drop_last=True 
         )
         
@@ -710,30 +737,30 @@ class HierarchicalFL:
                 scaler.step(optimizer)
                 scaler.update()
                 total_loss += loss.item()
-        print(f"Edge {eid}: Hoàn tất SSL, Loss cuối: {total_loss/len(syn_loader_L1):.4f}")
+        print(f"Edge {eid}: SSL done, final loss: {total_loss/len(syn_loader_L1):.4f}")
 
-        # --- 2c. Trích xuất Proto/Dist (SỬA LỖI LOGIC SHAPE) ---
+        # --- 2c. Extract proto/dist ---
         model.to(self.device).eval()
         edge_feats_L2 = []
         
-        # Sửa cảnh báo FutureWarning
+        # Avoid FutureWarning
         with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
             syn_loader_L1_eval = DataLoader(
-                syn_dataset_L1, # Tái sử dụng dataset (có cả feats, labels)
+                syn_dataset_L1, # reuse dataset (features + labels)
                 batch_size=self.args['local_bs'], 
                 shuffle=False,
-                # --- SỬA LỖI AttributeError ---
+                # --- fix AttributeError ---
                 num_workers=0,
                 pin_memory=False
-                # (KHÔNG có drop_last=True)
-                # --- KẾT THÚC SỬA ---
+                # (no drop_last=True)
+                # --- end ---
             )
-            # Sửa lỗi: DataLoader trả về (features, labels)
-            for features, _ in syn_loader_L1_eval: # Chỉ lấy features
+            # DataLoader returns (features, labels)
+            for features, _ in syn_loader_L1_eval: # take features only
                 features = features.to(self.device)
                 out_4d = model(features)
                 
-                # Làm phẳng 4D -> 2D cho Cloud
+                # Flatten 4D -> 2D for the cloud
                 out_2d = torch.flatten(nn.AdaptiveAvgPool2d((1,1))(out_4d), start_dim=1)
                 
                 if self.input_shape_cloud is None:
@@ -741,25 +768,25 @@ class HierarchicalFL:
                 
                 edge_feats_L2.append(out_2d)
         
-        edge_features_L2 = torch.cat(edge_feats_L2, dim=0) # (trên GPU, 2D)
+        edge_features_L2 = torch.cat(edge_feats_L2, dim=0) # (on GPU, 2D)
         
-        # Lấy nhãn GỐC (từ dataset CPU)
+        # Get original labels (from CPU dataset)
         syn_labels_L1_cpu = syn_dataset_L1.tensors[1] 
         
-        # Trả về dict {nhãn_gốc: tensor_2D}
+        # Return dict {original_label: tensor_2D}
         edge_protos_dists = calculate_prototypes_and_distribution(edge_features_L2, syn_labels_L1_cpu)
         
         del syn_loader_L1, syn_loader_L1_eval, edge_features_L2, syn_labels_L1_cpu, syn_dataset_L1
         return edge_protos_dists
 
     def _cloud_supervised_phase(self, cloud_id, edge_outputs, syn_epochs, syn_samples_per_class):
-        """(Giai đoạn 3) Chạy Supervised training cho Cloud."""
+        """(Phase 3) Run supervised training for the cloud."""
         model = self.structure[len(self.args["mid_server"])][cloud_id]
         opt_dict = self.optimizers[len(self.args["mid_server"])][cloud_id]
         optimizer = opt_dict['optimizer']
         scaler = opt_dict['scaler']
 
-        # --- 3a. Thu thập và Tạo Data L2 ---
+        # --- 3a. Collect and synthesize L2 data ---
         # E-HSFP: Apply prototype dropout at edge level
         if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("edge_prototype", "both"):
             edge_outputs = self.proto_dropout.apply_to_source_outputs(edge_outputs)
@@ -775,17 +802,17 @@ class HierarchicalFL:
         )
         
         if syn_features_L2.shape[0] == 0:
-            print(f"Cloud {cloud_id}: Không có prototype nào từ Edge, bỏ qua.")
+            print(f"Cloud {cloud_id}: no prototypes from edges, skipping.")
             return 0.0
 
-        print(f"Cloud {cloud_id}: Đã tạo {syn_features_L2.shape[0]} mẫu L2 (với nhãn gốc). Bắt đầu Supervised...")
+        print(f"Cloud {cloud_id}: generated {syn_features_L2.shape[0]} L2 samples (original labels). Starting supervised...")
 
-        # --- 3b. Huấn luyện Supervised (CrossEntropy) ---
+        # --- 3b. Supervised training (CrossEntropy) ---
         model.to(self.device).train()
         
         syn_dataset_L2 = torch.utils.data.TensorDataset(
             syn_features_L2.cpu(), 
-            syn_labels_L2.cpu() # nhãn gốc (ví dụ: 0-99)
+            syn_labels_L2.cpu() # original labels (e.g. 0-99)
         )
         del syn_features_L2, syn_labels_L2
         
@@ -793,10 +820,10 @@ class HierarchicalFL:
             syn_dataset_L2, 
             batch_size=self.args['local_bs'], 
             shuffle=True,
-            # --- SỬA LỖI AttributeError ---
+            # --- fix AttributeError ---
             num_workers=0,
             pin_memory=False,
-            # --- KẾT THÚC SỬA ---
+            # --- end ---
             drop_last=True
         )
         
@@ -806,7 +833,7 @@ class HierarchicalFL:
             for features, labels in syn_loader_L2:
                 features, labels = features.to(self.device), labels.to(self.device, non_blocking=True)
                 
-                # Sửa cảnh báo FutureWarning
+                # Avoid FutureWarning
                 with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
                     logits = model(features)
                     loss = self.criterion(logits, labels)
@@ -832,12 +859,12 @@ class HierarchicalFL:
 
             total_loss = epoch_loss / len(syn_loader_L2)
 
-        print(f"Cloud {cloud_id}: Hoàn tất Supervised, Loss cuối: {total_loss:.4f}")
+        print(f"Cloud {cloud_id}: supervised done, final loss: {total_loss:.4f}")
         del syn_dataset_L2, syn_loader_L2
         return total_loss
         
     def _run_validation(self, valid_dataset, best_f1, epoch):
-        """(Giai đoạn 5) Chạy đánh giá (đã tối ưu)."""
+        """(Phase 5) Run evaluation (optimized)."""
         client_model = self.structure[-1][0]
         eid = self.connectivity[-1][0]
         edge_model = self.structure[0][eid]
@@ -904,7 +931,7 @@ class HierarchicalFL:
             f1 = f1_score(all_targets, all_preds, average="macro", zero_division=0) # Added zero_division=0
             
             if best_f1 < f1:
-                print(f"Lưu model tốt nhất tại epoch {epoch} với F1: {f1 * 100:.2f} %")
+                print(f"Saved best model at epoch {epoch} with F1: {f1 * 100:.2f} %")
                 best_f1 = f1
                 pipeline_model = FullPipelineModel(
                     client_model=copy.deepcopy(client_model),
@@ -918,7 +945,7 @@ class HierarchicalFL:
             
         return f1, best_f1, pipeline_model
 
-    # --- Phương thức Huấn luyện Chính (Đã tổ chức lại) --
+    # --- Main training method (reorganized) --
 
     def train_end_to_end(
         self,
@@ -932,21 +959,21 @@ class HierarchicalFL:
     ):
         self.initialize_optimizers()
         
-        # Lấy cấu hình
+        # Read config
         num_users = config["num_users"]
         frac = config["frac"]
         local_bs = config["local_bs"]
         t1, t2 = int(config["t1"]), int(config["t2"])
         
-        # Khởi tạo lưu trữ metrics
+        # Initialize metric storage
         validation_f1_list, cloud_loss_list = [], []
         best_f1 = 0
         best_pipeline_model = None
         start_epoch = 1
 
-        # --- TỐI ƯU DATALOADER ---
-        # persistent_workers=True giúp DataLoader không bị khởi tạo lại mỗi epoch
-        # pin_memory=True giúp chuyển dữ liệu lên GPU nhanh hơn
+        # --- DataLoader optimization ---
+        # persistent_workers=True avoids re-creating the DataLoader each epoch
+        # pin_memory=True speeds up host->GPU transfer
         dl_kwargs = {
             "batch_size": local_bs,
             "num_workers": self.num_workers,
@@ -964,13 +991,14 @@ class HierarchicalFL:
             if self.serverless_tracker is not None:
                 self.serverless_tracker.begin_episode(epoch)
 
-            # 1. CHỌN CLIENTS
+            # 1. SELECT CLIENTS
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
             client_outputs = {}
 
-            # --- GIAI ĐOẠN 1: CLIENT PROCESSING ---
+            # --- PHASE 1: CLIENT PROCESSING ---
             print(f"-> Phase 1: Clients Processing ({len(idxs_users)} nodes)...")
+            _t_pack = self._prof_now()
             for cid in idxs_users:
                 self.client_cache.append(cid)
 
@@ -988,7 +1016,7 @@ class HierarchicalFL:
                     cid, loader, ssl_epochs=config.get("ssl_epochs_client", 10)
                 )
 
-                # Theo dõi truyền tải dữ liệu
+                # Track data transmission
                 cost = get_proto_dist_size_MB(client_outputs[cid])
                 self.comm_tracker["client_to_edge_data_MB"] += cost
 
@@ -1017,12 +1045,15 @@ class HierarchicalFL:
                 if self.serverless_tracker is not None:
                     self.serverless_tracker.record_memory_replay(len(client_outputs))
 
-            # Giải phóng bộ nhớ đệm sau phase Client
+            # Free cache after the client phase
             torch.cuda.empty_cache()
             gc.collect()
 
-            # --- GIAI ĐOẠN 2: EDGE PROCESSING ---
+            self._prof_add("client_pack", _t_pack, epoch)
+
+            # --- PHASE 2: EDGE PROCESSING ---
             print(f"-> Phase 2: Edge Processing...")
+            _t_edge = self._prof_now()
             edge_to_clients = {}
             for cid in idxs_users:
                 eid = self.connectivity[-1][cid]
@@ -1067,13 +1098,16 @@ class HierarchicalFL:
                         )
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
-            # Quan trọng: Xóa client_outputs ngay khi Edge xong để giải phóng RAM
+            # Important: delete client_outputs once edges finish to free RAM
             del client_outputs
             torch.cuda.empty_cache()
             gc.collect()
 
-            # --- GIAI ĐOẠN 3: CLOUD PROCESSING ---
+            self._prof_add("edge_process", _t_edge, epoch)
+
+            # --- PHASE 3: CLOUD PROCESSING ---
             print(f"-> Phase 3: Cloud Supervised Training...")
+            _t_cloud = self._prof_now()
 
             # E-HSFP: Simulate serverless invocation for cloud
             if self.serverless_tracker is not None:
@@ -1085,6 +1119,7 @@ class HierarchicalFL:
                 syn_samples_per_class=config.get("syn_samples_per_class", 50)
             )
             cloud_loss_list.append(cloud_loss)
+            self._prof_add("cloud_process", _t_cloud, epoch)
 
             del edge_outputs
             torch.cuda.empty_cache()
@@ -1102,21 +1137,25 @@ class HierarchicalFL:
                 )
                 self.ehsfp_logger.log("ehsfp/reliability_train_loss", rel_loss)
 
-            # --- GIAI ĐOẠN 4: AGGREGATION & VALIDATION ---
+            # --- PHASE 4: AGGREGATION & VALIDATION ---
             if epoch % t1 == 0:
+                _t_agg = self._prof_now()
                 self.edge_server_aggregation()
+                self._prof_add("edge_aggregate", _t_agg, epoch)
 
             if epoch % t2 == 0:
+                _t_cagg = self._prof_now()
                 self.cloud_aggregation()
+                self._prof_add("cloud_aggregate", _t_cagg, epoch)
 
-                # Đánh giá model
+                # Evaluate model
                 f1, current_best_f1, model_snapshot = self._run_validation(valid_dataset, best_f1, epoch)
                 validation_f1_list.append(f1)
 
                 if model_snapshot is not None:
                     best_f1 = current_best_f1
                     best_pipeline_model = model_snapshot
-                    # LƯU CHECKPOINT MODEL TỐT NHẤT
+                    # Save the best-model checkpoint
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model_snapshot.state_dict(),
@@ -1151,6 +1190,8 @@ class HierarchicalFL:
             )
 
             epoch_time = time.time() - epoch_start_time
+            if self.profiler is not None:
+                self.profiler.add("total_round", epoch_time, epoch)
             log_data = {
                 "epoch": epoch,
                 "cloud_loss": cloud_loss,
@@ -1169,13 +1210,13 @@ class HierarchicalFL:
             if wandb is not None and wandb.run is not None:
                 wandb.log(log_data)
 
-            print(f"Epoch {epoch} hoàn tất trong {epoch_time:.2f}s")
+            print(f"Epoch {epoch} finished in {epoch_time:.2f}s")
 
-        # --- KẾT THÚC: TEST CUỐI CÙNG ---
+        # --- end: final test ---
         print("\n" + "="*50)
         print("TRAINING FINISHED. Loading best model for testing...")
 
-        # Load lại model tốt nhất từ file để test
+        # Reload the best model from file for testing
         if os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path)
             print(f"Loaded best model from epoch {checkpoint['epoch']}")
@@ -1190,6 +1231,20 @@ class HierarchicalFL:
             "comm_report": self.comm_tracker,
             "ehsfp_metrics": self.ehsfp_logger.finalize(),
         }
+        # camera-ready: persist fine-grained profiling, if enabled
+        if self.profiler is not None:
+            prof_summary = self.profiler.summary()
+            output["profile_summary"] = prof_summary
+            tag = config.get("profile_tag", "hsfp")
+            try:
+                from camera_ready.io_utils import cr_dir
+                import os as _os
+                out_dir = cr_dir("profiling")
+                self.profiler.to_csv(_os.path.join(out_dir, f"profile_{tag}_records.csv"))
+                self.profiler.to_json(_os.path.join(out_dir, f"profile_{tag}_summary.json"))
+                print(f"[profile] wrote {out_dir}/profile_{tag}_*.csv/json")
+            except Exception as _e:
+                print(f"[profile] could not write profile files: {_e}")
         if self.serverless_tracker is not None:
             output["serverless_metrics"] = self.serverless_tracker.get_summary()
         return output

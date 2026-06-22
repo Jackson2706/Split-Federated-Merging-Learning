@@ -1,7 +1,7 @@
 from torch import nn
 
 class FullPipelineModel(nn.Module):
-    """Mô hình đầy đủ (Client + Edge + Cloud) để test."""
+    """Full pipeline model (Client + Edge + Cloud) for testing."""
     def __init__(self, client_model, edge_model, cloud_model):
         super().__init__()
         self.client = client_model

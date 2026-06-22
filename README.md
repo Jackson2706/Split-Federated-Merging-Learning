@@ -1,450 +1,261 @@
-# E-HSFP: Episodic Hierarchical Split-Federated Prototyping
+# H-SFP & E-HSFP
 
-> **Journal extension** of **H-SFP** (Hierarchical Split-Federated Learning with Prototypes) — ECCV 2026.
+**Hierarchical Federated Learning with Decoupled Split-Model Prototyping**
 
-E-HSFP extends H-SFP with episodic prototype memory, learnable reliability-aware aggregation, prototype replay consistency loss, serverless prototype dropout regularization, and a lightweight serverless episode simulator — enabling robust, stateless cloud-edge federated learning.
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.x-ee4c2c.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+This repository contains two closely related methods built on a single, unified codebase:
+
+- **H-SFP** *(ECCV)* — **H**ierarchical Federated Learning with Decoupled **S**plit-Model
+  **P**rototyping. A communication-efficient 3-tier (client → edge → cloud) split-federated
+  method that transmits only **class-wise prototype statistics** `(μ, σ)` between tiers
+  instead of raw activations, gradients, or per-round full model weights.
+- **E-HSFP** *(journal extension)* — **E**pisodic H-SFP. Adds episodic prototype memory,
+  learnable reliability-aware aggregation, a prototype replay consistency (PRC) loss,
+  serverless prototype dropout, and a serverless episode simulator for stateless cloud-edge
+  deployment.
+
+> All E-HSFP features are **config-driven and disabled by default**, so the default pipeline
+> is exactly H-SFP. This keeps the base method reproducible and the extension opt-in.
+
+```
+Client (SSL)  ──►  Edge (SSL)  ──►  Cloud (Supervised)
+   (μ, σ)            (μ, σ)            classifier / decoder
+```
 
 ---
 
-## Table of Contents
+## Table of contents
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Methods](#methods)
-- [Project Structure](#project-structure)
+- [Highlights](#highlights)
 - [Installation](#installation)
-- [Quick Start](#quick-start)
+- [Quick start](#quick-start)
+- [Methods & baselines](#methods--baselines)
+- [Datasets](#datasets)
 - [Configuration](#configuration)
-- [E-HSFP Components](#e-hsfp-components)
-- [Ablation Modes](#ablation-modes)
-- [Journal Experiments](#journal-experiments)
-- [Baselines](#baselines)
-- [Weights \& Biases Integration](#weights--biases-integration)
-- [Serverless Roadmap](#serverless-roadmap)
+- [E-HSFP components & ablations](#e-hsfp-components--ablations)
+- [Experiments](#experiments)
+- [Project structure](#project-structure)
+- [Reproducibility](#reproducibility)
+- [Citation](#citation)
+- [License](#license)
 
 ---
 
-## Overview
+## Highlights
 
-This repository implements a **3-tier federated learning hierarchy**:
-
-```
-Client (SSL) ──→ Edge (SSL) ──→ Cloud (Supervised)
-```
-
-- **Clients** learn local representations via self-supervised learning (SSL), extract per-class prototypes with uncertainty estimates (mu, sigma), and transmit them upstream.
-- **Edge servers** aggregate client prototypes and refine representations via SSL.
-- **Cloud server** performs final supervised training and periodically aggregates global model weights (FedAvg) at configurable intervals (t1, t2).
-
-**H-SFP** (the base method) transmits only prototypes and distributions between tiers — not full model weights — making it communication-efficient and naturally suited for serverless deployment.
-
-**E-HSFP** (the journal extension) adds:
-- Episodic prototype memory with replay mixing
-- Learnable reliability-aware prototype aggregation
-- Prototype replay consistency (PRC) loss
-- Serverless prototype dropout regularization
-- Lightweight serverless episode simulator
-- Optional residual prototype generator
-
-All E-HSFP features are **config-driven and disabled by default**, preserving full backward compatibility with H-SFP.
-
----
-
-## Architecture
-
-### Training Phases per Round
-
-| Phase | H-SFP | E-HSFP Addition |
-|-------|-------|-----------------|
-| 1 | Client SSL: learn features, extract (prototype, std) per class | **Store in episodic memory** |
-| 2 | — | **Mix current prototypes with memory prototypes** (configurable replay ratio) |
-| 3 | Edge SSL: aggregate client prototypes | **Reliability-weighted aggregation + PRC loss** |
-| 4 | Cloud supervised: aggregate edge prototypes | **Reliability-weighted aggregation + PRC loss** |
-| 5 | Aggregation & validation (FedAvg at t1/t2 intervals) | **Age memories, train reliability network, log E-HSFP metrics** |
-
-### Tasks
-
-| Task | Datasets | Primary Metric |
-|------|----------|---------------|
-| Classification | CIFAR-10/100, HAM10000 | F1 Score |
-| Segmentation | ISIC-2018 | IoU, Dice |
-
----
-
-## Methods
-
-| Method | CLI Name | Description | Type |
-|--------|----------|-------------|------|
-| **H-SFP** | `h-sfp` | Hierarchical Split-Federated Prototyping (ECCV 2026) | Primary |
-| **E-HSFP** | `h-sfp --ablation full_e_hsfp` | Episodic H-SFP with all journal extensions | Primary (extended) |
-| FedAvg/FedProx/FedNova/FedSGD | `federated` | Standard federated learning strategies | Baseline |
-| HierFL | `hierfl` | Hierarchical Federated Learning | Baseline |
-| SplitFL | `splitfl` | Split Federated Learning | Baseline |
-| HeteroSFL | `hetero-sfl` | Heterogeneous Split FL (wide/narrow) | Baseline |
-| HSFL | `hsfl` | Hierarchical Split FL | Baseline |
-
----
-
-## Project Structure
-
-```
-.
-├── main.py                        # Single entry point for all experiments
-├── run.sh                         # Batch runner (all methods, --wandb support)
-├── requirement.txt                # Python dependencies (CUDA 12.8, PyTorch 2.7)
-│
-├── ehsfp/                         # Shared E-HSFP extension library
-│   ├── __init__.py                #   Package exports (v0.1.0)
-│   ├── config.py                  #   EHSFP_DEFAULTS, ABLATION_PRESETS, get_ehsfp_config()
-│   ├── memory.py                  #   EpisodicPrototypeMemory, PrototypeRecord, mix_current_and_memory()
-│   ├── reliability.py             #   PrototypeReliabilityNetwork, build_reliability_features()
-│   ├── aggregation.py             #   reliability_weighted_aggregate(), train_reliability_bootstrap()
-│   ├── losses.py                  #   prototype_replay_consistency_loss(), dropout_consistency_loss()
-│   ├── dropout.py                 #   PrototypeDropout (simulates serverless failures)
-│   ├── serverless_sim.py          #   ServerlessEpisode, ServerlessMetricsTracker
-│   ├── generator.py               #   ResidualPrototypeGenerator (optional)
-│   └── metrics_logger.py          #   EHSFPMetricsLogger (wandb integration)
-│
-├── configs/                       # All YAML configs (one centralized location)
-│   ├── classification/
-│   │   ├── h-sfp/                 #   Primary method configs (CIFAR, HAM10000, ImageNet)
-│   │   ├── federated/             #   FedAvg, FedProx, FedNova, FedSGD
-│   │   ├── hierfl/
-│   │   ├── splitfl/
-│   │   ├── hetero-sfl/
-│   │   └── hsfl/
-│   └── segmentation/
-│       ├── h-sfp/                 #   ISIC-2018 configs (t1/t2 variants)
-│       ├── federated/
-│       ├── hierfl/
-│       ├── splitfl/
-│       ├── hetero-sfl/
-│       └── hsfl/
-│
-├── classification/
-│   ├── H-SFP/                    # Primary method (classification)
-│   │   ├── runner.py              #   run(cfg_path) — called by main.py
-│   │   ├── hierarchy.py           #   5-phase training pipeline + E-HSFP hooks
-│   │   ├── core/                  #   prototype.py, ssl.py, aggregation.py, losses.py
-│   │   ├── models/                #   3-tier model splits (AlexNet, ResNet50, VGG)
-│   │   ├── data/                  #   Dataset loaders + IID/non-IID sampling
-│   │   └── config/                #   ConfigLoader (YAML loader)
-│   ├── Federated/                 #   FedAvg/FedProx/FedNova/FedSGD baseline
-│   ├── HierFL/                    #   Hierarchical FL baseline
-│   ├── SplitFL/                   #   Split FL baseline
-│   ├── HeteroSFL/                 #   Heterogeneous Split FL baseline
-│   └── HSFL/                      #   Hierarchical Split FL baseline
-│
-├── segmentation/
-│   ├── H-SFP/                    # Primary method (segmentation)
-│   │   ├── runner.py
-│   │   ├── hierarchy.py           #   5-phase pipeline + decoder training for masks
-│   │   ├── clients/               #   DiceFocalLoss, test (IoU/Dice metrics)
-│   │   ├── models/                #   3-tier split + ISICCloudDecoder for inference
-│   │   ├── data/                  #   ISIC-2018 loader
-│   │   └── config/                #   ConfigLoader
-│   ├── Federated/
-│   ├── HierFL/
-│   ├── SplitFL/
-│   ├── HeteroSFL/
-│   └── HSFL/
-│
-├── serverless/                    # Serverless deployment interfaces (future)
-│   ├── interfaces/                #   CommunicationBackend, AggregatorBackend (abstract)
-│   └── adapters/                  #   LocalCommunicationBackend (current in-process impl)
-│
-├── scripts/
-│   └── journal_experiments/       # E-HSFP journal experiment scripts
-│       ├── common.sh              #   Shared functions (logging, resume, seed dispatch)
-│       ├── run_smoke.sh           #   Quick sanity check
-│       ├── run_convergence.sh     #   H-SFP vs E-HSFP vs baselines (5 seeds)
-│       ├── run_ablation.sh        #   6 component ablation presets
-│       ├── run_dropout_staleness.sh #   Dropout rate + staleness sweeps
-│       ├── run_intervals.sh       #   Aggregation interval experiments
-│       ├── run_all_journal.sh     #   Master launcher
-│       ├── collect_results.py     #   Parse logs → summary CSVs
-│       └── README.md              #   Experiment documentation
-│
-└── Figure/                        # Plotting scripts and output figures
-```
+- **Communication-efficient.** Only prototype statistics flow between tiers — orders of
+  magnitude smaller than smashed activations or model weights (see
+  [`tools/plot_communication.py`](tools/plot_communication.py)).
+- **Unified entry point.** One `main.py` dispatches every task/method via a registry.
+- **Strong baselines included.** FedAvg/FedProx/FedNova/FedSGD, HierFL, SplitFL, HSFL, HeteroSFL.
+- **Two tasks.** Image classification (CIFAR-10/100, HAM10000, ImageNet) and medical image
+  segmentation (ISIC-2018).
+- **Reproducible experiments.** Journal experiment suite plus a camera-ready experiment
+  suite (heterogeneity, partial participation, covariance ablation, Lstat, profiling,
+  inversion, fairness) with one-command launchers.
 
 ---
 
 ## Installation
 
+Requires Python ≥ 3.9. Tested with PyTorch 2.7 + CUDA 12.8 on an NVIDIA RTX 3080 Ti.
+
 ```bash
-# Clone the repository
-git clone <repo-url>
+git clone https://github.com/Jackson2706/Split-Federated-Merging-Learning.git
 cd Split-Federated-Merging-Learning
 
-# Install dependencies (requires CUDA 12.8)
-pip install -r requirement.txt
+python -m venv .venv && source .venv/bin/activate
 
-# Optional: enable experiment tracking
-pip install wandb && wandb login
+# Install a CUDA build of torch first (match your CUDA version), e.g. CUDA 12.8:
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+pip install -r requirements.txt
+pip install -e .          # optional: install ehsfp / camera_ready / serverless as packages
 ```
 
-**Requirements:** Python 3.10+, PyTorch 2.7+, CUDA 12.8
+Set dataset roots in the configs (`dataset_root`) to point at your local data.
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
-# List all available methods
+# List methods and configs
 python main.py --list
+python main.py --list-configs --task classification
 
-# List available configs
-python main.py --list-configs --task classification --method h-sfp
-
-# Run H-SFP (reference method)
+# Run H-SFP on CIFAR-100 (ResNet50, t1=5 / t2=10)
 python main.py --task classification --method h-sfp \
     --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml
 
-# Run E-HSFP (full journal extension)
+# Run E-HSFP (all journal extensions) via the ablation flag
 python main.py --task classification --method h-sfp \
     --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \
     --ablation full_e_hsfp
-
-# Run with specific seed for reproducibility
-python main.py --task classification --method h-sfp \
-    --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \
-    --ablation full_e_hsfp --seed 42
-
-# Run segmentation
-python main.py --task segmentation --method h-sfp \
-    --cfg configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml
 
 # Run a baseline
 python main.py --task classification --method federated \
     --cfg configs/classification/federated/cifar_fedavg_resnet50.yaml
 
-# Batch run all methods
-./run.sh                          # everything
-./run.sh classification           # classification only
-./run.sh segmentation             # segmentation only
-./run.sh ablation                 # E-HSFP ablation study
+# Segmentation (ISIC-2018)
+python main.py --task segmentation --method h-sfp \
+    --cfg configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+
+# Override any config key on the fly (repeatable), and set a seed
+python main.py --task classification --method h-sfp \
+    --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \
+    --seed 0 --set frac=0.5 --set iid=false
 ```
 
-### CLI Arguments
+`--ablation`, `--seed`, and `--set KEY=VALUE` are injected into a temporary copy of the YAML
+config, so on-disk configs stay clean. Add `--wandb` for Weights & Biases logging.
 
-| Flag | Description |
-|------|-------------|
-| `--task` | `classification` or `segmentation` |
-| `--method` | Method name (see [Methods](#methods)) |
-| `--cfg` | Path to YAML config file |
-| `--seed` | Random seed (sets `random`, `numpy`, `torch`, `PYTHONHASHSEED`) |
-| `--ablation` | E-HSFP ablation preset (only with `--method h-sfp`) |
-| `--wandb` | Enable Weights & Biases logging |
-| `--wandb-project` | W&B project name (default: `H-SFP`) |
-| `--wandb-entity` | W&B team/entity |
+---
+
+## Methods & baselines
+
+| Method | `--method` | Description | Role |
+|--------|-----------|-------------|------|
+| **H-SFP** | `h-sfp` | Hierarchical split-federated prototyping (ECCV) | Primary |
+| **E-HSFP** | `h-sfp --ablation full_e_hsfp` | Episodic H-SFP (journal extension) | Primary (extended) |
+| FedAvg / FedProx / FedNova / FedSGD | `federated` | Standard FL aggregation strategies | Baseline |
+| HierFL | `hierfl` | Hierarchical federated learning | Baseline |
+| SplitFL | `splitfl` | Split federated learning | Baseline |
+| HSFL | `hsfl` | Hierarchical split FL | Baseline |
+| HeteroSFL | `hetero-sfl` | Heterogeneous (wide/narrow) split FL | Baseline |
+
+---
+
+## Datasets
+
+| Task | Datasets | Metric |
+|------|----------|--------|
+| Classification | CIFAR-10, CIFAR-100, HAM10000, ImageNet | F1 (macro) |
+| Segmentation | ISIC-2018 | IoU, Dice |
+
+Datasets are not bundled. Point each config's `dataset_root` (and `metadata_path` /
+`image_dirs` for HAM10000) at your local copies. Torchvision datasets (CIFAR) download on
+first use.
 
 ---
 
 ## Configuration
 
-All configs live under `configs/<task>/<method>/`. Each experiment config inherits from a `default.yaml` in the same directory.
+Configs are YAML with single-key `base:` inheritance resolved by
+[`ConfigLoader`](classification/H-SFP/config/config_loader.py):
 
-**Naming convention:**
-- H-SFP/HSFL: `{dataset}_{strategy}_{model}_{t1}_{t2}.yaml`
-- Baselines: `{dataset}_{strategy}_{model}.yaml`
+```yaml
+base: default.yaml          # inherit + override
+strategy: "hier_fedavg"
+dataset: "cifar100"
+dataset_root: "/path/to/cifar/"
+model: "resnet50"
+num_classes: 100
+t1: 5                       # edge aggregation interval
+t2: 10                      # cloud aggregation interval
+```
 
-### Shared Hyperparameters (Fair Comparison)
-
-| Parameter | Classification | Segmentation |
-|-----------|---------------|--------------|
-| `num_users` | 200 | 50 |
-| `epochs` | 200 | 200 |
-| `frac` | 0.1 | 0.1 |
-| `local_bs` | 16 | 16 |
-| `local_ep` | 5 | 5 |
-| `optimizer` | adam | adam |
-| `lr` | 1e-4 | 1e-4 |
-| `iid` | true | true |
-
----
-
-## E-HSFP Components
-
-All E-HSFP features live in the shared `ehsfp/` library and are enabled via config keys in `default.yaml`. They are disabled by default.
-
-### 1. Episodic Prototype Memory (`ehsfp/memory.py`)
-Stores historical prototype records `(class_id, mu, sigma, support_count, age, reliability)` and mixes them with current-round prototypes using a configurable replay ratio.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `use_episodic_memory` | `false` | Enable memory |
-| `memory_size` | `1000` | Max records per memory |
-| `memory_replay_ratio` | `0.3` | Alpha for mixing: Q = alpha * current + (1-alpha) * memory |
-| `memory_top_k` | `5` | Top-k reliable prototypes per class for replay |
-| `max_prototype_age` | `10` | Evict prototypes older than this |
-
-### 2. Learnable Reliability Aggregation (`ehsfp/reliability.py`, `ehsfp/aggregation.py`)
-A small neural network predicts per-prototype reliability weights from features like support count, variance, age, and loss. Replaces simple averaging with reliability-weighted aggregation.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `aggregation_mode` | `"simple"` | `"simple"` or `"reliability"` |
-| `reliability_hidden_dim` | `64` | Hidden layer size |
-| `reliability_lr` | `1e-3` | Learning rate for reliability network |
-| `reliability_bootstrap_epochs` | `5` | Bootstrap training epochs per round |
-
-### 3. Prototype Replay Consistency Loss (`ehsfp/losses.py`)
-L2 consistency loss between current and memory prototype representations, encouraging stable feature learning across rounds.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `use_prc_loss` | `false` | Enable PRC loss |
-| `lambda_prc` | `0.1` | PRC loss weight |
-| `prc_num_samples` | `5` | Number of memory prototypes to sample |
-
-### 4. Serverless Prototype Dropout (`ehsfp/dropout.py`)
-Simulates serverless failure modes (function timeouts, cold starts) by randomly dropping prototype packets during aggregation, improving robustness.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `use_prototype_dropout` | `false` | Enable dropout |
-| `prototype_dropout_rate` | `0.1` | Probability of dropping each prototype |
-| `dropout_mode` | `"class"` | `"class"` (per-class) or `"source"` (per-client) |
-
-### 5. Serverless Episode Simulator (`ehsfp/serverless_sim.py`)
-Tracks simulated cold starts, timeouts, latency, and cost proxies. These are secondary metrics for paper analysis — they do not affect training.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `use_serverless_simulation` | `false` | Enable simulator |
-| `cold_start_probability` | `0.1` | Simulated cold start rate |
-| `function_timeout_probability` | `0.05` | Simulated timeout rate |
-
-### 6. Residual Prototype Generator (`ehsfp/generator.py`)
-Optional module: `z = mu + sigma * eps + scale * G(cat(mu, sigma, eps))` for generating augmented prototype samples.
-
-| Config Key | Default | Description |
-|------------|---------|-------------|
-| `use_residual_generator` | `false` | Enable generator |
-| `generator_hidden_dim` | `128` | Generator hidden size |
+Common keys: `num_users`, `mid_server` (edges per layer), `frac` (active-client ratio),
+`local_bs`, `epochs`, `lr`, `optimizer`, `ssl_epochs_client/edge`, `syn_epochs_cloud`,
+`syn_samples_per_class`. See [docs/usage.md](docs/usage.md) for the full CLI reference and
+[docs/architecture.md](docs/architecture.md) for the design.
 
 ---
 
-## Ablation Modes
+## E-HSFP components & ablations
 
-E-HSFP supports 6 progressive ablation presets via `--ablation`:
+| Component | Config flag |
+|-----------|-------------|
+| Episodic prototype memory + replay | `use_episodic_memory`, `memory_replay_ratio` |
+| Learnable reliability-aware aggregation | `aggregation_mode: learnable_reliability` |
+| Prototype replay consistency (PRC) loss | `use_prc_loss`, `lambda_prc` |
+| Serverless prototype dropout | `use_prototype_dropout`, `prototype_dropout_rate` |
+| Serverless episode simulator | `use_serverless_simulation` |
+| Residual prototype generator | `use_residual_generator` |
 
-| Mode | Memory | Dropout | Reliability | PRC | Serverless Sim | Generator |
-|------|--------|---------|-------------|-----|----------------|-----------|
-| `baseline_hsfp` | - | - | - | - | - | - |
-| `hsfp_memory` | Y | - | - | - | - | - |
-| `hsfp_memory_dropout` | Y | Y | - | - | - | - |
-| `hsfp_memory_reliability` | Y | - | Y | - | - | - |
-| `hsfp_memory_reliability_prc` | Y | - | Y | Y | - | - |
-| `full_e_hsfp` | Y | Y | Y | Y | Y | Y |
+Ablation presets (via `--ablation`):
+
+| Mode | Memory | Reliability | PRC | Dropout |
+|------|:------:|:-----------:|:---:|:-------:|
+| `baseline_hsfp` | – | – | – | – |
+| `hsfp_memory` | ✓ | – | – | – |
+| `hsfp_memory_dropout` | ✓ | – | – | ✓ |
+| `hsfp_memory_reliability` | ✓ | ✓ | – | – |
+| `hsfp_memory_reliability_prc` | ✓ | ✓ | ✓ | – |
+| `full_e_hsfp` | ✓ | ✓ | ✓ | ✓ |
+
+---
+
+## Experiments
+
+- **Batch runner.** `./run.sh [classification|segmentation] [--wandb]` runs the configured set.
+- **Journal experiments** (E-HSFP): convergence, ablation, dropout/staleness, intervals —
+  see [scripts/journal_experiments/README.md](scripts/journal_experiments/README.md).
+- **Camera-ready experiments** (H-SFP): hierarchical heterogeneity (two-level Dirichlet),
+  partial participation, covariance ablation, Lstat sensitivity, runtime profiling,
+  feature-inversion exposure, and a baseline-fairness summary — with smoke + full commands in
+  [results/camera_ready/README.md](results/camera_ready/README.md).
 
 ```bash
-# Run specific ablation
-python main.py --task classification --method h-sfp \
-    --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \
-    --ablation hsfp_memory_reliability_prc
-
-# Batch ablation study
-./run.sh ablation
+# Camera-ready smoke (fast end-to-end sanity over all experiments)
+SMOKE=1 ./scripts/camera_ready/run_all_camera_ready.sh
 ```
 
 ---
 
-## Journal Experiments
+## Project structure
 
-Complete experiment scripts for the E-HSFP journal paper are in `scripts/journal_experiments/`.
-
-```bash
-cd scripts/journal_experiments
-
-# Quick smoke test
-./run_smoke.sh
-
-# Run all journal experiments
-./run_all_journal.sh
-
-# Run specific experiment groups
-./run_all_journal.sh convergence ablation
-
-# Collect results into summary CSVs
-python collect_results.py
+```
+.
+├── main.py                  # Unified entry point (task/method dispatch)
+├── run.sh                   # Batch runner
+├── requirements.txt
+├── pyproject.toml           # Installs ehsfp / camera_ready / serverless
+├── configs/                 # YAML configs (classification/, segmentation/, camera_ready/)
+├── classification/          # Per-method code: H-SFP + baselines
+├── segmentation/            # Per-method code for ISIC-2018
+├── ehsfp/                   # E-HSFP shared library
+├── camera_ready/            # Camera-ready experiment utilities
+├── serverless/              # Serverless backend interfaces
+├── scripts/                 # Experiment launchers (journal_experiments/, camera_ready/)
+├── tools/                   # Standalone plotting scripts
+└── docs/                    # architecture.md, conventions.md, usage.md, serverless.md
 ```
 
-### Experiment Groups
-
-| Script | Description |
-|--------|-------------|
-| `run_convergence.sh` | H-SFP vs E-HSFP vs 6 baselines across all datasets, 5 seeds |
-| `run_ablation.sh` | 6 progressive ablation presets (CIFAR + HAM10000 + ISIC) |
-| `run_dropout_staleness.sh` | Dropout rate sweep (0.0–0.7) + staleness sweep (tau 0–10) |
-| `run_intervals.sh` | Aggregation intervals (Ic,Ie) = (5,10), (10,20), (25,50) |
-
-### Features
-
-- **5 seeds** (0–4) for statistical significance
-- **Resume support** via `.done`/`.failed` markers — re-run safely after crashes
-- **GPU selection** via `GPU_ID` env var
-- **Dry-run mode** via `DRY_RUN=1`
-- **W&B integration** via `WANDB_ARGS="--wandb --wandb-project E-HSFP"`
-
-See [scripts/journal_experiments/README.md](scripts/journal_experiments/README.md) for full documentation.
+See [docs/architecture.md](docs/architecture.md) for the full layout and the `main.py`
+dispatch mechanism.
 
 ---
 
-## Baselines
+## Reproducibility
 
-All baselines use the same hyperparameters and data splits as H-SFP for fair comparison.
-
-| Baseline | Classification Configs | Segmentation Configs |
-|----------|----------------------|---------------------|
-| FedAvg | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| FedProx | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| FedNova | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| FedSGD | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| HierFL | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| SplitFL | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | — |
-| HeteroSFL | CIFAR (AlexNet, ResNet18), HAM10000 (ResNet50, VGG) | ISIC (ResNet50) |
-| HSFL | CIFAR (AlexNet, ResNet50), HAM10000 (ResNet50, VGG) | CIFAR, HAM10000 |
-
----
-
-## Weights & Biases Integration
-
-```bash
-# Run with W&B
-python main.py --task classification --method h-sfp \
-    --cfg configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml \
-    --wandb --wandb-project E-HSFP
-
-# Batch with W&B
-./run.sh --wandb --wandb-project=E-HSFP
-```
-
-**Metrics logged per epoch:**
-- Classification: `train_loss`, `f1`, `best_f1`, client resource usage, comm costs
-- Segmentation: `train_loss`, `iou`, `dice`, client resource usage, comm costs
-- E-HSFP extras: memory stats, reliability weights, PRC loss, dropout stats, serverless metrics
-- Final summary: `test_f1` (or `test_iou`/`test_dice`), `total_time_s`
-
----
-
-## Serverless Roadmap
-
-H-SFP transmits only prototypes (small tensors) — not model weights — making each round stateless and naturally suited for function-as-a-service deployment.
-
-The `serverless/` directory contains abstract interfaces (`CommunicationBackend`, `AggregatorBackend`) and a local adapter. Future work will add cloud transport adapters (AWS SQS, GCP Pub/Sub, Redis) to enable true serverless deployment without changing model or training code.
-
-See `.claude/serverless.md` for the full roadmap.
+- Deterministic seeding (`random`/`numpy`/`torch`, cuDNN deterministic) via `--seed`.
+- Experiment launchers use resume markers (`.markers/`) so re-runs skip completed work.
+- The baseline-fairness manifest
+  ([`configs/camera_ready/baseline_fairness.yaml`](configs/camera_ready/baseline_fairness.yaml))
+  records the shared protocol (clients/edges, sampling ratio, schedule, optimizer, seeds,
+  hardware, communication formulas) applied to all methods.
 
 ---
 
 ## Citation
 
-```
-@inproceedings{hsfp2026,
-  title     = {H-SFP: Hierarchical Split-Federated Learning with Prototypes},
-  booktitle = {European Conference on Computer Vision (ECCV)},
-  year      = {2026},
+If you use this code, please cite (see [CITATION.cff](CITATION.cff)):
+
+```bibtex
+@inproceedings{hsfp,
+  title     = {H-SFP: Hierarchical Federated Learning with Decoupled Split-Model Prototyping},
+  booktitle = {Proceedings of the European Conference on Computer Vision (ECCV)},
+  year      = {2026}
 }
 ```
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE). Contributions welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md).

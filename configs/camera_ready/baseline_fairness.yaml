@@ -1,0 +1,64 @@
+# Baseline fairness & reproducibility manifest (camera-ready).
+# Records the common protocol used for ALL methods so reviewers can verify that
+# baselines and H-SFP are compared under identical conditions. Consumed by
+# scripts/camera_ready/gen_fairness.py to emit a markdown summary + LaTeX appendix.
+
+dataset: cifar100
+num_classes: 100
+dataset_root: /mnt/Data/cifar/
+
+# Federation topology
+num_clients: 200
+num_edges: 5                 # mid_server: [5]
+client_sampling_ratio: 0.1   # frac (partial-participation experiment sweeps 0.1/0.5/1.0)
+
+# Local / global schedule
+local_epochs: 5              # local_ep (FedAvg/FedProx/FedNova/HierFL/SplitFL)
+global_rounds: 200           # epochs
+aggregation_intervals:       # H-SFP/HSFL/HierFL edge (t1) and cloud (t2) intervals
+  t1: 5
+  t2: 10
+
+# Optimization
+optimizer: adam
+learning_rate: 1.0e-4
+lr_search_space: [1.0e-3, 5.0e-4, 1.0e-4, 5.0e-5]   # swept for tuned-FedAvg sanity check
+batch_size: 16               # local_bs
+weight_decay: 1.0e-4
+momentum: 0.9
+
+# Model split points (3-tier: client / edge / cloud)
+model: resnet50
+split_points:
+  client: "stem + layer1"
+  edge: "layer2 - layer4 + GAP"
+  cloud: "linear classifier head"
+
+# H-SFP synthesis
+synthesis_mode: diag_sigma   # default; ablated in covariance experiment
+syn_samples_per_class: 50
+ssl_epochs_client: 10
+ssl_epochs_edge: 10
+syn_epochs_cloud: 10
+
+# Reproducibility
+seeds: [0, 1, 2, 3, 4]
+determinism: "random/numpy/torch seeded; cudnn.deterministic=True, benchmark=False (main._set_seed)"
+
+# Hardware
+hardware: "1x NVIDIA GeForce RTX 3080 Ti (12 GB), CUDA 12.8, PyTorch 2.7"
+
+# Communication accounting formulas (see classification/H-SFP/hierarchy.py)
+comm_accounting:
+  prototype_payload_MB: "sum_t numel(t)*element_size(t) / 1024^2 over (proto_dict, dist_dict)"
+  model_payload_MB: "sum_p numel(p)*4 / 1e6 over state_dict (float32)"
+  covariance_modes: "per-class float counts: mu_only=D, diag=2D, full=D+D(D+1)/2, low_rank=D(r+2), mixture=K(2D)+K"
+
+# Methods compared
+methods: [h-sfp, hsfl, splitfl, hierfl, federated]
+federated_strategies: [fedavg, fedprox, fednova, fedsgd]
+
+# Sanity checks (commands in results/camera_ready/README.md)
+sanity_checks:
+  centralized_oracle: "single-node supervised upper bound on CIFAR-100 ResNet50"
+  tuned_fedavg: "FedAvg with LR swept over lr_search_space, IID, 200 clients"
