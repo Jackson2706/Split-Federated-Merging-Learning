@@ -74,9 +74,13 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 pip install -r requirements.txt
 pip install -e .          # optional: install ehsfp / camera_ready / serverless as packages
+
+# or simply:
+make install-cuda         # CUDA torch + requirements   (see `make help`)
 ```
 
-Set dataset roots in the configs (`dataset_root`) to point at your local data.
+Then set up datasets under `data/` (symlink or download) — see
+[docs/datasets.md](docs/datasets.md). Verify with `make data-check`. CIFAR auto-downloads.
 
 ---
 
@@ -136,9 +140,9 @@ config, so on-disk configs stay clean. Add `--wandb` for Weights & Biases loggin
 | Classification | CIFAR-10, CIFAR-100, HAM10000, ImageNet | F1 (macro) |
 | Segmentation | ISIC-2018 | IoU, Dice |
 
-Datasets are not bundled. Point each config's `dataset_root` (and `metadata_path` /
-`image_dirs` for HAM10000) at your local copies. Torchvision datasets (CIFAR) download on
-first use.
+Datasets are not bundled. All configs use a portable, repo-relative `data/` layout; populate
+it by symlink or download (and override any path with `--set dataset_root=...`). Full
+instructions: [docs/datasets.md](docs/datasets.md).
 
 ---
 
@@ -191,6 +195,9 @@ Ablation presets (via `--ablation`):
 
 ## Experiments
 
+> **One place to reproduce everything:** [docs/REPRODUCE.md](docs/REPRODUCE.md) maps each
+> result to its exact smoke + full command. `make help` lists shortcut targets.
+
 - **Batch runner.** `./run.sh [classification|segmentation] [--wandb]` runs the configured set.
 - **Journal experiments** (E-HSFP): convergence, ablation, dropout/staleness, intervals —
   see [scripts/journal_experiments/README.md](scripts/journal_experiments/README.md).
@@ -212,8 +219,10 @@ SMOKE=1 ./scripts/camera_ready/run_all_camera_ready.sh
 .
 ├── main.py                  # Unified entry point (task/method dispatch)
 ├── run.sh                   # Batch runner
+├── Makefile                 # Shortcut targets (make help)
 ├── requirements.txt
 ├── pyproject.toml           # Installs ehsfp / camera_ready / serverless
+├── data/                    # Datasets (git-ignored; see docs/datasets.md)
 ├── configs/                 # YAML configs (classification/, segmentation/, camera_ready/)
 ├── classification/          # Per-method code: H-SFP + baselines
 ├── segmentation/            # Per-method code for ISIC-2018
@@ -222,7 +231,7 @@ SMOKE=1 ./scripts/camera_ready/run_all_camera_ready.sh
 ├── serverless/              # Serverless backend interfaces
 ├── scripts/                 # Experiment launchers (journal_experiments/, camera_ready/)
 ├── tools/                   # Standalone plotting scripts
-└── docs/                    # architecture.md, conventions.md, usage.md, serverless.md
+└── docs/                    # architecture, datasets, REPRODUCE, usage, conventions, serverless
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full layout and the `main.py`
