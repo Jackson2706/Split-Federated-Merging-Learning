@@ -18,6 +18,12 @@ def get_dataset(args):
     the keys are the user index and the values are the corresponding data for
     each of those users.
     """
+    # camera-ready: a custom partition (Dirichlet / two-level Dirichlet) replaces the
+    # built-in IID / non-IID sampling. Force the IID code path as a crash-safe
+    # placeholder here (non-IID sharding assumes <=100 clients); the real partition is
+    # computed and applied just before the return.
+    if args.get("partition") in ("dirichlet", "two_level_dirichlet"):
+        args["iid"] = True
 
     if args["dataset"] == 'cifar10':
         data_dir = args["dataset_root"]

@@ -69,6 +69,9 @@ run_main() {
     local logf="${LOGS_DIR}/${exp_id}.log"
     local cmd=(python main.py --task classification --method "$flag" --cfg "$cfg"
                --seed "$seed" "${extra[@]}")
+    # Global budget/overrides applied uniformly to every run, e.g.
+    #   EXTRA_SET="epochs=30 ssl_epochs_client=3 t1=3 t2=6"
+    if [[ -n "${EXTRA_SET:-}" ]]; then for kv in $EXTRA_SET; do cmd+=(--set "$kv"); done; fi
     [[ -n "$WANDB_ARGS" ]] && cmd+=($WANDB_ARGS)
 
     log_info "RUN  $exp_id"

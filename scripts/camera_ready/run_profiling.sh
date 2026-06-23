@@ -27,6 +27,7 @@ timed_run() {
     local logf="${LOGS_DIR}/${exp_id}.log"
     local cmd=(python main.py --task classification --method "$flag" --cfg "$cfg"
                --seed "$seed" --set "dataset=${DATASET}" "${extra[@]}")
+    if [[ -n "${EXTRA_SET:-}" ]]; then for kv in $EXTRA_SET; do cmd+=(--set "$kv"); done; fi
     log_info "RUN  $exp_id : ${cmd[*]}"
     if [[ "$DRY_RUN" == "1" ]]; then echo "DRY_RUN: ${cmd[*]}" | tee "$logf"; return 0; fi
     cd "$PROJECT_ROOT"
