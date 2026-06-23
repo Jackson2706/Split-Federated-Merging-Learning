@@ -61,7 +61,7 @@ def run(cfg_path: str):
             torch.cuda.empty_cache()
 
             local_update = FedAvgClient(args=config, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
-            client_model, server_idx = hierarchical_fl.get_model_for_client(idx, config["download"])
+            client_model, server_idx = hierarchical_fl.get_model_for_client(idx, config.get("download", True))
             w, loss = local_update.update_weights(model=client_model, global_round=epoch)
 
             mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
