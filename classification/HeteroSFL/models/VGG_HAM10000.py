@@ -41,7 +41,9 @@ class VGGServer_SplitFed(nn.Module):
 
     def forward(self, x):
         x = self.server_part(x)
-        return F.log_softmax(x, dim=1)
+        # Return raw logits: the HeteroSFL runner applies CrossEntropyLoss / KD
+        # divergence, which expect logits (not log-probabilities).
+        return x
 
 class HAM10000MergedModelVGG(nn.Module):
     def __init__(self, args):

@@ -81,7 +81,9 @@ class AlexNetServer_SplitFed(nn.Module):
         x = self.bl_decoder(x) 
         # Then pass to standard layers
         x = self.server_part(x)
-        return F.log_softmax(x, dim=1)
+        # Return raw logits: the HeteroSFL runner applies CrossEntropyLoss / KD
+        # divergence, which expect logits (not log-probabilities).
+        return x
 
 
 class AlexNetMergedModel(nn.Module):

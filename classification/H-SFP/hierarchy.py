@@ -629,16 +629,19 @@ class HierarchicalFL:
                     if cls_id not in feats_by_cls: feats_by_cls[cls_id] = []
                     feats_by_cls[cls_id].append(out[i])
 
-        # Compute mean/std per class
+        # Compute mean/std per class (and the per-class support count, which
+        # feeds the E-HSFP reliability network — previously left at 0).
+        support_counts = {}
         for cls_id, tensors in feats_by_cls.items():
             stacked = torch.stack(tensors)
             all_protos[cls_id] = stacked.mean(0).cpu() # Move to CPU to save VRAM
             all_stds[cls_id] = stacked.std(0, unbiased=False).cpu()
-        
+            support_counts[int(cls_id)] = len(tensors)
+
         # Manual cleanup
         del feats_by_cls
-        gc.collect() 
-        return all_protos, all_stds
+        gc.collect()
+        return (all_protos, all_stds), support_counts
 
     def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
         """(Phase 2) Run SSL and extract (proto, dist) for one edge."""
@@ -662,11 +665,12 @@ class HierarchicalFL:
             reliability_net=self.reliability_net,
             memory=self.client_memory,
             generator=self.residual_generator,
+            support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
         )
 
         if syn_features_L1.shape[0] == 0:
              print(f"Edge {eid}: no prototypes from clients, skipping.")
-             return None
+             return None, {}
 
         print(f"Edge {eid}: generated {syn_features_L1.shape[0]} L1 samples (original labels). Starting SSL...")
 
@@ -775,9 +779,13 @@ class HierarchicalFL:
         
         # Return dict {original_label: tensor_2D}
         edge_protos_dists = calculate_prototypes_and_distribution(edge_features_L2, syn_labels_L1_cpu)
-        
+
+        # Per-class support counts for the reliability network.
+        uniq, cnts = torch.unique(syn_labels_L1_cpu, return_counts=True)
+        support_counts = {int(c): int(n) for c, n in zip(uniq.tolist(), cnts.tolist())}
+
         del syn_loader_L1, syn_loader_L1_eval, edge_features_L2, syn_labels_L1_cpu, syn_dataset_L1
-        return edge_protos_dists
+        return edge_protos_dists, support_counts
 
     def _cloud_supervised_phase(self, cloud_id, edge_outputs, syn_epochs, syn_samples_per_class):
         """(Phase 3) Run supervised training for the cloud."""
@@ -799,6 +807,7 @@ class HierarchicalFL:
             reliability_net=self.reliability_net,
             memory=self.edge_memory,
             generator=self.residual_generator,
+            support_map=getattr(self, "_edge_support", {}),
         )
         
         if syn_features_L2.shape[0] == 0:
@@ -995,6 +1004,9 @@ class HierarchicalFL:
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
             client_outputs = {}
+            # Per-round support counts feeding the reliability network
+            self._client_support = {}
+            self._edge_support = {}
 
             # --- PHASE 1: CLIENT PROCESSING ---
             print(f"-> Phase 1: Clients Processing ({len(idxs_users)} nodes)...")
@@ -1012,13 +1024,14 @@ class HierarchicalFL:
                 loader = DataLoader(local_data, shuffle=True, **dl_kwargs)
 
                 # SSL & Extraction
-                client_outputs[cid] = self._client_ssl_extraction_phase(
+                client_outputs[cid], support_counts = self._client_ssl_extraction_phase(
                     cid, loader, ssl_epochs=config.get("ssl_epochs_client", 10)
                 )
 
                 # Track data transmission
                 cost = get_proto_dist_size_MB(client_outputs[cid])
                 self.comm_tracker["client_to_edge_data_MB"] += cost
+                self._client_support[cid] = support_counts
 
                 # E-HSFP: Store client prototypes in memory
                 if self.client_memory is not None and client_outputs[cid] is not None:
@@ -1027,6 +1040,7 @@ class HierarchicalFL:
                         proto_dict, dist_dict,
                         source_id=f"client_{cid}",
                         round_idx=epoch,
+                        support_counts=support_counts,
                     )
                     if self.serverless_tracker is not None:
                         self.serverless_tracker.record_prototype_processing(len(proto_dict))
@@ -1068,7 +1082,7 @@ class HierarchicalFL:
                         edge_outputs[eid] = None
                         continue
 
-                edge_outputs[eid] = self._edge_ssl_extraction_phase(
+                edge_outputs[eid], edge_support = self._edge_ssl_extraction_phase(
                     eid, cids, client_outputs,
                     ssl_epochs=config.get("ssl_epochs_edge", 10),
                     syn_samples_per_class=config.get("syn_samples_per_class", 50)
@@ -1076,6 +1090,7 @@ class HierarchicalFL:
 
                 cost = get_proto_dist_size_MB(edge_outputs[eid])
                 self.comm_tracker["edge_to_cloud_data_MB"] += cost
+                self._edge_support[eid] = edge_support
 
                 # E-HSFP: Store edge prototypes in memory
                 if self.edge_memory is not None and edge_outputs[eid] is not None:
@@ -1084,6 +1099,7 @@ class HierarchicalFL:
                         proto_dict, dist_dict,
                         source_id=f"edge_{eid}",
                         round_idx=epoch,
+                        support_counts=edge_support,
                     )
 
             # E-HSFP: Mix edge outputs with memory

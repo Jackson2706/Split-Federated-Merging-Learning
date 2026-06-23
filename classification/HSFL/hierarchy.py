@@ -9,6 +9,7 @@ import psutil
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
+from sklearn.metrics import f1_score
 from tqdm import tqdm
 
 try:
@@ -47,14 +48,6 @@ class DatasetSplit(Dataset):
 def estimate_gradient_size_MB(model, input_shape, device="cpu"):
     """
     Estimate the size of the gradient sent back (i.e. the model's final output size).
-
-    Args:
-        model: nn.Module (client, edge, or cloud model)
-        input_shape: tuple, e.g. (3, 32, 32)
-        device: 'cuda' or 'cpu'
-
-    Returns:
-        size_MB: float - final output size in MB
     """
     model = model.to(device).eval()
     dummy_input = torch.randn(*input_shape).to(device)
@@ -253,13 +246,11 @@ class HierarchicalFL:
                 client_layer[cid].load_state_dict(avg_client_model)
             self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
 
-        # self.client_cache = []
-
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
         edge_to_cloud = self.connectivity[0]
 
-        # Reverse mapping: cloud → list of edge servers
+        # Reverse mapping: cloud -> list of edge servers
         cloud_to_edges = {}
         for eid, cid in edge_to_cloud.items():
             cloud_to_edges.setdefault(cid, []).append(eid)
@@ -268,25 +259,25 @@ class HierarchicalFL:
             edge_models = []
 
             for eid in edge_ids:
-                cache = self.edge_cache.get(eid)
+                cache = getattr(self, "edge_cache", {}).get(eid)
                 if cache:
                     edge_models.append(cache["edge_model"])
+                else:
+                    edge_models.append(edge_layer[eid].state_dict())
+
+            if not edge_models:
+                continue
 
             # Aggregate
             avg_edge_model = self.average_state_dicts(edge_models)
 
             # Communication tracking
             size_edge_MB = self.get_model_size(avg_edge_model)
-            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * (
-                size_edge_MB
-            )
-            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * (
-                size_edge_MB
-            )
+            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_edge_MB
+            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * size_edge_MB
 
             # Send back aggregated models
             for eid in edge_ids:
-                # Update edge server with aggregated edge model
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
     def print_comm_report(self):
@@ -294,17 +285,59 @@ class HierarchicalFL:
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
 
-    def initialize_optimizers(self):
-        self.optimizers = {}
-        for layer, nodes in self.structure.items():
-            self.optimizers[layer] = {
-                nid: torch.optim.Adam(
-                    model.parameters(),
-                    lr=self.args["lr"],
-                    weight_decay=self.args["weight_decay"],
-                )
-                for nid, model in nodes.items()
-            }
+    def _make_optimizer(self, model):
+        """Build an optimizer matching the configured strategy."""
+        lr = self.args["lr"]
+        wd = self.args.get("weight_decay", 0.0)
+        if self.args.get("optimizer", "adam") == "adam":
+            return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+        return torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=self.args.get("momentum", 0.9)
+        )
+
+    def _snapshot_pipeline(self):
+        """Return a CPU FullPipelineModel from a representative client path."""
+        client_model = self.structure[-1][0]
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid]
+        cloud_model = self.structure[len(self.args["mid_server"])][0]
+        return FullPipelineModel(
+            copy.deepcopy(client_model).cpu(),
+            copy.deepcopy(edge_model).cpu(),
+            copy.deepcopy(cloud_model).cpu(),
+        )
+
+    def _validate(self, valid_dataset, device, best_f1, epoch):
+        """Evaluate the end-to-end pipeline (client 0 -> its edge -> cloud)."""
+        client_model = self.structure[-1][0].to(device).eval()
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid].to(device).eval()
+        cloud_model = self.structure[len(self.args["mid_server"])][0].to(device).eval()
+
+        loader = DataLoader(valid_dataset, batch_size=256, shuffle=False)
+        all_preds, all_targets = [], []
+        with torch.no_grad():
+            for data, target in loader:
+                data = data.to(device)
+                logits = cloud_model(edge_model(client_model(data)))
+                all_preds.extend(logits.argmax(dim=1).cpu().numpy())
+                all_targets.extend(target.numpy())
+
+        f1 = f1_score(all_targets, all_preds, average="macro")
+        snap = None
+        if f1 >= best_f1:
+            best_f1 = f1
+            snap = FullPipelineModel(
+                copy.deepcopy(client_model).cpu(),
+                copy.deepcopy(edge_model).cpu(),
+                copy.deepcopy(cloud_model).cpu(),
+            )
+            print(f"Save best weight at epoch {epoch} with f1: {f1 * 100:.2f} %")
+
+        client_model.train()
+        edge_model.train()
+        cloud_model.train()
+        return f1, best_f1, snap
 
     def train_end_to_end(
         self,
@@ -315,367 +348,173 @@ class HierarchicalFL:
         config,
         epochs,
     ):
-        self.initialize_optimizers()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        """Hierarchical Split FL training.
 
+        Each selected client performs split-learning forward/backward through the
+        connected client -> edge -> cloud pipeline, so *all three tiers* receive
+        gradients (the previous implementation detached every tier and only ever
+        trained the cloud). Client models are FedAvg-aggregated at the edge every
+        t1 rounds and edge models are aggregated at the cloud every t2 rounds.
+        """
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         criterion = nn.CrossEntropyLoss().to(device)
-        evalcriterion = nn.NLLLoss().to(device)
+
         num_users = config["num_users"]
         frac = config["frac"]
         local_bs = config["local_bs"]
+        local_ep = int(config.get("local_ep", 1))
+        cloud_layer = len(self.args["mid_server"])
+
+        # Server-side models (edges + cloud) are persistent; keep them on-device
+        # with persistent optimizers (their parameter tensors survive in-place
+        # load_state_dict aggregation, so the optimizer state stays valid).
+        cloud_model = self.structure[cloud_layer][0].to(device)
+        cloud_opt = self._make_optimizer(cloud_model)
+        edge_opts = {}
+        for eid, edge_model in self.structure[0].items():
+            edge_model.to(device)
+            edge_opts[eid] = self._make_optimizer(edge_model)
+
         train_f1, train_loss = [], []
-        client_cpu_list = []
-        client_ram_list = []
-        client_gpu_ram_list = []
-        edge_cpu_list = []
-        edge_ram_list = []
-        edge_gpu_ram_list = []
-        cloud_cpu_list = []
-        cloud_ram_list = []
-        cloud_gpu_ram_list = []
-        best_f1 = 0
+        client_cpu_list, client_ram_list, client_gpu_ram_list = [], [], []
+        edge_cpu_list, edge_ram_list, edge_gpu_ram_list = [], [], []
+        cloud_cpu_list, cloud_ram_list, cloud_gpu_ram_list = [], [], []
         client_compute_times = []
-        input_shape_edge = None
-        input_shape_client = None
+        best_f1 = 0.0
+        best_pipeline_model = None
+
         for epoch in tqdm(range(1, epochs + 1)):
+            start_time = time.time()
             m = max(int(frac * num_users), 1)
             idxs_users = np.random.choice(range(num_users), m, replace=False)
 
-            start_time = time.time()
-            client_cpu_usages = []
-            client_ram_usages = []
-            client_gpu_ram_usages = []
-            client_outputs = {}
+            cloud_model.train()
+            client_cpu_usages, client_ram_usages, client_gpu_ram_usages = [], [], []
+            epoch_losses = []
 
             for cid in idxs_users:
                 self.client_cache.append(cid)
-                cpu_before = psutil.cpu_percent(interval=None)
-                mem_before = psutil.Process(os.getpid()).memory_info().rss / (
-                    1024**2
-                )
-                torch.cuda.reset_peak_memory_stats()
-                torch.cuda.empty_cache()
-                local_data = DatasetSplit(train_dataset, user_groups[cid])
-                # print(f"datalen: {len(local_data)}")
-                loader = DataLoader(
-                    local_data, batch_size=local_bs, shuffle=True
-                )
-
-                model = self.structure[-1][cid]
-                model.to(device).eval()
-
-                feats, labels = [], []
-                with torch.no_grad():
-                    for data, target in loader:
-                        if input_shape_client is None:
-                            input_shape_client = data.shape
-                        data, target = data.to(device), target.to(device)
-                        out = model(data)
-                        feats.append(out.cpu())
-                        labels.append(target.cpu())
-                        del data, target, out
-                        torch.cuda.empty_cache()
-
-                fx, fy = torch.cat(feats), torch.cat(labels)
-                client_outputs[cid] = (fx, fy)
-                del fx, fy
-                torch.cuda.empty_cache()
-                cpu_after = psutil.cpu_percent(interval=None)
-                mem_after = psutil.Process(os.getpid()).memory_info().rss / (
-                    1024**2
-                )
-
-                mem_gpu_used = torch.cuda.max_memory_allocated(device) / (
-                    1024**2
-                )
-                avg_cpu = (cpu_before + cpu_after) / 2
-                mem_used = mem_after - mem_before
-                client_ram_usages.append(mem_used)
-                client_cpu_usages.append(avg_cpu)
-                client_gpu_ram_usages.append(mem_gpu_used)
-                model.cpu()
-                torch.cuda.empty_cache()
-
-            avg_ram = (
-                sum(client_ram_usages) / len(client_ram_usages)
-                if sum(client_ram_usages) / len(client_ram_usages) > 0
-                else 0
-            )
-            avg_cpu = sum(client_cpu_usages) / len(client_cpu_usages)
-            avg_gpu_ram = sum(client_gpu_ram_usages) / len(
-                client_gpu_ram_usages
-            )
-
-            print(f"Average CPU usage / client: {avg_cpu:.2f} %")
-            print(f"Average RAM usage/ client: {avg_ram:.2f} MB")
-            print(f"Average GPU RAM usage/ client: {avg_gpu_ram:.2f} MB")
-
-            client_ram_list.append(avg_ram)
-            client_cpu_list.append(avg_cpu)
-            client_gpu_ram_list.append(avg_gpu_ram)
-
-            edge_outputs = {}
-            edge_to_clients = {}
-            for cid in client_outputs:
                 eid = self.connectivity[-1][cid]
-                edge_to_clients.setdefault(eid, []).append(cid)
 
-            edge_cpu_usages = []
-            edge_ram_usages = []
-            edge_gpu_ram_usages = []
-            for eid, cids in edge_to_clients.items():
                 cpu_before = psutil.cpu_percent(interval=None)
-                mem_before = psutil.Process(os.getpid()).memory_info().rss / (
-                    1024**2
-                )
+                mem_before = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
                 torch.cuda.reset_peak_memory_stats()
                 torch.cuda.empty_cache()
-                model = self.structure[0][eid]
-                model.to(device).train()
-                X = torch.cat(
-                    [client_outputs[cid][0] for cid in cids], dim=0
-                ).to(device)
-                Y = torch.cat(
-                    [client_outputs[cid][1] for cid in cids], dim=0
-                ).to(device)
-                if input_shape_edge is None:
-                    input_shape_edge = X.shape
-                feats, labels = [], []
-                for x, y in zip(
-                    torch.split(X, local_bs), torch.split(Y, local_bs)
-                ):
-                    x, y = x.to(device), y.to(device)
-                    out = model(x)
-                    feats.append(out.cpu())
-                    del x, out
-                    labels.append(y.cpu())
-                    del y
-                out = torch.cat(feats, dim=0)
-                Y = torch.cat(labels, dim=0)
-                edge_outputs[eid] = (out.detach().cpu(), Y.detach().cpu())
-                size_MB = (X.numel() + Y.numel()) * 4 / (1024**2)
-                torch.cuda.empty_cache()
-                self.comm_tracker["client_upload_smashed_MB"] += size_MB
-                model.cpu()
 
-                mem_after = psutil.Process(os.getpid()).memory_info().rss / (
-                    1024**2
+                client_model = self.structure[-1][cid].to(device).train()
+                edge_model = self.structure[0][eid].to(device).train()
+                client_opt = self._make_optimizer(client_model)
+                edge_opt = edge_opts[eid]
+
+                loader = DataLoader(
+                    DatasetSplit(train_dataset, user_groups[cid]),
+                    batch_size=local_bs,
+                    shuffle=True,
                 )
+
+                client_losses = []
+                for _ in range(local_ep):
+                    for data, target in loader:
+                        data, target = data.to(device), target.to(device)
+                        client_opt.zero_grad(set_to_none=True)
+                        edge_opt.zero_grad(set_to_none=True)
+                        cloud_opt.zero_grad(set_to_none=True)
+
+                        # Connected split-learning forward through all 3 tiers
+                        smashed_c = client_model(data)
+                        smashed_e = edge_model(smashed_c)
+                        logits = cloud_model(smashed_e)
+                        loss = criterion(logits, target)
+                        loss.backward()
+
+                        client_opt.step()
+                        edge_opt.step()
+                        cloud_opt.step()
+                        client_losses.append(loss.item())
+
+                        # Communication: smashed activations up; equal-size grads down
+                        c_MB = smashed_c.numel() * smashed_c.element_size() / (1024**2)
+                        e_MB = smashed_e.numel() * smashed_e.element_size() / (1024**2)
+                        self.comm_tracker["client_upload_smashed_MB"] += c_MB
+                        self.comm_tracker["edge_upload_smashed_MB"] += e_MB
+                        self.comm_tracker["cloud_download_grad_MB"] += e_MB
+                        self.comm_tracker["edge_download_grad_MB"] += c_MB
+
+                epoch_losses.append(
+                    float(np.mean(client_losses)) if client_losses else 0.0
+                )
+                client_model.cpu()
+
                 cpu_after = psutil.cpu_percent(interval=None)
-                mem_gpu_used = torch.cuda.max_memory_allocated(device) / (
-                    1024**2
+                mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+                client_cpu_usages.append((cpu_before + cpu_after) / 2)
+                client_ram_usages.append(max(mem_after - mem_before, 0))
+                client_gpu_ram_usages.append(
+                    torch.cuda.max_memory_allocated(device) / (1024**2)
+                    if device.type == "cuda"
+                    else 0.0
                 )
-                avg_cpu = (cpu_before + cpu_after) / 2
-                mem_used = mem_after - mem_before
-
-                edge_ram_usages.append(mem_used)
-                edge_cpu_usages.append(avg_cpu)
-                edge_gpu_ram_usages.append(mem_gpu_used)
-                del X, Y, out
                 torch.cuda.empty_cache()
 
-            del client_outputs
-            avg_edge_ram = (
-                sum(edge_ram_usages) / len(edge_ram_usages)
-                if sum(edge_ram_usages) / len(edge_ram_usages) > 0
-                else 0
+            train_loss.append(float(np.mean(epoch_losses)) if epoch_losses else 0.0)
+            client_cpu_list.append(float(np.mean(client_cpu_usages)))
+            client_ram_list.append(float(np.mean(client_ram_usages)))
+            client_gpu_ram_list.append(float(np.mean(client_gpu_ram_usages)))
+            # Edge/cloud are the same physical device here; report coarse round stats
+            edge_cpu_list.append(client_cpu_list[-1])
+            edge_ram_list.append(client_ram_list[-1])
+            edge_gpu_ram_list.append(client_gpu_ram_list[-1])
+            cloud_cpu_list.append(psutil.cpu_percent(interval=None))
+            cloud_ram_list.append(
+                psutil.Process(os.getpid()).memory_info().rss / (1024**2)
             )
-            avg_edge_cpu = sum(edge_cpu_usages) / len(edge_cpu_usages)
-            avg_edge_gpu_ram = sum(edge_gpu_ram_usages) / len(
-                edge_gpu_ram_usages
+            cloud_gpu_ram_list.append(
+                torch.cuda.max_memory_allocated(device) / (1024**2)
+                if device.type == "cuda"
+                else 0.0
             )
-            edge_cpu_list.append(avg_edge_cpu)
-            edge_ram_list.append(avg_edge_ram)
-            edge_gpu_ram_list.append(avg_edge_gpu_ram)
+            client_compute_times.append(time.time() - start_time)
 
-            print(f"Average Edge CPU usage: {avg_edge_cpu:.2f} %")
-            print(f"Average Edge RAM usage: {avg_edge_ram:.2f} MB")
-            print(f"Average Edge GPU RAM usage: {avg_edge_gpu_ram:.2f} MB")
-
-            cloud_cpu_usage = psutil.cpu_percent(interval=None)
-            cloud_ram_usage = psutil.Process(os.getpid()).memory_info().rss / (
-                1024**2
-            )
-            torch.cuda.reset_peak_memory_stats()
-            torch.cuda.empty_cache()
-
-            cloud_model = self.structure[len(self.args["mid_server"])][0]
-            cloud_model.to(device).train()
-
-            all_X = torch.cat(
-                [fx for fx, _ in edge_outputs.values()], dim=0
-            ).to(device)
-            all_Y = torch.cat(
-                [fy for _, fy in edge_outputs.values()], dim=0
-            ).to(device)
-            size_MB = (all_X.numel() + all_Y.numel()) * 4 / (1024**2)
-            self.comm_tracker["edge_upload_smashed_MB"] += size_MB
-            pred = cloud_model(all_X)
-            loss = criterion(pred, all_Y)
-
-            self.optimizers[len(self.args["mid_server"])][0].zero_grad()
-            loss.backward()
-            out_cl = nn.functional.log_softmax(pred, dim=1)
-            loss = evalcriterion(out_cl, all_Y)
-            self.optimizers[len(self.args["mid_server"])][0].step()
-            train_loss.append(loss.item())
-            # === Track gradient sent from cloud → edge ===
-            for eid in edge_outputs:
-                edge_model = self.structure[0][eid].to(device)
-                grad_to_edge_MB = estimate_gradient_size_MB(
-                    edge_model, input_shape_edge
-                )
-                self.comm_tracker["cloud_download_grad_MB"] += grad_to_edge_MB
-
-            # === Track gradient sent from edge → client ===
-            for cid in idxs_users:
-                client_model = self.structure[-1][cid].to(device)
-                grad_to_client_MB = estimate_gradient_size_MB(
-                    client_model, input_shape_client
-                )
-                self.comm_tracker["edge_download_grad_MB"] += grad_to_client_MB
-            cloud_model.cpu()
-            end_time = time.time()
-            cloud_ram_usage = (
-                (
-                    psutil.Process(os.getpid()).memory_info().rss / (1024**2)
-                    - cloud_ram_usage
-                )
-                if psutil.Process(os.getpid()).memory_info().rss / (1024**2)
-                - cloud_ram_usage
-                > 0
-                else 0
-            )
-            cloud_cpu_usage = (
-                psutil.cpu_percent(interval=None) + cloud_cpu_usage
-            ) / 2
-            mem_gpu_used = torch.cuda.max_memory_allocated(device) / (1024**2)
-            time_taken = end_time - start_time
-            cloud_cpu_list.append(cloud_cpu_usage)
-            cloud_ram_list.append(cloud_ram_usage)
-            cloud_gpu_ram_list.append(mem_gpu_used)
-            client_compute_times.append(time_taken)
-            print(f"Cloud CPU usage: {cloud_cpu_usage:.2f} %")
-            print(f"Cloud RAM usage: {cloud_ram_usage:.2f} MB")
-            print(f"Cloud GPU RAM usage: {mem_gpu_used:.2f} MB")
-            print(f"Time taken for cloud aggregation: {time_taken:.2f} seconds")
-            del all_X, all_Y, pred, loss
-            torch.cuda.empty_cache()
-
-            for eid in edge_outputs:
-                self.optimizers[0][eid].zero_grad()
-                self.optimizers[0][eid].step()
-
-            for cid in idxs_users:
-                self.optimizers[-1][cid].zero_grad()
-                self.optimizers[-1][cid].step()
-
-            del edge_outputs
-            torch.cuda.empty_cache()
+            # --- Hierarchical FedAvg aggregation of model tiers ---
             if epoch % int(config["t1"]) == 0:
                 print("Edge server aggregation...")
                 self.edge_server_aggregation()
-            elif epoch == 1:
-                pass
-            else:
-                continue
-
             if epoch % int(config["t2"]) == 0:
-                print("Edge server aggregation...")
-                self.edge_server_aggregation()
                 print("Cloud aggregation...")
                 self.cloud_aggregation()
-            elif epoch == 1:
-                pass
-            else:
-                continue
-            client_model = self.structure[-1][cid]
-            eid = self.connectivity[-1][0]
-            edge_model = self.structure[0][eid]
-            cloud_model = self.structure[len(self.args["mid_server"])][0]
-            client_model.to(device).eval()
-            edge_model.to(device).eval()
-            cloud_model.to(device).eval()
-            loader = DataLoader(valid_dataset, batch_size=256, shuffle=False)
 
-            from sklearn.metrics import f1_score
-
-            all_preds = []
-            all_targets = []
-            total_loss = 0.0
-            evalcriterion = nn.NLLLoss()
-            with torch.no_grad():
-                for data, target in loader:
-                    data, target = data.to(device), target.to(device)
-                    out_c = client_model(data)
-                    out_e = edge_model(out_c)
-                    out_cl = cloud_model(out_e)
-                    pred = out_cl.argmax(dim=1)
-                    all_preds.extend(pred.cpu().numpy())
-                    all_targets.extend(target.cpu().numpy())
-
-                    out_cl = nn.functional.log_softmax(out_cl, dim=1)
-                    loss = evalcriterion(out_cl, target)
-
-                    total_loss += loss.item() * data.size(0)
-            # Compute F1 score (macro, micro, or weighted depending on your task)
-            f1 = f1_score(
-                all_targets, all_preds, average="macro"
-            )  # change 'macro' if needed
-            if best_f1 <= f1:
-                print(
-                    f"Save best weight at epoch {epoch} with f1: {f1 * 100:.2f} %"
+            # --- Validation: after a cloud aggregation, or on the final epoch ---
+            if epoch % int(config["t2"]) == 0 or epoch == epochs:
+                f1, best_f1, snap = self._validate(
+                    valid_dataset, device, best_f1, epoch
                 )
-                pipeline_model = FullPipelineModel(
-                    client_model=copy.deepcopy(client_model),
-                    edge_model=copy.deepcopy(edge_model),
-                    cloud_model=copy.deepcopy(cloud_model),
-                )
-                best_f1 = f1
-            test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
-            with torch.no_grad():
-                for data, target in test_loader:
-                    data, target = data.to(device), target.to(device)
-                    out = pipeline_model(data)
-                    pred = out.argmax(dim=1)
-                    all_preds.extend(pred.cpu().numpy())
-                    all_targets.extend(target.cpu().numpy())
-            f1 = f1_score(
-                all_targets, all_preds, average="macro"
-            )  # change 'macro' if needed
-            train_f1.append(f1)
-            print("\n=== Communication Accuracy Summary ===")
-            print(f"F1: {f1 * 100} %")
-            for k, v in self.comm_tracker.items():
-                print(f"{k}: {v:.2f} MB")
+                if snap is not None:
+                    best_pipeline_model = snap
+                train_f1.append(f1)
 
-            if wandb is not None and wandb.run is not None:
-                wandb.log({
-                    "epoch": epoch,
-                    "f1": f1,
-                    "best_f1": best_f1,
-                    "train_loss": train_loss[-1] if train_loss else None,
-                    "avg_client_cpu_pct": client_cpu_list[-1] if client_cpu_list else None,
-                    "avg_client_ram_MB": client_ram_list[-1] if client_ram_list else None,
-                    "avg_client_gpu_ram_MB": client_gpu_ram_list[-1] if client_gpu_ram_list else None,
-                    **{k: v for k, v in self.comm_tracker.items()},
-                })
-            del (
-                client_model,
-                edge_model,
-                cloud_model,
-                out_c,
-                out_e,
-                out_cl,
-                out,
-                pred,
-                data,
-                target,
-                all_preds,
-                all_targets,
-                loss,
-            )
+                print(f"\n=== Epoch {epoch} | F1: {f1 * 100:.2f} % ===")
+                for k, v in self.comm_tracker.items():
+                    print(f"{k}: {v:.2f} MB")
+
+                if wandb is not None and wandb.run is not None:
+                    wandb.log({
+                        "epoch": epoch,
+                        "f1": f1,
+                        "best_f1": best_f1,
+                        "train_loss": train_loss[-1],
+                        "avg_client_cpu_pct": client_cpu_list[-1],
+                        "avg_client_ram_MB": client_ram_list[-1],
+                        "avg_client_gpu_ram_MB": client_gpu_ram_list[-1],
+                        **{k: v for k, v in self.comm_tracker.items()},
+                    })
+
             torch.cuda.empty_cache()
+
+        if best_pipeline_model is None:
+            best_pipeline_model = self._snapshot_pipeline()
+        if not train_f1:
+            train_f1.append(0.0)
+
         print("\n=== Communication Summary ===")
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
@@ -693,5 +532,5 @@ class HierarchicalFL:
             "cloud_ram": cloud_ram_list,
             "cloud_gpu_ram": cloud_gpu_ram_list,
             "client_time_list": client_compute_times,
-            "best_weight": pipeline_model,
+            "best_weight": best_pipeline_model,
         }

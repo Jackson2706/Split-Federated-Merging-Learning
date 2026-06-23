@@ -55,7 +55,9 @@ class HAM10000ServerModelResNet50(nn.Module):
         x = self.server_part(x)
         x = torch.flatten(x, 1)
         logits = self.fc(x)
-        return F.log_softmax(logits, dim=1)
+        # Return raw logits: the HeteroSFL runner applies CrossEntropyLoss / KD
+        # divergence, which expect logits (not log-probabilities).
+        return logits
 
 
 class HAM10000MergedModelResNet50(nn.Module):

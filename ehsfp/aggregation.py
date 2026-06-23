@@ -23,6 +23,7 @@ def reliability_weighted_aggregate(
     reliability_net: Optional[PrototypeReliabilityNetwork] = None,
     memory: Optional[EpisodicPrototypeMemory] = None,
     generator=None,
+    support_map: Optional[Dict] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Aggregate prototypes with optional reliability weighting and generate synthetic data.
 
@@ -78,14 +79,19 @@ def reliability_weighted_aggregate(
             mus = torch.stack(merged[l]["p"]).to(device)
             sigmas = torch.stack(merged[l]["d"]).to(device)
 
-            # Build PrototypeRecord-like objects for feature extraction
+            # Build PrototypeRecord-like objects for feature extraction.
+            # Use the real per-source support counts when provided so the
+            # reliability features match what the network saw during bootstrap.
             records = []
             for i, sid in enumerate(merged[l]["sids"]):
+                sc = 0
+                if support_map is not None:
+                    sc = support_map.get(sid, {}).get(l, 0)
                 records.append(PrototypeRecord(
                     class_id=l,
                     mu=merged[l]["p"][i],
                     sigma=merged[l]["d"][i],
-                    support_count=0,
+                    support_count=sc,
                     source_id=str(sid),
                     round_idx=0,
                     age=0,

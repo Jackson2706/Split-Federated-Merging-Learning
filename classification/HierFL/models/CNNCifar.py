@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models
 
 
@@ -23,4 +24,6 @@ class ResNet18_CIFAR100(nn.Module):
         )
 
     def forward(self, x):
-        return self.model(x)
+        # Return log-probabilities so the model is consistent with the
+        # nn.NLLLoss() used by the HierFL FedAvgClient.
+        return F.log_softmax(self.model(x), dim=1)
