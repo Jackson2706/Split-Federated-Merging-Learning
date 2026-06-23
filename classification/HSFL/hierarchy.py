@@ -9,7 +9,7 @@ import psutil
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 
 try:
@@ -323,7 +323,7 @@ class HierarchicalFL:
                 all_preds.extend(logits.argmax(dim=1).cpu().numpy())
                 all_targets.extend(target.numpy())
 
-        f1 = f1_score(all_targets, all_preds, average="macro")
+        f1 = accuracy_score(all_targets, all_preds)  # primary metric: top-1 accuracy
         snap = None
         if f1 >= best_f1:
             best_f1 = f1

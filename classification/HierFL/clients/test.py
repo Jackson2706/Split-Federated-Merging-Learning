@@ -1,5 +1,5 @@
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -31,6 +31,6 @@ def test_inference(args, model, test_dataset):
         all_preds.extend(pred_labels.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
-    # Compute F1 score (macro for balanced class importance)
-    f1 = f1_score(all_labels, all_preds, average='macro')
-    return f1, total_loss
+    # Primary metric: top-1 accuracy
+    acc = accuracy_score(all_labels, all_preds)
+    return acc, total_loss

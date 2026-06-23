@@ -1,5 +1,6 @@
 import copy
 import logging
+import math
 import os
 import time
 from collections import deque
@@ -11,7 +12,7 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import kornia.augmentation as K
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 
 try:
     import wandb
@@ -563,22 +564,56 @@ class HierarchicalFL:
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
 
+    def _build_lr_scheduler(self, optimizer):
+        """Linear warmup -> cosine annealing schedule (peak LR unchanged, so the
+        comparison vs baselines stays fair). Speeds convergence in few epochs.
+        Controlled by config: use_lr_schedule (bool), warmup_epochs (int).
+        Returns None when disabled."""
+        if not self.args.get("use_lr_schedule", False):
+            return None
+        total = max(int(self._sched_total_epochs), 1)
+        warmup = max(int(self.args.get("warmup_epochs", 0)), 0)
+
+        def lr_lambda(epoch):  # epoch is 0-indexed scheduler step
+            if warmup > 0 and epoch < warmup:
+                return float(epoch + 1) / float(warmup)
+            # cosine from 1.0 -> ~0 over the remaining epochs
+            progress = (epoch - warmup) / max(total - warmup, 1)
+            return 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+
+        return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
     def initialize_optimizers(self):
-        """Initialize optimizers AND GradScalers for all models.
-        Paper Section 4: 'All models use the Adam optimizer (lr = 1e-4)'
+        """Initialize optimizers, GradScalers and (optional) LR schedulers.
+
+        SSL tiers (client/edge) may use a separate, contrastive-appropriate
+        learning rate `ssl_lr` (defaults to `lr` -> no change); the supervised
+        cloud classifier keeps `lr` so it stays directly comparable to baselines.
         """
         self.optimizers = {}
+        cloud_layer = len(self.args["mid_server"])
+        ssl_lr = self.args.get("ssl_lr", self.args["lr"])
         for layer, nodes in self.structure.items():
             self.optimizers[layer] = {}
+            lr_use = self.args["lr"] if layer == cloud_layer else ssl_lr
             for nid, model in nodes.items():
+                opt = torch.optim.Adam(
+                    model.parameters(),
+                    lr=lr_use,
+                    weight_decay=self.args["weight_decay"],
+                )
                 self.optimizers[layer][nid] = {
-                    'optimizer': torch.optim.Adam(
-                        model.parameters(),
-                        lr=self.args["lr"],
-                        weight_decay=self.args["weight_decay"],
-                    ),
-                    'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+                    'optimizer': opt,
+                    'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda')),
+                    'scheduler': self._build_lr_scheduler(opt),
                 }
+
+    def _step_lr_schedulers(self):
+        """Advance all per-node LR schedulers by one epoch (if enabled)."""
+        for layer in self.optimizers.values():
+            for od in layer.values():
+                if od.get('scheduler') is not None:
+                    od['scheduler'].step()
 
     # --- Helper methods for the training loop (optimized) ---
 
@@ -933,14 +968,14 @@ class HierarchicalFL:
         print("--- End Validation Debug Info ---")
         # --- END DEBUG ---
 
-        f1 = 0.0 # Default value
+        f1 = 0.0 # Default value (holds accuracy; name kept for output-key compatibility)
         pipeline_model = None
         try:
-            # Calculate F1 score (where the error occurred)
-            f1 = f1_score(all_targets, all_preds, average="macro", zero_division=0) # Added zero_division=0
-            
+            # Primary metric: top-1 accuracy
+            f1 = accuracy_score(all_targets, all_preds)
+
             if best_f1 < f1:
-                print(f"Saved best model at epoch {epoch} with F1: {f1 * 100:.2f} %")
+                print(f"Saved best model at epoch {epoch} with Acc: {f1 * 100:.2f} %")
                 best_f1 = f1
                 pipeline_model = FullPipelineModel(
                     client_model=copy.deepcopy(client_model),
@@ -966,8 +1001,10 @@ class HierarchicalFL:
         epochs,
         checkpoint_path="checkpoint_hfl.pt"
     ):
+        # Total epochs for the (optional) warmup+cosine LR schedule
+        self._sched_total_epochs = epochs
         self.initialize_optimizers()
-        
+
         # Read config
         num_users = config["num_users"]
         frac = config["frac"]
@@ -1225,6 +1262,9 @@ class HierarchicalFL:
 
             if wandb is not None and wandb.run is not None:
                 wandb.log(log_data)
+
+            # Advance the warmup+cosine LR schedule (no-op if disabled)
+            self._step_lr_schedulers()
 
             print(f"Epoch {epoch} finished in {epoch_time:.2f}s")
 

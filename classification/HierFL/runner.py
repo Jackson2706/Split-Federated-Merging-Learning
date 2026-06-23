@@ -120,8 +120,8 @@ def run(cfg_path: str):
     test_acc, test_loss = test_inference(config, global_model, test_dataset)
     total_time = time.time() - start_time
     print(f"\nResults after {config['epochs']} global rounds:")
-    print("|---- Avg Train F1: {:.2f}%".format(100 * train_accuracy[-1]))
-    print("|---- Test F1: {:.2f}%".format(100 * test_acc))
+    print("|---- Avg Train Acc: {:.2f}%".format(100 * train_accuracy[-1]))
+    print("|---- Test Acc: {:.2f}%".format(100 * test_acc))
     print("Total Run Time: {:.4f}s".format(total_time))
 
     if wandb is not None and wandb.run is not None:

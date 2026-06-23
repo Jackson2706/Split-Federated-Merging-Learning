@@ -187,12 +187,12 @@ def run(cfg_path: str):
                     all_preds.extend(predicted.cpu().numpy())
                     all_labels.extend(label.cpu().numpy())
 
-            eval_f1 = f1_score(all_labels, all_preds, average="macro")
             eval_acc = accuracy_score(all_labels, all_preds)
-            print(f"Epoch {epoch+1}: F1={eval_f1:.4f}  Acc={eval_acc:.4f}")
-            if eval_f1 > best_f1:
-                best_f1 = eval_f1
-                print(f" -> New Best F1: {best_f1:.4f}")
+            eval_f1 = f1_score(all_labels, all_preds, average="macro")
+            print(f"Epoch {epoch+1}: Acc={eval_acc:.4f}  F1={eval_f1:.4f}")
+            if eval_acc > best_f1:
+                best_f1 = eval_acc
+                print(f" -> New Best Acc: {best_f1:.4f}")
 
             if wandb is not None and wandb.run is not None:
                 wandb.log({
@@ -220,8 +220,9 @@ def run(cfg_path: str):
             test_labels.extend(label.cpu().numpy())
 
     final_f1 = f1_score(test_labels, test_preds, average="macro")
+    final_acc = accuracy_score(test_labels, test_preds)
     total_time = time.time() - start_time
-    print(f"\nFinal Test F1: {final_f1:.4f}  Acc: {accuracy_score(test_labels, test_preds):.4f}")
+    print(f"\nFinal Test Acc: {final_acc*100:.2f}%  (F1: {final_f1*100:.2f}%)")
     print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
     print("Total Run Time: {:.2f}s".format(total_time))
 

@@ -7,7 +7,7 @@ from config import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
 from models import get_model
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
@@ -75,12 +75,12 @@ def run(cfg_path: str):
                 all_preds.extend(pred.cpu().numpy())
                 all_targets.extend(target.cpu().numpy())
 
-        f1 = f1_score(all_targets, all_preds, average="macro")
+        acc = accuracy_score(all_targets, all_preds)
         print(f"\nResults after {config['epochs']} global rounds:")
-        print("|---- Best Validation F1: {:.2f}%".format(100 * output["best_f1"]))
-        print("|---- Test F1 Score: {:.2f}%".format(100 * f1))
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Test Acc: {:.2f}%".format(100 * acc))
     else:
         print("\nNo best model was saved during training.")
-        print("|---- Best Validation F1: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
 
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))

@@ -22,9 +22,10 @@ from camera_ready.io_utils import CR_ROOT, cr_dir, write_csv, aggregate_seeds
 
 LOGS_DIR = os.path.join(CR_ROOT, "logs")
 
-# Test F1 (%) across all method runners; Best Validation F1 for H-SFP.
-_TEST_F1 = re.compile(r"(?:Final\s+)?Test F1(?:\s+Score)?\s*[:=]\s*([\d.]+)\s*%")
-_BEST_F1 = re.compile(r"Best Validation F1\s*[:=]\s*([\d.]+)\s*%")
+# Test accuracy (%) across all method runners; Best Validation acc for H-SFP.
+# Label-agnostic: matches the new "Acc" labels and legacy "F1" logs.
+_TEST_F1 = re.compile(r"(?:Final\s+)?Test\s+(?:Acc|F1)(?:\s+Score)?\s*[:=]\s*([\d.]+)\s*%")
+_BEST_F1 = re.compile(r"Best Validation\s+(?:Acc|F1)\s*[:=]\s*([\d.]+)\s*%")
 
 _HETERO = re.compile(r"^hetero_(?P<method>.+?)_ae(?P<ae>[\d.]+)_ac(?P<ac>[\d.]+)_s(?P<seed>\d+)$")
 _PARTIAL = re.compile(r"^partial_(?P<method>.+?)_frac(?P<frac>[\d.]+)_(?P<dist>[^_]+)_s(?P<seed>\d+)$")

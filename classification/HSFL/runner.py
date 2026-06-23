@@ -7,7 +7,7 @@ from config import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
 from models import get_model
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
@@ -71,8 +71,8 @@ def run(cfg_path: str):
             all_preds.extend(pred.cpu().numpy())
             all_targets.extend(target.cpu().numpy())
 
-    f1 = f1_score(all_targets, all_preds, average="macro")
+    acc = accuracy_score(all_targets, all_preds)
     print(f"\nResults after {config['epochs']} global rounds:")
-    print("|---- Avg Train F1: {:.2f}%".format(100 * output["train_accuracy"][-1]))
-    print("|---- Test F1: {:.2f}%".format(100 * f1))
+    print("|---- Avg Train Acc: {:.2f}%".format(100 * output["train_accuracy"][-1]))
+    print("|---- Test Acc: {:.2f}%".format(100 * acc))
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))

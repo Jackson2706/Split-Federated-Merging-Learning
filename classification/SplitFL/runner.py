@@ -12,7 +12,7 @@ from config import ConfigLoader
 from data import get_dataset
 from FedServer import get_strategy
 from models import get_model
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from tensorboardX import SummaryWriter
 from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
@@ -143,7 +143,7 @@ def run(cfg_path: str):
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(label.cpu().numpy())
 
-        eval_f1 = f1_score(all_labels, all_preds, average="macro")
+        eval_f1 = accuracy_score(all_labels, all_preds)
         eval_f1_scores.append(eval_f1)
         round_cpu_usages.append(np.mean(round_cpu_per_client))
         round_ram_usages.append(np.mean(round_ram_per_client))
@@ -182,9 +182,9 @@ def run(cfg_path: str):
             test_preds.extend(predicted.cpu().numpy())
             test_labels.extend(label.cpu().numpy())
 
-    test_f1 = f1_score(test_labels, test_preds, average="macro")
+    test_f1 = accuracy_score(test_labels, test_preds)
     total_time = time.time() - start_time
-    print(f"\nFinal Test F1: {test_f1*100:.2f}%")
+    print(f"\nFinal Test Acc: {test_f1*100:.2f}%")
     print("Total Run Time: {:.2f}s".format(total_time))
 
     if wandb is not None and wandb.run is not None:

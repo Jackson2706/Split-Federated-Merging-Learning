@@ -53,7 +53,7 @@ def table_hetero():
                             and r["alpha_client"] == ac)
         out.append(row)
     write_table(out, cols, os.path.join(CR_ROOT, "hetero", "table_hetero.tex"),
-                caption="Hierarchical heterogeneity: test F1 (\\%) under two-level "
+                caption="Hierarchical heterogeneity: test Acc (\\%) under two-level "
                         "Dirichlet ($\\alpha_e$=inter-edge, $\\alpha_c$=intra-edge), "
                         "CIFAR-100, mean$\\pm$std over seeds.",
                 label="tab:hetero", escape=False)
@@ -81,7 +81,7 @@ def table_partial():
                                 and r["dist"] == dist)
             out.append(row)
     write_table(out, cols, os.path.join(CR_ROOT, "partial", "table_partial.tex"),
-                caption="Partial participation: test F1 (\\%) vs active-client ratio and "
+                caption="Partial participation: test Acc (\\%) vs active-client ratio and "
                         "data distribution, CIFAR-100, mean$\\pm$std over seeds.",
                 label="tab:partial", escape=False)
     print("[make_tables] wrote table_partial.tex")

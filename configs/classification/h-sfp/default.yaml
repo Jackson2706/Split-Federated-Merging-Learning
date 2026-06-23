@@ -12,6 +12,18 @@ weight_decay: !!float 1e-4
 verbose: false
 print_every: 1
 
+# --- Convergence: linear-warmup + cosine LR schedule ---------------------
+# Peak LR is unchanged (= `lr`), so this stays FAIR vs the baselines; it just
+# warms up then anneals, which converges in noticeably fewer epochs.
+use_lr_schedule: true
+warmup_epochs: 5
+# Optional extra speed-up: a higher LR for the contrastive SSL tiers
+# (client + edge). The supervised cloud classifier always keeps `lr`, so it
+# stays directly comparable to the baselines. Defaults to `lr` (no change).
+# NOTE: setting this introduces an SSL-phase LR asymmetry vs baselines —
+# enable only if you accept that. Contrastive SSL typically wants a higher LR.
+# ssl_lr: !!float 3e-4
+
 input_size: 32
 mid_server: [5]
 

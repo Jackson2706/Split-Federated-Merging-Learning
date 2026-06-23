@@ -1,11 +1,11 @@
 import torch
-from sklearn.metrics import f1_score
+from sklearn.metrics import accuracy_score
 from torch import nn
 from torch.utils.data import DataLoader
 
 
 def test_inference(args, model, test_dataset):
-    """Returns the test F1 score (macro) and loss."""
+    """Returns the test top-1 accuracy and loss."""
     model.eval()
     loss = 0.0
 
@@ -29,5 +29,5 @@ def test_inference(args, model, test_dataset):
         all_preds.extend(pred_labels.cpu().numpy())
         all_labels.extend(labels.cpu().numpy())
 
-    f1 = f1_score(all_labels, all_preds, average='macro')  # 'macro', 'micro', or 'weighted'
-    return f1, loss
+    acc = accuracy_score(all_labels, all_preds)
+    return acc, loss
