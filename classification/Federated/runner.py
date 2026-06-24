@@ -83,9 +83,14 @@ def run(cfg_path: str):
             else:
                 comm_cost_dict["client_model_upload_MB"] += get_weight_size_mb(w)
 
-            local_weights.append(copy.deepcopy(w))
-            local_losses.append(copy.deepcopy(loss))
-            local_updates.append((copy.deepcopy(w), copy.deepcopy(loss)))
+            # Keep accumulated client weights on CPU so frac=1.0 (200 clients)
+            # does not pile 200 state_dicts onto the GPU (-> CUDA OOM).
+            w_cpu = {k: v.detach().to("cpu") for k, v in w.items()}
+            local_weights.append(w_cpu)
+            local_losses.append(loss)
+            local_updates.append((w_cpu, loss))
+            del w
+            torch.cuda.empty_cache()
 
         training_loss.append(sum(local_losses) / len(local_losses))
         avg_time = sum(client_compute_times) / len(client_compute_times)

@@ -71,11 +71,16 @@ def run(cfg_path: str):
             client_ram_usages.append(mem_after - mem_before)
             client_gpu_ram_usage.append(torch.cuda.max_memory_allocated(device) / (1024**2))
 
+            # Keep accumulated client weights on CPU so frac=1.0 (200 clients)
+            # does not pile 200 state_dicts onto the GPU (-> CUDA OOM).
+            w_cpu = {k: v.detach().to("cpu") for k, v in w.items()}
             if server_idx in local_weights:
-                local_weights[server_idx].append(copy.deepcopy(w))
+                local_weights[server_idx].append(w_cpu)
             else:
-                local_weights[server_idx] = [copy.deepcopy(w)]
-            local_losses.append(copy.deepcopy(loss))
+                local_weights[server_idx] = [w_cpu]
+            local_losses.append(loss)
+            del w
+            torch.cuda.empty_cache()
 
         avg_time = sum(client_compute_times) / len(client_compute_times)
         avg_cpu = sum(client_cpu_usages) / len(client_cpu_usages)
