@@ -1206,7 +1206,15 @@ class HierarchicalFL:
                 self.cloud_aggregation()
                 self._prof_add("cloud_aggregate", _t_cagg, epoch)
 
-                # Evaluate model
+            # --- VALIDATION (decoupled from the t1/t2 aggregation cadence) ---
+            # t1/t2 are a COMMUNICATION choice; validation is only measurement.
+            # Coupling them meant large-interval settings (e.g. t2=50) were
+            # validated just 4x in 200 epochs and missed their accuracy peak.
+            # Evaluate on a fixed fine cadence so every interval setting's best
+            # checkpoint is captured fairly. eval_every defaults to 1 (every
+            # epoch); always evaluate on the final epoch too.
+            eval_every = max(int(self.args.get("eval_every", 1)), 1)
+            if epoch % eval_every == 0 or epoch == epochs:
                 f1, current_best_f1, model_snapshot = self._run_validation(valid_dataset, best_f1, epoch)
                 validation_f1_list.append(f1)
 
