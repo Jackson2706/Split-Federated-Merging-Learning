@@ -46,7 +46,13 @@ class DiceFocalLoss(nn.Module):
         return focal.mean()
 
     def forward(self, preds, targets):
-        preds, targets = self._sanity_check(preds, targets)
-        loss_dice = self.dice_loss(preds, targets)
-        loss_focal = self.focal_loss(preds, targets)
-        return loss_dice + loss_focal
+        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+        # and this loss operates on probabilities. Force a float32, autocast-off
+        # region so it is safe whether or not the caller is inside autocast.
+        with torch.autocast(device_type=preds.device.type, enabled=False):
+            preds = preds.float()
+            targets = targets.float()
+            preds, targets = self._sanity_check(preds, targets)
+            loss_dice = self.dice_loss(preds, targets)
+            loss_focal = self.focal_loss(preds, targets)
+            return loss_dice + loss_focal

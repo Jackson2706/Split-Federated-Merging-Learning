@@ -307,6 +307,11 @@ class HierarchicalFL:
         # Edge SSL transforms built lazily when we first see feature map dims
         self.ssl_transforms_edge = None
         self.criterion = nn.CrossEntropyLoss().to(self.device)
+        # SupCon temperature. Khosla et al. (2020) report the optimum near 0.1;
+        # a lower temperature yields tighter, better-separated class clusters ->
+        # more separable per-class prototypes for every downstream tier.
+        # Config-gated so it is applied identically to H-SFP and E-HSFP (fair).
+        self.supcon_temp = float(args.get("supcon_temperature", 0.1))
         
         # --- Communication tracker ---
         self.comm_tracker = {
@@ -640,7 +645,7 @@ class HierarchicalFL:
                     # SupCon: positives = same class (Paper Eq. 1)
                     all_features = torch.cat([z1_flat, z2_flat], dim=0)
                     all_labels = torch.cat([target, target], dim=0)
-                    loss = supervised_contrastive_loss(all_features, all_labels)
+                    loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
                 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -755,7 +760,7 @@ class HierarchicalFL:
                     # SupCon with synthetic labels (Paper Eq. 1)
                     all_features = torch.cat([z1_flat, z2_flat], dim=0)
                     all_labels = torch.cat([labels, labels], dim=0)
-                    loss = supervised_contrastive_loss(all_features, all_labels)
+                    loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
 
                     # E-HSFP: PRC loss at edge level
                     if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:

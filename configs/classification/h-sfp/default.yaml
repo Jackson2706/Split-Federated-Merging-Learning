@@ -32,6 +32,12 @@ ssl_epochs_edge: 10
 syn_epochs_cloud: 10
 syn_samples_per_class: 50
 
+# SupCon temperature for the client/edge contrastive tiers. Khosla et al. (2020)
+# report the optimum near 0.1; lower temperature -> tighter, more separable
+# class clusters -> cleaner per-class prototypes downstream. Applied identically
+# to H-SFP and E-HSFP, so the comparison stays fair.
+supcon_temperature: !!float 0.1
+
 # --- E-HSFP extensions (all disabled by default = baseline H-SFP) ---
 # Episodic Prototype Memory
 use_episodic_memory: false
