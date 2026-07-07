@@ -25,6 +25,11 @@ class DiceFocalLoss(nn.Module):
             raise ValueError(
                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
             )
+        # Guard against non-finite predictions (NaN/inf) before clamping:
+        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
+        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
         preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
         return preds, targets
 

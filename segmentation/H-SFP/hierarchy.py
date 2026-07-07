@@ -764,9 +764,13 @@ class HierarchicalFL:
                     feat = client_model(data)
                     feat = edge_model(feat)
 
-                with torch.amp.autocast(device_type="cuda", enabled=(self.device.type == "cuda")):
-                    pred = self.cloud_decoder(feat)
-                    loss = seg_criterion(pred, mask)
+                # The decoder head ends in sigmoid and feeds Dice/BCE. Under fp16
+                # autocast the conv stack can overflow -> pre-sigmoid inf/NaN ->
+                # sigmoid(NaN)=NaN -> BCE CUDA assert (input_val in [0,1] fails).
+                # Run the decoder forward + loss in float32 for numerical stability
+                # (the client/edge SSL phases still use autocast elsewhere).
+                pred = self.cloud_decoder(feat)
+                loss = seg_criterion(pred, mask)
 
                 self.decoder_scaler.scale(loss).backward()
                 self.decoder_scaler.step(self.decoder_optimizer)
