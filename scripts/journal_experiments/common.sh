@@ -192,7 +192,14 @@ run_seeds() {
 
     for seed in $SEEDS; do
         local eid
-        eid=$(make_experiment_id "$prefix" "$task" "$method" "$cfg_base" "s${seed}")
+        # Include the ablation in the experiment id, otherwise every ablation of
+        # the same (prefix, cfg, seed) collapses to ONE marker and only the first
+        # runs — silently skipping the other ablation presets (breaks the study).
+        if [[ -n "$ablation" ]]; then
+            eid=$(make_experiment_id "$prefix" "$task" "$method" "$cfg_base" "$ablation" "s${seed}")
+        else
+            eid=$(make_experiment_id "$prefix" "$task" "$method" "$cfg_base" "s${seed}")
+        fi
         run_one "$eid" "$task" "$method" "$cfg" "$seed" "$ablation" "${extra_args[@]}" || true
     done
 }
