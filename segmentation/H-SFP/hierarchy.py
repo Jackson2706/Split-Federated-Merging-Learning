@@ -32,6 +32,8 @@ from ehsfp import (
     ServerlessMetricsTracker,
     ResidualPrototypeGenerator,
     EHSFPMetricsLogger,
+    RuntimeCounters,
+    aggregate_proto_dicts,
 )
 
 
@@ -281,6 +283,7 @@ class HierarchicalFL:
         # --- E-HSFP components ---
         self.ecfg = get_ehsfp_config(args)
         self.ehsfp_logger = EHSFPMetricsLogger()
+        self.runtime_counters = RuntimeCounters()
 
         if self.ecfg["use_episodic_memory"]:
             self.client_memory = EpisodicPrototypeMemory(
@@ -547,6 +550,7 @@ class HierarchicalFL:
             memory=self.client_memory,
             generator=self.residual_generator,
             support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
+            runtime_counters=self.runtime_counters,
         )
 
         if syn_features_L1.shape[0] == 0:
@@ -581,16 +585,19 @@ class HierarchicalFL:
                     loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
 
                     # E-HSFP: PRC loss at edge level
-                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
-                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
-                        cur_p = {c: client_outputs[c][0] for c in cids if c in client_outputs and client_outputs[c] is not None}
-                        cur_d = {c: client_outputs[c][1] for c in cids if c in client_outputs and client_outputs[c] is not None}
+                    if self.ecfg["use_prc_loss"] and self.client_memory is not None and len(self.client_memory) > 0:
+                        mem_p, mem_d = self.client_memory.to_proto_dist_dicts()
+                        cur_p, cur_d = aggregate_proto_dicts({
+                            c: client_outputs[c] for c in cids
+                            if c in client_outputs and client_outputs[c] is not None
+                        })
                         if cur_p and mem_p:
                             def edge_repr_fn(x):
                                 return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -643,6 +650,7 @@ class HierarchicalFL:
             memory=self.edge_memory,
             generator=self.residual_generator,
             support_map=getattr(self, "_edge_support", {}),
+            runtime_counters=self.runtime_counters,
         )
 
         if syn_features_L2.shape[0] == 0:
@@ -669,12 +677,12 @@ class HierarchicalFL:
                     # E-HSFP: PRC loss at cloud level
                     if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
                         mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
-                        cur_p = {eid: edge_outputs[eid][0] for eid in edge_outputs if edge_outputs[eid] is not None}
-                        cur_d = {eid: edge_outputs[eid][1] for eid in edge_outputs if edge_outputs[eid] is not None}
+                        cur_p, cur_d = aggregate_proto_dicts(edge_outputs)
                         if cur_p and mem_p:
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 model, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -866,6 +874,7 @@ class HierarchicalFL:
                             proto_dict, dist_dict, self.client_memory,
                             alpha=self.ecfg["memory_replay_ratio"],
                             top_k=self.ecfg["memory_top_k"],
+                            runtime_counters=self.runtime_counters,
                         )
                         client_outputs[cid] = (mixed_p, mixed_d)
                 if self.serverless_tracker is not None:
@@ -917,6 +926,7 @@ class HierarchicalFL:
                             proto_dict, dist_dict, self.edge_memory,
                             alpha=self.ecfg["memory_replay_ratio"],
                             top_k=self.ecfg["memory_top_k"],
+                            runtime_counters=self.runtime_counters,
                         )
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
@@ -990,6 +1000,7 @@ class HierarchicalFL:
                         "model_state_dict": model_snapshot.state_dict(),
                         "best_iou": best_iou,
                         "config": config,
+                        "resolved_config_hash": config["resolved_config_hash"],
                     }, checkpoint_path)
                     print(f"*** Checkpoint saved: {checkpoint_path} (IoU: {best_iou*100:.2f}%)")
 
@@ -1012,7 +1023,13 @@ class HierarchicalFL:
                 self.ehsfp_logger.log_dropout_stats(
                     self.ecfg["prototype_dropout_rate"], stats["dropped_prototypes"],
                 )
+                self.ehsfp_logger.log_dict({
+                    "ehsfp/runtime/dropout.apply_calls": stats["apply_calls"],
+                    "ehsfp/runtime/dropout.changed_calls": stats["changed_calls"],
+                    "ehsfp/runtime/dropout.total_seen": stats["total_prototypes_seen"],
+                })
             self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
+            self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
             self.ehsfp_logger.log("ehsfp/decoder_loss", decoder_loss)
             self.ehsfp_logger.log_communication(
                 self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
@@ -1039,6 +1056,7 @@ class HierarchicalFL:
 
             if wandb is not None and wandb.run is not None:
                 wandb.log(log_data)
+            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
 
             print(f"Epoch {epoch} completed in {epoch_time:.2f}s")
 
@@ -1054,6 +1072,7 @@ class HierarchicalFL:
             "best_weight": best_pipeline_model,
             "comm_report": self.comm_tracker,
             "ehsfp_metrics": self.ehsfp_logger.finalize(),
+            "ehsfp_runtime_counters": self.runtime_counters.snapshot(),
         }
         if self.serverless_tracker is not None:
             output["serverless_metrics"] = self.serverless_tracker.get_summary()

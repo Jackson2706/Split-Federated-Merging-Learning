@@ -33,6 +33,11 @@ class PrototypeDropout:
         self.rng.manual_seed(seed)
         self._drop_count = 0
         self._total_count = 0
+        self._apply_calls = 0
+        self._changed_calls = 0
+        self._active_set_total = 0
+        self._active_set_observations = 0
+        self._active_set_last = 0
 
     def apply(
         self,
@@ -50,6 +55,8 @@ class PrototypeDropout:
         if self.rate <= 0 or not proto_dict:
             return proto_dict, dist_dict
 
+        self._apply_calls += 1
+
         keys = list(proto_dict.keys())
         self._total_count += len(keys)
 
@@ -63,8 +70,12 @@ class PrototypeDropout:
             keep_mask[torch.randint(len(keys), (1,), generator=self.rng).item()] = True
 
         kept_keys = [k for k, keep in zip(keys, keep_mask) if keep]
+        self._active_set_last = len(kept_keys)
+        self._active_set_total += len(kept_keys)
+        self._active_set_observations += 1
         dropped = len(keys) - len(kept_keys)
         self._drop_count += dropped
+        self._changed_calls += int(dropped > 0)
 
         filtered_proto = {k: proto_dict[k] for k in kept_keys}
         filtered_dist = {k: dist_dict[k] for k in kept_keys}
@@ -83,6 +94,8 @@ class PrototypeDropout:
         if self.rate <= 0 or not input_outputs:
             return input_outputs
 
+        self._apply_calls += 1
+
         keys = list(input_outputs.keys())
         self._total_count += len(keys)
 
@@ -94,7 +107,11 @@ class PrototypeDropout:
             keep_mask[torch.randint(len(keys), (1,), generator=self.rng).item()] = True
 
         kept = {k: input_outputs[k] for k, keep in zip(keys, keep_mask) if keep}
+        self._active_set_last = len(kept)
+        self._active_set_total += len(kept)
+        self._active_set_observations += 1
         self._drop_count += len(keys) - len(kept)
+        self._changed_calls += int(set(kept) != set(input_outputs))
 
         return kept
 
@@ -103,8 +120,18 @@ class PrototypeDropout:
         return {
             "total_prototypes_seen": self._total_count,
             "dropped_prototypes": self._drop_count,
+            "apply_calls": self._apply_calls,
+            "changed_calls": self._changed_calls,
+            "active_set_total": self._active_set_total,
+            "active_set_observations": self._active_set_observations,
+            "active_set_last": self._active_set_last,
         }
 
     def reset_stats(self) -> None:
         self._drop_count = 0
         self._total_count = 0
+        self._apply_calls = 0
+        self._changed_calls = 0
+        self._active_set_total = 0
+        self._active_set_observations = 0
+        self._active_set_last = 0

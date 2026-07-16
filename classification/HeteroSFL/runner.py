@@ -71,6 +71,10 @@ def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
 
     avg_weights = copy.deepcopy(global_wide_weights)
     for k in avg_weights:
+        # Skip integer buffers (e.g. BatchNorm num_batches_tracked): averaging
+        # produces a float that cannot be written back into a Long tensor.
+        if not avg_weights[k].is_floating_point():
+            continue
         mask = count_acc[k] > 0
         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
     return avg_weights
@@ -87,6 +91,16 @@ def run(cfg_path: str):
     start_time = time.time()
     config_loader = ConfigLoader(cfg_path)
     config = config_loader.get_config()
+
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+        os.makedirs(out_dir, exist_ok=False)
+    else:
+        out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+        os.makedirs(out_dir, exist_ok=True)
 
     WIDE_CHANNELS = config.get("wide_channels", 76)
     NARROW_CHANNELS = config.get("narrow_channels", 4)
@@ -230,3 +244,11 @@ def run(cfg_path: str):
         wandb.summary["test_f1"] = final_f1
         wandb.summary["best_f1"] = best_f1
         wandb.summary["total_time_s"] = total_time
+
+    with open(os.path.join(out_dir, f"HeteroSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
+        json.dump({
+            "best_val_top1": best_f1, "final_test_accuracy": final_acc,
+            "final_test_f1": final_f1, "total_comm_MB": sum(comm_cost_dict.values()),
+            "peak_vram_MB": torch.cuda.max_memory_allocated(device) / (1024**2),
+            "runtime_s": total_time,
+        }, f, indent=4)

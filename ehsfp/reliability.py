@@ -48,23 +48,36 @@ class PrototypeReliabilityNetwork(nn.Module):
 def build_reliability_features(
     records: List[PrototypeRecord],
     class_center: Optional[torch.Tensor] = None,
+    device: Optional[torch.device] = None,
 ) -> torch.Tensor:
     """Build the input feature vector for the reliability network.
 
     Args:
         records: list of PrototypeRecord for one class.
         class_center: optional pre-computed class center (mu) for distance.
+        device: compute device on which to build the features. Memory records
+            remain CPU-backed and are copied only while being consumed here.
 
     Returns:
         [N, 6] tensor of normalized metadata features.
     """
-    n = len(records)
-    feats = torch.zeros(n, PrototypeReliabilityNetwork.INPUT_DIM)
+    if device is None:
+        device = class_center.device if class_center is not None else torch.device("cpu")
+    device = torch.device(device)
 
-    support_counts = torch.tensor([r.support_count for r in records], dtype=torch.float32)
-    sigma_mags = torch.tensor([r.sigma.norm().item() for r in records], dtype=torch.float32)
-    ages = torch.tensor([r.age for r in records], dtype=torch.float32)
-    prev_rels = torch.tensor([r.reliability for r in records], dtype=torch.float32)
+    n = len(records)
+    feats = torch.zeros(n, PrototypeReliabilityNetwork.INPUT_DIM, device=device)
+
+    support_counts = torch.tensor(
+        [r.support_count for r in records], dtype=torch.float32, device=device,
+    )
+    sigma_mags = torch.stack([
+        r.sigma.to(device=device, dtype=torch.float32).norm() for r in records
+    ])
+    ages = torch.tensor([r.age for r in records], dtype=torch.float32, device=device)
+    prev_rels = torch.tensor(
+        [r.reliability for r in records], dtype=torch.float32, device=device,
+    )
 
     # Normalize support count: log(1 + n) / log(1 + max_n)
     max_sc = support_counts.max().clamp(min=1.0)
@@ -80,9 +93,11 @@ def build_reliability_features(
 
     # Distance from class center
     if class_center is not None:
-        dists = torch.tensor([
-            (r.mu - class_center).norm().item() for r in records
-        ], dtype=torch.float32)
+        class_center = class_center.to(device=device, dtype=torch.float32)
+        dists = torch.stack([
+            (r.mu.to(device=device, dtype=torch.float32) - class_center).norm()
+            for r in records
+        ])
         max_dist = dists.max().clamp(min=1e-8)
         feats[:, 3] = dists / max_dist
     # else: stays 0
@@ -96,7 +111,10 @@ def build_reliability_features(
     return feats
 
 
-def compute_heuristic_reliability(records: List[PrototypeRecord]) -> torch.Tensor:
+def compute_heuristic_reliability(
+    records: List[PrototypeRecord],
+    device: Optional[torch.device] = None,
+) -> torch.Tensor:
     """Compute heuristic reliability targets for bootstrap training.
 
     Higher is better: high support count, low sigma, low age, low distance.
@@ -104,16 +122,17 @@ def compute_heuristic_reliability(records: List[PrototypeRecord]) -> torch.Tenso
     Returns:
         [N] tensor of target reliability values in [0, 1].
     """
+    device = torch.device(device) if device is not None else torch.device("cpu")
     n = len(records)
     if n == 0:
-        return torch.zeros(0)
+        return torch.zeros(0, device=device)
 
-    scores = torch.zeros(n)
+    scores = torch.zeros(n, device=device)
     for i, r in enumerate(records):
         # Higher support count -> higher reliability
         sc_score = min(r.support_count / 100.0, 1.0) if r.support_count > 0 else 0.5
         # Lower sigma magnitude -> higher reliability
-        sigma_mag = r.sigma.norm().item()
+        sigma_mag = r.sigma.to(device).norm().item()
         sigma_score = 1.0 / (1.0 + sigma_mag)
         # Lower age -> higher reliability
         age_score = 1.0 / (1.0 + r.age)

@@ -1,5 +1,6 @@
 import torch.nn as nn
 from torchvision import models
+from ehsfp.prototype_space import CosineClassifier, validate_prototype_space
 
 
 def set_requires_grad(module, freeze=True):
@@ -44,6 +45,10 @@ class HAM10000CloudModelResNet50(nn.Module):
     def __init__(self, args, freeze_backbone=False):
         super(HAM10000CloudModelResNet50, self).__init__()
         resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        self.prototype_space = validate_prototype_space(args.get("prototype_space"))
+        if self.prototype_space == "centered_cosine":
+            self.cosine_head = CosineClassifier(resnet.fc.in_features, args["num_classes"])
+            return
 
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
@@ -57,5 +62,7 @@ class HAM10000CloudModelResNet50(nn.Module):
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
+        if self.prototype_space == "centered_cosine":
+            return self.cosine_head(x)
         logits = self.classifier(x)
         return logits

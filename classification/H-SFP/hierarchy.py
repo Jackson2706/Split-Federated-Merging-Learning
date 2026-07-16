@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import math
 import os
@@ -33,6 +34,19 @@ from ehsfp import (
     ServerlessMetricsTracker,
     ResidualPrototypeGenerator,
     EHSFPMetricsLogger,
+    RuntimeCounters,
+    aggregate_proto_dicts,
+    center_features,
+    center_source_outputs,
+    derive_global_feature_mean,
+    derive_whitening_transform,
+    recenter_memory,
+    validate_prototype_space,
+    whiten_features,
+    whiten_source_outputs,
+    COSINE_SPACES,
+    compose_client_objective_loss,
+    validate_client_objective,
 )
 
 # camera-ready: optional fine-grained phase profiling (gated by config["profile"])
@@ -140,8 +154,31 @@ def build_client_ssl_transforms(input_size):
         K.RandomGrayscale(p=0.2)
     )
 
+class _FeatureNoiseAug(nn.Module):
+    """SSL augmentation for pooled (1x1-spatial) feature maps.
+
+    Spatial crops/flips/blur are meaningless on a [C,1,1] vector, so we build
+    the two SupCon views by perturbing in feature space: additive Gaussian
+    noise + feature dropout. Used at the edge when the client already pools to a
+    semantic vector (the new resnet18 split)."""
+
+    def __init__(self, noise_std=0.1, dropout_p=0.1):
+        super().__init__()
+        self.noise_std = noise_std
+        self.dropout = nn.Dropout(dropout_p)
+
+    def forward(self, x):
+        x = x + torch.randn_like(x) * self.noise_std
+        return self.dropout(x)
+
+
 def build_edge_ssl_transforms(spatial_size):
-    """Build edge SSL augmentations adaptive to feature map spatial dims."""
+    """Build edge SSL augmentations adaptive to feature map spatial dims.
+
+    For pooled vector features (spatial_size <= 1) spatial ops are undefined, so
+    fall back to feature-space noise/dropout to create contrastive views."""
+    if spatial_size <= 1:
+        return _FeatureNoiseAug(noise_std=0.1, dropout_p=0.1)
     return nn.Sequential(
         K.RandomHorizontalFlip(p=0.5),
         K.RandomResizedCrop(size=(spatial_size, spatial_size), scale=(0.8, 1.0)),
@@ -243,19 +280,37 @@ def get_proto_dist_size_MB(proto_dist_tuple: tuple) -> float:
 # =============================================================================
 
 class FullPipelineModel(nn.Module):
-    def __init__(self, client_model, edge_model, cloud_model):
+    def __init__(
+        self, client_model, edge_model, cloud_model,
+        prototype_space="raw", client_to_edge_mean=None, edge_to_cloud_mean=None,
+        client_to_edge_whitener=None, edge_to_cloud_whitener=None,
+    ):
         super().__init__()
         self.client = client_model
         self.edge = edge_model
         self.cloud = cloud_model
+        self.prototype_space = validate_prototype_space(prototype_space)
+        self.register_buffer("client_to_edge_mean", client_to_edge_mean)
+        self.register_buffer("edge_to_cloud_mean", edge_to_cloud_mean)
+        self.register_buffer("client_to_edge_whitener", client_to_edge_whitener)
+        self.register_buffer("edge_to_cloud_whitener", edge_to_cloud_whitener)
+
+    def _apply_space(self, x, mean, whitener):
+        if self.prototype_space == "centered_cosine":
+            return center_features(x, mean)
+        if self.prototype_space == "whitened_cosine":
+            return whiten_features(x, mean, whitener)
+        return x
 
     def forward(self, x):
         with torch.amp.autocast(device_type='cuda', enabled=(x.device.type == 'cuda')):
             x = self.client(x)
+            x = self._apply_space(x, self.client_to_edge_mean, self.client_to_edge_whitener)
             x = self.edge(x)
             # Apply GAP + flatten to match the prototype extraction pipeline
             # (edge extraction does AdaptiveAvgPool2d + flatten before cloud)
             x = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(x), start_dim=1)
+            x = self._apply_space(x, self.edge_to_cloud_mean, self.edge_to_cloud_whitener)
             x = self.cloud(x)
         return x
 
@@ -296,6 +351,24 @@ class HierarchicalFL:
         self.client_weight = client_weights
         self.edge_weight = edge_weights
         self.cloud_weight = cloud_weight
+        self.prototype_space = validate_prototype_space(args.get("prototype_space"))
+        self.client_objective = validate_client_objective(args.get("client_objective"))
+        self.client_objective_weight = float(args.get("client_objective_weight", 0.1))
+        if self.client_objective_weight < 0:
+            raise ValueError("client_objective_weight must be non-negative")
+        self.client_supervised_heads = {}
+        self.client_supervised_optimizers = {}
+        self.global_feature_means = {
+            "client_to_edge": None,
+            "edge_to_cloud": None,
+        }
+        # ZCA whitening transforms per boundary (whitened_cosine only). Derived
+        # from the between-class scatter of aggregated prototype means; never
+        # transmitted (computed at the reconstructing tier).
+        self.global_feature_whiteners = {
+            "client_to_edge": None,
+            "edge_to_cloud": None,
+        }
 
         self.structure, self.connectivity = self._build_hierarchy()
         self.total_layers = len(args["mid_server"]) + 1
@@ -332,12 +405,17 @@ class HierarchicalFL:
         self.input_shape_edge = None
         self.input_shape_cloud = None
 
-        self.num_workers = 2 if os.name != 'nt' else 0
+        # Configurable; default preserves prior behavior. persistent_workers=True
+        # across many per-client DataLoaders (20 clients x N rounds) can exhaust/
+        # deadlock worker processes at proxy scale — set num_workers=0 to disable.
+        _default_workers = 2 if os.name != 'nt' else 0
+        self.num_workers = int(self.args.get("num_workers", _default_workers))
         print(f"Using {self.num_workers} workers for the DataLoader.")
 
         # --- E-HSFP components ---
         self.ecfg = get_ehsfp_config(args)
         self.ehsfp_logger = EHSFPMetricsLogger()
+        self.runtime_counters = RuntimeCounters()
 
         # Episodic memory (client-level and edge-level)
         if self.ecfg["use_episodic_memory"]:
@@ -398,6 +476,19 @@ class HierarchicalFL:
     def _prof_add(self, name, t0, round_idx=None):
         if self.profiler is not None:
             self.profiler.add(name, self._prof_now() - t0, round_idx)
+
+    def _flush_runtime_counters(self, config, epoch, phase):
+        """Durably persist cumulative counters at round phase boundaries."""
+        path = config.get("runtime_counters_path")
+        if not path:
+            return
+        record = {"epoch": epoch, "phase": phase, "device": str(self.device)}
+        record.update(self.runtime_counters.snapshot())
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as handle:
+            handle.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
 
     def _build_hierarchy(self):
         # ... (original code - unchanged) ...
@@ -634,8 +725,11 @@ class HierarchicalFL:
                 data = data.to(self.device, non_blocking=True)
                 target = target.to(self.device, non_blocking=True)
                 optimizer.zero_grad(set_to_none=True)
+                head_optimizer = self.client_supervised_optimizers.get(cid)
+                if head_optimizer is not None:
+                    head_optimizer.zero_grad(set_to_none=True)
                 
-                with torch.amp.autocast(device_type=self.device.type):
+                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
                     v1, v2 = self.ssl_transforms(data), self.ssl_transforms(data)
                     z1 = model(v1)
                     z2 = model(v2)
@@ -646,9 +740,39 @@ class HierarchicalFL:
                     all_features = torch.cat([z1_flat, z2_flat], dim=0)
                     all_labels = torch.cat([target, target], dim=0)
                     loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
+
+                    # PLAN-6 auxiliaries see only this client's activations and
+                    # labels. The default branch leaves the legacy tensor alone.
+                    if self.client_objective == "ssl_supcon":
+                        loss = compose_client_objective_loss(
+                            loss, self.client_objective, z1_flat, target,
+                            weight=self.client_objective_weight,
+                            temperature=self.supcon_temp,
+                        )
+                    elif self.client_objective == "supervised":
+                        head = self.client_supervised_heads.get(cid)
+                        if head is None:
+                            head = nn.Linear(z1_flat.shape[1], self.args["num_classes"]).to(
+                                device=z1_flat.device
+                            )
+                            self.client_supervised_heads[cid] = head
+                            head_optimizer = torch.optim.Adam(
+                                head.parameters(),
+                                lr=self.args.get("ssl_lr", self.args["lr"]),
+                                weight_decay=self.args["weight_decay"],
+                            )
+                            self.client_supervised_optimizers[cid] = head_optimizer
+                            head_optimizer.zero_grad(set_to_none=True)
+                        loss = compose_client_objective_loss(
+                            loss, self.client_objective,
+                            torch.cat([z1_flat, z2_flat], dim=0), all_labels,
+                            linear_head=head, weight=self.client_objective_weight,
+                        )
                 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
+                if head_optimizer is not None:
+                    scaler.step(head_optimizer)
                 scaler.update()
 
         # 2. Extraction - avoid storing all features in a list when unnecessary
@@ -658,7 +782,7 @@ class HierarchicalFL:
         # Optimization: accumulate per batch to avoid huge tensors
         # For simplicity and correct std, use class-wise grouping
         feats_by_cls = {}
-        with torch.no_grad(), torch.amp.autocast(device_type=self.device.type):
+        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
                 out = model(data)
@@ -706,6 +830,7 @@ class HierarchicalFL:
             memory=self.client_memory,
             generator=self.residual_generator,
             support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
+            runtime_counters=self.runtime_counters,
         )
 
         if syn_features_L1.shape[0] == 0:
@@ -763,16 +888,19 @@ class HierarchicalFL:
                     loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
 
                     # E-HSFP: PRC loss at edge level
-                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
-                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
-                        cur_p = {cid: client_outputs[cid][0] for cid in cids if cid in client_outputs and client_outputs[cid] is not None}
-                        cur_d = {cid: client_outputs[cid][1] for cid in cids if cid in client_outputs and client_outputs[cid] is not None}
+                    if self.ecfg["use_prc_loss"] and self.client_memory is not None and len(self.client_memory) > 0:
+                        mem_p, mem_d = self.client_memory.to_proto_dist_dicts()
+                        cur_p, cur_d = aggregate_proto_dicts({
+                            cid: client_outputs[cid] for cid in cids
+                            if cid in client_outputs and client_outputs[cid] is not None
+                        }, device=self.device)
                         if cur_p and mem_p:
                             def edge_repr_fn(x):
                                 return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -848,6 +976,7 @@ class HierarchicalFL:
             memory=self.edge_memory,
             generator=self.residual_generator,
             support_map=getattr(self, "_edge_support", {}),
+            runtime_counters=self.runtime_counters,
         )
         
         if syn_features_L2.shape[0] == 0:
@@ -890,12 +1019,12 @@ class HierarchicalFL:
                     # E-HSFP: PRC loss at cloud level
                     if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
                         mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
-                        cur_p = {eid: edge_outputs[eid][0] for eid in edge_outputs if edge_outputs[eid] is not None}
-                        cur_d = {eid: edge_outputs[eid][1] for eid in edge_outputs if edge_outputs[eid] is not None}
+                        cur_p, cur_d = aggregate_proto_dicts(edge_outputs, device=self.device)
                         if cur_p and mem_p:
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 model, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -913,8 +1042,25 @@ class HierarchicalFL:
         return total_loss
         
     def _run_validation(self, valid_dataset, best_f1, epoch):
-        """(Phase 5) Run evaluation (optimized)."""
-        client_model = self.structure[-1][0]
+        """(Phase 5) Run evaluation (optimized).
+
+        Evaluate on the FedAvg GLOBAL client model (average of the clients
+        actually trained this round), not an arbitrary ``structure[-1][0]``.
+        Under a fixed seed, client 0 may never be selected, leaving its local
+        model at the frozen pretrained init — which made every checkpoint grade
+        a never-trained encoder. Averaging the cached (trained) clients gives a
+        correct, seed-robust, baseline-fair evaluation of the trained encoder.
+        """
+        client_layer = self.structure[-1]
+        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+        if trained_cids:
+            global_client_state = average_state_dicts(
+                [client_layer[c].state_dict() for c in trained_cids]
+            )
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        else:
+            client_model = self.structure[-1][0]
         eid = self.connectivity[-1][0]
         edge_model = self.structure[0][eid]
         cloud_model = self.structure[len(self.args["mid_server"])][0]
@@ -938,7 +1084,7 @@ class HierarchicalFL:
         with torch.no_grad():
             for data, target in loader:
                 data, target = data.to(self.device), target.to(self.device)
-                out_cl = FullPipelineModel(client_model, edge_model, cloud_model)(data)
+                out_cl = self._full_pipeline(client_model, edge_model, cloud_model)(data)
 
                 # --- DEBUG: Check for NaN/Inf in model output ---
                 if not nan_detected and torch.isnan(out_cl).any():
@@ -982,7 +1128,7 @@ class HierarchicalFL:
             if best_f1 < f1:
                 print(f"Saved best model at epoch {epoch} with Acc: {f1 * 100:.2f} %")
                 best_f1 = f1
-                pipeline_model = FullPipelineModel(
+                pipeline_model = self._full_pipeline(
                     client_model=copy.deepcopy(client_model),
                     edge_model=copy.deepcopy(edge_model),
                     cloud_model=copy.deepcopy(cloud_model),
@@ -993,6 +1139,45 @@ class HierarchicalFL:
             # Keep best_f1 as it was, don't update pipeline_model
             
         return f1, best_f1, pipeline_model
+
+    def _full_pipeline(self, client_model, edge_model, cloud_model):
+        """Build an eval/checkpoint pipeline in the same spaces used to train."""
+        return FullPipelineModel(
+            client_model,
+            edge_model,
+            cloud_model,
+            prototype_space=self.prototype_space,
+            client_to_edge_mean=self.global_feature_means["client_to_edge"],
+            edge_to_cloud_mean=self.global_feature_means["edge_to_cloud"],
+            client_to_edge_whitener=self.global_feature_whiteners["client_to_edge"],
+            edge_to_cloud_whitener=self.global_feature_whiteners["edge_to_cloud"],
+        )
+
+    def _center_round_outputs(self, boundary, outputs, support_map, memory):
+        """Express transmitted prototypes in the centered/whitened space.
+
+        The global mean (and, for whitened_cosine, the ZCA whitening transform)
+        is derived from the already-received class means; no feature tensor is
+        added to the communication payload.
+        """
+        if self.prototype_space == "raw" or not any(v is not None for v in outputs.values()):
+            return outputs
+        old_mean = self.global_feature_means[boundary]
+        new_mean = derive_global_feature_mean(outputs, support_map=support_map).detach().cpu()
+        recenter_memory(memory, old_mean, new_mean)
+        payload_before = sum(get_proto_dist_size_MB(value) for value in outputs.values())
+        if self.prototype_space == "whitened_cosine":
+            whitener = derive_whitening_transform(
+                outputs, new_mean, support_map=support_map
+            ).detach().cpu()
+            outputs = whiten_source_outputs(outputs, new_mean, whitener)
+            self.global_feature_whiteners[boundary] = whitener
+        else:
+            outputs = center_source_outputs(outputs, new_mean)
+        payload_after = sum(get_proto_dist_size_MB(value) for value in outputs.values())
+        assert payload_after == payload_before, "prototype-space transform must not add a transmitted tensor"
+        self.global_feature_means[boundary] = new_mean
+        return outputs
 
     # --- Main training method (reorganized) --
 
@@ -1076,13 +1261,38 @@ class HierarchicalFL:
                 self._client_support[cid] = support_counts
 
                 # E-HSFP: Store client prototypes in memory
-                if self.client_memory is not None and client_outputs[cid] is not None:
+                if (self.prototype_space == "raw" and self.client_memory is not None
+                        and client_outputs[cid] is not None):
                     proto_dict, dist_dict = client_outputs[cid]
                     self.client_memory.add_from_proto_dicts(
                         proto_dict, dist_dict,
                         source_id=f"client_{cid}",
                         round_idx=epoch,
                         support_counts=support_counts,
+                    )
+                    self.runtime_counters.increment(
+                        "memory.writes", len(set(proto_dict) & set(dist_dict))
+                    )
+                    if self.serverless_tracker is not None:
+                        self.serverless_tracker.record_prototype_processing(len(proto_dict))
+
+            client_outputs = self._center_round_outputs(
+                "client_to_edge", client_outputs, self._client_support, self.client_memory
+            )
+
+            # Centered-space memory is written only after the round-global mean
+            # is derivable from all existing class prototype statistics.
+            if self.prototype_space == "centered_cosine" and self.client_memory is not None:
+                for cid, outputs in client_outputs.items():
+                    if outputs is None:
+                        continue
+                    proto_dict, dist_dict = outputs
+                    self.client_memory.add_from_proto_dicts(
+                        proto_dict, dist_dict, source_id=f"client_{cid}", round_idx=epoch,
+                        support_counts=self._client_support.get(cid, {}),
+                    )
+                    self.runtime_counters.increment(
+                        "memory.writes", len(set(proto_dict) & set(dist_dict))
                     )
                     if self.serverless_tracker is not None:
                         self.serverless_tracker.record_prototype_processing(len(proto_dict))
@@ -1096,6 +1306,8 @@ class HierarchicalFL:
                             proto_dict, dist_dict, self.client_memory,
                             alpha=self.ecfg["memory_replay_ratio"],
                             top_k=self.ecfg["memory_top_k"],
+                            runtime_counters=self.runtime_counters,
+                            device=self.device,
                         )
                         client_outputs[cid] = (mixed_p, mixed_d)
                 if self.serverless_tracker is not None:
@@ -1106,6 +1318,7 @@ class HierarchicalFL:
             gc.collect()
 
             self._prof_add("client_pack", _t_pack, epoch)
+            self._flush_runtime_counters(config, epoch, "clients_complete")
 
             # --- PHASE 2: EDGE PROCESSING ---
             print(f"-> Phase 2: Edge Processing...")
@@ -1135,13 +1348,34 @@ class HierarchicalFL:
                 self._edge_support[eid] = edge_support
 
                 # E-HSFP: Store edge prototypes in memory
-                if self.edge_memory is not None and edge_outputs[eid] is not None:
+                if (self.prototype_space == "raw" and self.edge_memory is not None
+                        and edge_outputs[eid] is not None):
                     proto_dict, dist_dict = edge_outputs[eid]
                     self.edge_memory.add_from_proto_dicts(
                         proto_dict, dist_dict,
                         source_id=f"edge_{eid}",
                         round_idx=epoch,
                         support_counts=edge_support,
+                    )
+                    self.runtime_counters.increment(
+                        "memory.writes", len(set(proto_dict) & set(dist_dict))
+                    )
+
+            edge_outputs = self._center_round_outputs(
+                "edge_to_cloud", edge_outputs, self._edge_support, self.edge_memory
+            )
+
+            if self.prototype_space == "centered_cosine" and self.edge_memory is not None:
+                for eid, outputs in edge_outputs.items():
+                    if outputs is None:
+                        continue
+                    proto_dict, dist_dict = outputs
+                    self.edge_memory.add_from_proto_dicts(
+                        proto_dict, dist_dict, source_id=f"edge_{eid}", round_idx=epoch,
+                        support_counts=self._edge_support.get(eid, {}),
+                    )
+                    self.runtime_counters.increment(
+                        "memory.writes", len(set(proto_dict) & set(dist_dict))
                     )
 
             # E-HSFP: Mix edge outputs with memory
@@ -1153,6 +1387,8 @@ class HierarchicalFL:
                             proto_dict, dist_dict, self.edge_memory,
                             alpha=self.ecfg["memory_replay_ratio"],
                             top_k=self.ecfg["memory_top_k"],
+                            runtime_counters=self.runtime_counters,
+                            device=self.device,
                         )
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
@@ -1162,6 +1398,7 @@ class HierarchicalFL:
             gc.collect()
 
             self._prof_add("edge_process", _t_edge, epoch)
+            self._flush_runtime_counters(config, epoch, "edges_complete")
 
             # --- PHASE 3: CLOUD PROCESSING ---
             print(f"-> Phase 3: Cloud Supervised Training...")
@@ -1178,6 +1415,7 @@ class HierarchicalFL:
             )
             cloud_loss_list.append(cloud_loss)
             self._prof_add("cloud_process", _t_cloud, epoch)
+            self._flush_runtime_counters(config, epoch, "cloud_complete")
 
             del edge_outputs
             torch.cuda.empty_cache()
@@ -1227,6 +1465,7 @@ class HierarchicalFL:
                         'model_state_dict': model_snapshot.state_dict(),
                         'best_f1': best_f1,
                         'config': config
+                        ,'resolved_config_hash': config["resolved_config_hash"]
                     }, checkpoint_path)
                     print(f"*** Checkpoint saved: {checkpoint_path} (F1: {best_f1*100:.2f}%)")
 
@@ -1249,7 +1488,22 @@ class HierarchicalFL:
                 self.ehsfp_logger.log_dropout_stats(
                     self.ecfg["prototype_dropout_rate"], stats["dropped_prototypes"],
                 )
+                self.ehsfp_logger.log_dict({
+                    "ehsfp/runtime/dropout.apply_calls": stats["apply_calls"],
+                    "ehsfp/runtime/dropout.changed_calls": stats["changed_calls"],
+                    "ehsfp/runtime/dropout.total_seen": stats["total_prototypes_seen"],
+                    "ehsfp/runtime/dropout.active_set_total": stats["active_set_total"],
+                    "ehsfp/runtime/dropout.active_set_observations": stats["active_set_observations"],
+                    "ehsfp/runtime/dropout.active_set_last": stats["active_set_last"],
+                })
+                for key in (
+                    "apply_calls", "changed_calls", "total_prototypes_seen",
+                    "active_set_total", "active_set_observations", "active_set_last",
+                ):
+                    counter_key = "total_seen" if key == "total_prototypes_seen" else key
+                    self.runtime_counters.set(f"dropout.{counter_key}", stats[key])
             self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
+            self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
             self.ehsfp_logger.log_communication(
                 self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
                 sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB"),
@@ -1275,6 +1529,8 @@ class HierarchicalFL:
 
             if wandb is not None and wandb.run is not None:
                 wandb.log(log_data)
+            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+            self._flush_runtime_counters(config, epoch, "round_complete")
 
             # Advance the warmup+cosine LR schedule (no-op if disabled)
             self._step_lr_schedulers()
@@ -1288,6 +1544,8 @@ class HierarchicalFL:
         # Reload the best model from file for testing
         if os.path.exists(checkpoint_path):
             checkpoint = torch.load(checkpoint_path)
+            from ehsfp import validate_checkpoint_config_hash
+            validate_checkpoint_config_hash(checkpoint, config["resolved_config_hash"])
             print(f"Loaded best model from epoch {checkpoint['epoch']}")
 
         self.print_comm_report()
@@ -1299,6 +1557,7 @@ class HierarchicalFL:
             "best_weight": best_pipeline_model,
             "comm_report": self.comm_tracker,
             "ehsfp_metrics": self.ehsfp_logger.finalize(),
+            "ehsfp_runtime_counters": self.runtime_counters.snapshot(),
         }
         # camera-ready: persist fine-grained profiling, if enabled
         if self.profiler is not None:

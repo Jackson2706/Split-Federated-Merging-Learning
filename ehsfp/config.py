@@ -98,12 +98,18 @@ ABLATION_PRESETS: Dict[str, Dict[str, Any]] = {
 def get_ehsfp_config(user_config: dict) -> dict:
     """Merge E-HSFP defaults with user config, applying ablation preset if set."""
     cfg = dict(EHSFP_DEFAULTS)
-    # Apply ablation preset first (if any)
-    ablation = user_config.get("ablation_mode")
-    if ablation and ablation in ABLATION_PRESETS:
-        cfg.update(ABLATION_PRESETS[ablation])
-    # User overrides win
+    # Load the resolved YAML first.  The repository defaults contain explicit
+    # ``false`` values, so applying them after a preset silently disabled every
+    # ablation selected by the CLI.
     for k in EHSFP_DEFAULTS:
         if k in user_config:
             cfg[k] = user_config[k]
+    # An ablation is an effective configuration preset and therefore wins over
+    # inherited YAML defaults (matching the comments in default.yaml).
+    ablation = user_config.get("ablation_mode")
+    if ablation:
+        if ablation not in ABLATION_PRESETS:
+            raise ValueError(f"Unknown E-HSFP ablation preset: {ablation}")
+        cfg.update(ABLATION_PRESETS[ablation])
+        cfg["ablation_mode"] = ablation
     return cfg

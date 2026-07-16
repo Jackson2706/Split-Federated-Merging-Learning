@@ -17,7 +17,7 @@ class FedAvgAggregator(Aggregator):
             # Convert to float for safe accumulation if needed
             if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
                 for i in range(1, len(client_updates)):
-                    w_avg[key] += client_updates[i][key]
+                    w_avg[key] += client_updates[i][key].to(w_avg[key].device)
                 w_avg[key] = w_avg[key] / len(client_updates)
             else:
                 # # For non-float types (like Long), just pick the first client's version

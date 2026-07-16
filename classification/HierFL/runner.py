@@ -29,6 +29,16 @@ def run(cfg_path: str):
     config = config_loader.get_config()
     print("Method: {}".format(config["strategy"]))
 
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+        os.makedirs(out_dir, exist_ok=False)
+    else:
+        out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+        os.makedirs(out_dir, exist_ok=True)
+
     logger = SummaryWriter("./logs")
     if config["is_gpu"]:
         torch.cuda.set_device(config["gpu"])
@@ -138,8 +148,9 @@ def run(cfg_path: str):
         "client_time_list": client_time_list, "client_cpu_list": client_cpu_list,
         "client_ram_list": client_ram_list, "client_gpu_ram_list": client_gpu_ram_list,
         "test_accuracy": test_acc, "test_loss": test_loss,
+        "best_val_top1": max(train_accuracy),
+        "total_comm_MB": sum(hierarchical_fl.get_communication_status().values()),
+        "peak_vram_MB": max(client_gpu_ram_list, default=0), "runtime_s": total_time,
     }
-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
-    os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"HierFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
         json.dump(out, f, indent=4)

@@ -18,6 +18,16 @@ def run(cfg_path: str):
     config = config_loader.get_config()
     print("Method: {}".format(config["strategy"]))
 
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+        os.makedirs(out_dir, exist_ok=False)
+    else:
+        out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+        os.makedirs(out_dir, exist_ok=True)
+
     logger = SummaryWriter("./logs")
     if config["is_gpu"]:
         torch.cuda.set_device(config["gpu"])
@@ -51,15 +61,18 @@ def run(cfg_path: str):
     )
 
     filtered_output = {k: v for k, v in output.items() if k != "best_weight"}
+    filtered_output.update({
+        "best_val_top1": max(output["train_accuracy"]),
+        "total_comm_MB": sum(hierarchical_fl.comm_tracker.values()),
+        "peak_vram_MB": max(
+            output.get("client_gpu_ram", []) + output.get("edge_gpu_ram", []) + output.get("cloud_gpu_ram", []),
+            default=0,
+        ),
+    })
     filename = (
         f"HSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
         f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
     )
-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, filename), "w") as f:
-        json.dump(filtered_output, f, indent=4)
-
     best_model = output["best_weight"].to(device)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
 
@@ -72,7 +85,11 @@ def run(cfg_path: str):
             all_targets.extend(target.cpu().numpy())
 
     acc = accuracy_score(all_targets, all_preds)
+    filtered_output["runtime_s"] = time.time() - start_time
+    filtered_output["test_accuracy"] = acc
+    with open(os.path.join(out_dir, filename), "w") as f:
+        json.dump(filtered_output, f, indent=4)
     print(f"\nResults after {config['epochs']} global rounds:")
     print("|---- Avg Train Acc: {:.2f}%".format(100 * output["train_accuracy"][-1]))
     print("|---- Test Acc: {:.2f}%".format(100 * acc))
-    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+    print("Total Run Time: {:.4f}s".format(filtered_output["runtime_s"]))

@@ -3,6 +3,8 @@ import os
 import time
 
 import torch
+from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
+from ehsfp.integrity import git_commit
 from config.config_loader import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
@@ -15,6 +17,9 @@ def run(cfg_path: str):
     start_time = time.time()
     config_loader = ConfigLoader(cfg_path)
     config = config_loader.get_config()
+    effective_ehsfp = get_ehsfp_config(config)
+    config_hash = resolved_config_hash(config, effective_ehsfp)
+    config["resolved_config_hash"] = config_hash
     print("Method: {}".format(config["strategy"]))
 
     if config["is_gpu"]:
@@ -32,6 +37,23 @@ def run(cfg_path: str):
     # Decoder for full-pipeline inference (spatial segmentation)
     decoder_cls = get_decoder(config["model"], config["dataset"])
     cloud_decoder = decoder_cls()
+    arch = architecture_manifest((client_model, edge_model, cloud_model, cloud_decoder))
+    out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
+    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
+    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
+    metadata = {
+        "resolved_config": config,
+        "effective_ehsfp": effective_ehsfp,
+        "resolved_config_hash": config_hash,
+        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
+        "partition_hash": partition_hash(user_groups),
+        "architecture": arch,
+        "run_dir": run_dir,
+    }
+    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+    print(f"[Integrity] resolved_config_hash={config_hash}")
+    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
 
     hierarchical_fl = HierarchicalFL(
         args=config,
@@ -53,17 +75,12 @@ def run(cfg_path: str):
         user_groups=user_groups,
         config=config,
         epochs=config["epochs"],
+        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
     )
 
     # Save metrics
     filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
-    filename = (
-        f"HSFP_seg_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
-        f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
-    )
-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, filename), "w") as f:
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
         json.dump(filtered_output, f, indent=4)
 
     # Test best model

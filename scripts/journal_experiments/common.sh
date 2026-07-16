@@ -118,6 +118,14 @@ run_one() {
 
     _TOTAL=$((_TOTAL + 1))
 
+    # Optionally skip ALL segmentation runs (set SKIP_SEG=1). Covers every
+    # invocation path since run_seeds and the inline sweep loops all call run_one.
+    if [[ "${SKIP_SEG:-0}" == "1" && "$task" == "segmentation" ]]; then
+        _SKIPPED=$((_SKIPPED + 1))
+        log_info "[SKIP] ${experiment_id} (segmentation disabled via SKIP_SEG)"
+        return 2
+    fi
+
     # Resume: skip if already done
     if is_done "$experiment_id"; then
         _SKIPPED=$((_SKIPPED + 1))

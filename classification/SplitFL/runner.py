@@ -54,6 +54,16 @@ def run(cfg_path: str):
     config = config_loader.get_config()
     print("Method: {}".format(config["strategy"]))
 
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+        os.makedirs(out_dir, exist_ok=False)
+    else:
+        out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+        os.makedirs(out_dir, exist_ok=True)
+
     logger = SummaryWriter("./logs")
     if config["is_gpu"]:
         torch.cuda.set_device(config["gpu"])
@@ -192,11 +202,11 @@ def run(cfg_path: str):
         wandb.summary["best_f1"] = best_f1
         wandb.summary["total_time_s"] = total_time
 
-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
-    os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, f"SplitFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
         json.dump({
             "avg_cpu_percent": round_cpu_usages, "avg_ram_percent": round_ram_usages,
             "avg_gpu_memory_MB": round_gpu_usages, "train_accuracy": eval_f1_scores,
             "train_loss": training_loss, "final_test_f1": test_f1,
+            "best_val_top1": best_f1, "total_comm_MB": sum(comm_cost_dict.values()),
+            "peak_vram_MB": max(round_gpu_usages, default=0), "runtime_s": total_time,
         }, f, indent=4)

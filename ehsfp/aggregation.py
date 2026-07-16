@@ -16,6 +16,30 @@ from ehsfp.reliability import (
 )
 
 
+def aggregate_proto_dicts(
+    input_outputs: Dict,
+    device: Optional[torch.device] = None,
+) -> Tuple[Dict[int, torch.Tensor], Dict[int, torch.Tensor]]:
+    """Collapse source outputs into class-keyed mean/std dictionaries."""
+    grouped: Dict[int, Dict[str, list]] = {}
+    for outputs in input_outputs.values():
+        if outputs is None:
+            continue
+        protos, stds = outputs
+        for class_id, proto in protos.items():
+            grouped.setdefault(class_id, {"p": [], "d": []})
+            grouped[class_id]["p"].append(proto)
+            grouped[class_id]["d"].append(stds[class_id])
+    merged_p, merged_d = {}, {}
+    for class_id, values in grouped.items():
+        compute_device = torch.device(device) if device is not None else values["p"][0].device
+        protos = [proto.to(compute_device) for proto in values["p"]]
+        stds = [std.to(compute_device) for std in values["d"]]
+        merged_p[class_id] = torch.stack(protos).mean(0)
+        merged_d[class_id] = torch.sqrt(torch.stack([d ** 2 for d in stds]).mean(0))
+    return merged_p, merged_d
+
+
 def reliability_weighted_aggregate(
     input_outputs: Dict,
     num_samples_per_class: int,
@@ -24,6 +48,7 @@ def reliability_weighted_aggregate(
     memory: Optional[EpisodicPrototypeMemory] = None,
     generator=None,
     support_map: Optional[Dict] = None,
+    runtime_counters=None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Aggregate prototypes with optional reliability weighting and generate synthetic data.
 
@@ -65,19 +90,22 @@ def reliability_weighted_aggregate(
     if reliability_net is None:
         # Original simple-mean aggregation (baseline behavior)
         final_protos = torch.stack([
-            torch.stack(merged[l]["p"]).mean(0) for l in final_labels
-        ]).to(device)
-        final_dists = torch.stack([
-            torch.sqrt(torch.stack([d ** 2 for d in merged[l]["d"]]).mean(0))
+            torch.stack([p.to(device) for p in merged[l]["p"]]).mean(0)
             for l in final_labels
-        ]).to(device)
+        ])
+        final_dists = torch.stack([
+            torch.sqrt(torch.stack([d.to(device) ** 2 for d in merged[l]["d"]]).mean(0))
+            for l in final_labels
+        ])
     else:
         # Learnable reliability-weighted aggregation
+        if runtime_counters is not None:
+            runtime_counters.increment("reliability.aggregation_calls")
         proto_list = []
         dist_list = []
         for l in final_labels:
-            mus = torch.stack(merged[l]["p"]).to(device)
-            sigmas = torch.stack(merged[l]["d"]).to(device)
+            mus = torch.stack([mu.to(device) for mu in merged[l]["p"]])
+            sigmas = torch.stack([sigma.to(device) for sigma in merged[l]["d"]])
 
             # Build PrototypeRecord-like objects for feature extraction.
             # Use the real per-source support counts when provided so the
@@ -98,9 +126,20 @@ def reliability_weighted_aggregate(
                 ))
 
             # Class center for distance computation
-            class_center = mus.mean(0).cpu()
-            rel_feats = build_reliability_features(records, class_center).to(device)
+            class_center = mus.mean(0)
+            rel_feats = build_reliability_features(records, class_center, device=device)
             weights = reliability_net(rel_feats)  # [N]
+            if runtime_counters is not None and weights.numel() > 1:
+                normalized_weights = weights / weights.sum().clamp(min=1e-8)
+                runtime_counters.increment(
+                    "reliability.nonuniform_weight_calls",
+                    (~torch.isclose(weights, weights[0])).any().to(torch.int64).detach(),
+                )
+                runtime_counters.increment(
+                    "reliability.weight_variance_sum",
+                    normalized_weights.var(unbiased=False).detach(),
+                )
+                runtime_counters.increment("reliability.weight_variance_observations")
             w_sum = weights.sum().clamp(min=1e-8)
             w = (weights / w_sum).view(-1, *([1] * (mus.dim() - 1)))
 
@@ -168,9 +207,9 @@ def train_reliability_bootstrap(
         if len(records) < 2:
             continue
 
-        class_center = torch.stack([r.mu for r in records]).mean(0)
-        feats = build_reliability_features(records, class_center).to(device)
-        targets = compute_heuristic_reliability(records).to(device)
+        class_center = torch.stack([r.mu.to(device) for r in records]).mean(0)
+        feats = build_reliability_features(records, class_center, device=device)
+        targets = compute_heuristic_reliability(records, device=device)
 
         preds = reliability_net(feats)
         loss = torch.nn.functional.mse_loss(preds, targets)

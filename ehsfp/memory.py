@@ -152,6 +152,8 @@ def mix_current_and_memory(
     memory: EpisodicPrototypeMemory,
     alpha: float = 0.7,
     top_k: int = 5,
+    runtime_counters=None,
+    device: Optional[torch.device] = None,
 ) -> Tuple[Dict[int, torch.Tensor], Dict[int, torch.Tensor]]:
     """Mix current-round prototypes with memory prototypes.
 
@@ -161,6 +163,9 @@ def mix_current_and_memory(
     """
     if len(memory) == 0 or alpha >= 1.0:
         return current_proto_dict, current_dist_dict
+
+    if runtime_counters is not None:
+        runtime_counters.increment("memory.replay_calls")
 
     all_classes = set(current_proto_dict.keys())
     # Also include memory-only classes
@@ -173,13 +178,16 @@ def mix_current_and_memory(
     for cls_id in all_classes:
         has_current = cls_id in current_proto_dict
         mem_records = memory.get_top_k_reliable(cls_id, top_k)
+        if runtime_counters is not None:
+            runtime_counters.increment("memory.reads", len(mem_records))
 
         if has_current and mem_records:
-            cur_mu = current_proto_dict[cls_id]
-            cur_sigma = current_dist_dict[cls_id]
+            compute_device = torch.device(device) if device is not None else current_proto_dict[cls_id].device
+            cur_mu = current_proto_dict[cls_id].to(compute_device)
+            cur_sigma = current_dist_dict[cls_id].to(compute_device)
             mem_p, mem_d = memory.to_proto_dist_dicts(mem_records)
-            mem_mu = mem_p[cls_id].to(cur_mu.device)
-            mem_sigma = mem_d[cls_id].to(cur_sigma.device)
+            mem_mu = mem_p[cls_id].to(compute_device)
+            mem_sigma = mem_d[cls_id].to(compute_device)
 
             mixed_proto[cls_id] = alpha * cur_mu + (1 - alpha) * mem_mu
             # Mix variance: alpha * var_cur + (1-alpha) * var_mem + alpha*(1-alpha)*(mu_cur - mu_mem)^2
@@ -189,12 +197,19 @@ def mix_current_and_memory(
                 + alpha * (1 - alpha) * (cur_mu - mem_mu) ** 2
             )
             mixed_dist[cls_id] = torch.sqrt(var_mixed + 1e-8)
+            if runtime_counters is not None:
+                runtime_counters.increment("memory.changed_classes", int(not torch.equal(cur_mu, mixed_proto[cls_id])))
+                runtime_counters.increment("memory.replays", len(mem_records))
         elif has_current:
-            mixed_proto[cls_id] = current_proto_dict[cls_id]
-            mixed_dist[cls_id] = current_dist_dict[cls_id]
+            compute_device = torch.device(device) if device is not None else current_proto_dict[cls_id].device
+            mixed_proto[cls_id] = current_proto_dict[cls_id].to(compute_device)
+            mixed_dist[cls_id] = current_dist_dict[cls_id].to(compute_device)
         elif mem_records:
             mem_p, mem_d = memory.to_proto_dist_dicts(mem_records)
-            mixed_proto[cls_id] = mem_p[cls_id]
-            mixed_dist[cls_id] = mem_d[cls_id]
+            compute_device = torch.device(device) if device is not None else mem_p[cls_id].device
+            mixed_proto[cls_id] = mem_p[cls_id].to(compute_device)
+            mixed_dist[cls_id] = mem_d[cls_id].to(compute_device)
+            if runtime_counters is not None:
+                runtime_counters.increment("memory.replays", len(mem_records))
 
     return mixed_proto, mixed_dist

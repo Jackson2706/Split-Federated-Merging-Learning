@@ -115,6 +115,7 @@
 
 from torch import nn
 import torch
+from ehsfp.prototype_space import CosineClassifier, validate_prototype_space
 
 class AlexnetClientModel(nn.Module):
     def __init__(self):
@@ -167,6 +168,10 @@ class ALexnetCloudHead(nn.Module):
     def __init__(self, args):
         super().__init__()
         num_classes = args["num_classes"]
+        self.prototype_space = validate_prototype_space(args.get("prototype_space"))
+        if self.prototype_space == "centered_cosine":
+            self.cosine_head = CosineClassifier(256, num_classes)
+            return
         # Input: 2D features [B, 256] from edge GAP+flatten
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
@@ -180,4 +185,6 @@ class ALexnetCloudHead(nn.Module):
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
+        if self.prototype_space == "centered_cosine":
+            return self.cosine_head(x)
         return self.classifier(x)

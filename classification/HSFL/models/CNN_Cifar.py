@@ -11,7 +11,7 @@ def set_requires_grad(module, freeze=False):
 class ClientModel(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(ClientModel, self).__init__()
-        resnet = models.resnet18(weights=None)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 
         # Modify for CIFAR input (32x32)
         resnet.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -33,7 +33,7 @@ class ClientModel(nn.Module):
 class EdgeModel(nn.Module):
     def __init__(self, freeze_backbone=False):
         super(EdgeModel, self).__init__()
-        resnet = models.resnet18(weights=None)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 
         self.part = nn.Sequential(
             resnet.layer2,

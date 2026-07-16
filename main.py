@@ -207,6 +207,7 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
 
     # Inject ablation mode, seed, and/or arbitrary key=value overrides into a temp config YAML
     overrides = overrides or {}
+    seed = 42 if seed is None else seed
     use_tmp_cfg = (ablation and method == "h-sfp") or (seed is not None) or bool(overrides)
     if use_tmp_cfg:
         import tempfile
@@ -216,9 +217,8 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         if ablation and method == "h-sfp":
             cfg_data["ablation_mode"] = ablation
             print(f"[E-HSFP] Ablation mode: {ablation}")
-        if seed is not None:
-            cfg_data["seed"] = seed
-            print(f"[Runner] Seed: {seed}")
+        cfg_data["seed"] = seed
+        print(f"[Runner] Seed: {seed}")
         if overrides:
             cfg_data.update(overrides)
             print(f"[Runner] Overrides: {overrides}")
@@ -231,8 +231,7 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         cfg_path = tmp.name
 
     # Set global seed before anything else
-    if seed is not None:
-        _set_seed(seed)
+    _set_seed(seed)
 
     wandb_active = False
     if use_wandb:

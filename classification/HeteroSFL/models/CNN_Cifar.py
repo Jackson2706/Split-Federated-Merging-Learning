@@ -7,7 +7,7 @@ class CifarClientModel(nn.Module):
     def __init__(self, args):
         super().__init__()
         # Standard ResNet18 initialization
-        resnet = models.resnet18(weights=None)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         
         # Modify for CIFAR input (32x32)
         # Keeps spatial dimensions larger for small images
@@ -38,7 +38,7 @@ class CifarClientModel(nn.Module):
 class CifarServerModel(nn.Module):
     def __init__(self, args):
         super().__init__()
-        resnet = models.resnet18(weights=None)
+        resnet = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         
         # --- HeteroSFL Decoder ---
         # Maps received channels -> 128 (What ResNet layer3 expects)

@@ -1,4 +1,5 @@
 from torch import nn
+from ehsfp.prototype_space import CosineClassifier, validate_prototype_space
 
 
 class VGGClient_Ours(nn.Module):
@@ -36,6 +37,10 @@ class VGGCloud_Ours(nn.Module):
 
     def __init__(self, args):
         super().__init__()
+        self.prototype_space = validate_prototype_space(args.get("prototype_space"))
+        if self.prototype_space == "centered_cosine":
+            self.cosine_head = CosineClassifier(256, args["num_classes"])
+            return
         self.classifier = nn.Sequential(
             nn.Dropout(0.5),
             nn.Linear(256, 1024),
@@ -48,4 +53,6 @@ class VGGCloud_Ours(nn.Module):
 
     def forward(self, x):
         x = x.view(x.size(0), -1)
+        if self.prototype_space == "centered_cosine":
+            return self.cosine_head(x)
         return self.classifier(x)

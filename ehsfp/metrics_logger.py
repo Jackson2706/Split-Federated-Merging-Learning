@@ -5,6 +5,8 @@ Collects all E-HSFP-specific metrics into a structured dict,
 compatible with wandb.log() and JSON output.
 """
 
+import json
+import os
 from typing import Dict, Any, Optional
 
 try:
@@ -88,6 +90,33 @@ class EHSFPMetricsLogger:
 
     def get_current(self) -> Dict[str, Any]:
         return dict(self._current)
+
+    def append_jsonl(self, path: str, extra: Optional[Dict] = None) -> None:
+        """Persist an epoch record without display rounding.
+
+        Diagnostic metrics can occasionally be NaN/Inf (e.g. a degenerate
+        per-class reliability variance); sanitize to null so a single non-finite
+        diagnostic never aborts the whole run's logging (and final test/metrics
+        write). This keeps runs robust without hiding real training divergence,
+        which is already tracked via the finite loss/accuracy fields.
+        """
+        import math
+
+        def _sanitize(o):
+            if isinstance(o, float):
+                return o if math.isfinite(o) else None
+            if isinstance(o, dict):
+                return {k: _sanitize(v) for k, v in o.items()}
+            if isinstance(o, (list, tuple)):
+                return [_sanitize(v) for v in o]
+            return o
+
+        data = _sanitize(dict(self._current))
+        if extra:
+            data.update(_sanitize(dict(extra)))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as handle:
+            handle.write(json.dumps(data, sort_keys=True, allow_nan=False) + "\n")
 
     def finalize(self) -> list:
         """Flush remaining metrics and return full history."""
