@@ -7,13 +7,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config import ConfigLoader
+from config.config_loader import ConfigLoader
 from data import get_dataset
 from models import get_model
 from clients import test_inference, DiceFocalLoss
 from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
+from segmentation.training_metrics import BestSegmentationMetrics
 
 try:
     import wandb
@@ -64,6 +65,8 @@ def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
     for local_w in local_updates:
         is_narrow = local_w[weight_key].shape[0] == narrow_channels
         for k in local_w:
+            if not global_wide_weights[k].is_floating_point():
+                continue
             if k in [weight_key, bias_key] and is_narrow:
                 update_acc[k][:narrow_channels] += local_w[k]
                 count_acc[k][:narrow_channels] += 1
@@ -73,9 +76,20 @@ def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
 
     avg_weights = copy.deepcopy(global_wide_weights)
     for k in avg_weights:
+        if not avg_weights[k].is_floating_point():
+            continue
         mask = count_acc[k] > 0
         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
     return avg_weights
+
+
+def align_prediction_to_mask(prediction, mask):
+    """Resize a segmentation prediction without permitting BCE broadcasting."""
+    if prediction.shape[-2:] != mask.shape[-2:]:
+        prediction = F.interpolate(
+            prediction, size=mask.shape[-2:], mode="bilinear", align_corners=False
+        )
+    return prediction
 
 
 def run(cfg_path: str):
@@ -108,7 +122,9 @@ def run(cfg_path: str):
 
     criterion = DiceFocalLoss().to(device)
     comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
-    best_iou = 0.0
+    best = BestSegmentationMetrics()
+    best_client_weights = None
+    best_server_weights = None
 
     for epoch in tqdm(range(config["epochs"])):
         idxs_users = np.random.choice(
@@ -155,6 +171,8 @@ def run(cfg_path: str):
                         act_narrow_sim[:, NARROW_CHANNELS:] = 0
                         pred_wide = main_server_model(act_wide)
                         pred_narrow = main_server_model(act_narrow_sim)
+                        pred_wide = align_prediction_to_mask(pred_wide, mask)
+                        pred_narrow = align_prediction_to_mask(pred_narrow, mask)
                         # Segmentation: use DiceFocalLoss for both, average
                         loss_wide = criterion(pred_wide, mask)
                         loss_narrow = criterion(pred_narrow, mask)
@@ -171,6 +189,7 @@ def run(cfg_path: str):
                         ).to(device)
                         act_input = torch.cat([act_narrow, padding], dim=1)
                         pred = main_server_model(act_input)
+                        pred = align_prediction_to_mask(pred, mask)
                         loss = criterion(pred, mask)
                         loss.backward()
                         activation_grad = act_narrow.grad
@@ -208,16 +227,17 @@ def run(cfg_path: str):
             eval_iou, eval_dice, eval_loss = test_inference(config, eval_wrapper, test_dataset)
             print(f"Epoch {epoch+1}: IoU={eval_iou:.4f}  Dice={eval_dice:.4f}")
 
-            if eval_iou > best_iou:
-                best_iou = eval_iou
-                print(f" -> New Best IoU: {best_iou:.4f}")
+            if best.update(eval_iou, eval_dice, epoch + 1):
+                best_client_weights = copy.deepcopy(client_model_wide.state_dict())
+                best_server_weights = copy.deepcopy(main_server_model.state_dict())
+                print(f" -> New Best IoU: {best.iou:.4f}")
 
             if wandb is not None and wandb.run is not None:
                 wandb.log({
                     "epoch": epoch + 1,
                     "iou": eval_iou,
                     "dice": eval_dice,
-                    "best_iou": best_iou,
+                    "best_iou": best.iou,
                     "train_loss": np.mean(epoch_losses),
                     **{k: v for k, v in comm_cost_dict.items()},
                 })
@@ -234,18 +254,24 @@ def run(cfg_path: str):
         def forward(self, x):
             return self.server(self.client(x))
 
+    if best_client_weights is not None:
+        client_model_wide.load_state_dict(best_client_weights)
+        main_server_model.load_state_dict(best_server_weights)
     final_model = _FinalWrapper(client_model_wide, main_server_model).to(device)
     final_iou, final_dice, final_loss = test_inference(config, final_model, test_dataset)
     total_time = time.time() - start_time
 
-    print(f"\nFinal Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
+    print(f"\nBest Validation IoU: {best.iou:.4f}  Dice: {best.dice:.4f}  Round: {best.round}")
+    print(f"Best-checkpoint Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
     print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
     print(f"Total Run Time: {total_time:.2f}s")
 
     if wandb is not None and wandb.run is not None:
         wandb.summary["test_iou"] = final_iou
         wandb.summary["test_dice"] = final_dice
-        wandb.summary["best_iou"] = best_iou
+        wandb.summary["best_iou"] = best.iou
+        wandb.summary["best_dice"] = best.dice
+        wandb.summary["best_round"] = best.round
         wandb.summary["total_time_s"] = total_time
 
     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
@@ -254,6 +280,7 @@ def run(cfg_path: str):
     with open(os.path.join(out_dir, filename), "w") as f:
         json.dump({
             "test_iou": final_iou, "test_dice": final_dice,
-            "best_iou": best_iou, "total_time": total_time,
+            "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
+            "last_iou": eval_iou, "last_dice": eval_dice, "total_time": total_time,
             "comm_cost": comm_cost_dict,
         }, f, indent=4)

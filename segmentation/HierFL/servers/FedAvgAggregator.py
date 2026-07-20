@@ -1,7 +1,5 @@
 import copy
 
-import torch
-
 from .Aggregator import Aggregator
 
 
@@ -14,18 +12,9 @@ class FedAvgAggregator(Aggregator):
         w_avg = copy.deepcopy(client_updates[0])
 
         for key in w_avg.keys():
-            # Convert to float for safe accumulation if needed
-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
+            if w_avg[key].is_floating_point():
                 for i in range(1, len(client_updates)):
                     w_avg[key] += client_updates[i][key]
                 w_avg[key] = w_avg[key] / len(client_updates)
-            else:
-                # # For non-float types (like Long), just pick the first client's version
-                # for i in range(1, len(client_updates)):
-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
-                # Keep it unchanged (or majority vote if needed)
-                # Optional: vote or assert consistency
-                pass
 
         return w_avg

@@ -12,6 +12,7 @@ from config import ConfigLoader
 from data import get_dataset
 from models import get_model
 from server import get_strategy
+from segmentation.training_metrics import BestSegmentationMetrics
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
@@ -49,6 +50,8 @@ def run(cfg_path: str):
     client_cpu_list, client_time_list, client_ram_list, client_gpu_ram_list = [], [], [], []
     print_every = 2
     comm_cost_dict = {"client_model_upload_MB": 0, "client_model_download_MB": 0}
+    best = BestSegmentationMetrics()
+    best_weights = None
 
     for epoch in tqdm(range(config["epochs"])):
         torch.cuda.empty_cache()
@@ -107,6 +110,9 @@ def run(cfg_path: str):
         global_model.eval()
         test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
         train_accuracy.append(test_iou)
+        if best.update(test_iou, test_dice, epoch + 1):
+            best_weights = copy.deepcopy(global_model.state_dict())
+            print(f" -> New Best IoU: {best.iou:.4f}")
 
         if wandb is not None and wandb.run is not None:
             wandb.log({
@@ -114,6 +120,7 @@ def run(cfg_path: str):
                 "train_loss": training_loss[-1],
                 "iou": test_iou,
                 "dice": test_dice,
+                "best_iou": best.iou,
                 "avg_client_time_s": avg_time,
                 "avg_client_cpu_pct": avg_cpu,
                 "avg_client_ram_MB": avg_ram,
@@ -126,16 +133,22 @@ def run(cfg_path: str):
         for k, v in comm_cost_dict.items():
             print(f"  {k}: {v:.2f} MB")
 
+    last_iou, last_dice = test_iou, test_dice
+    if best_weights is not None:
+        global_model.load_state_dict(best_weights)
     test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
     total_time = time.time() - start_time
     print(f"\nResults after {config['epochs']} global rounds:")
-    print("|---- Avg Train IoU: {:.2f}%".format(100 * train_accuracy[-1]))
-    print("|---- Test IoU: {:.2f}%  Test Dice: {:.2f}%".format(100 * test_iou, 100 * test_dice))
+    print("|---- Best Validation IoU: {:.2f}%  Dice: {:.2f}%  Round: {}".format(100 * best.iou, 100 * best.dice, best.round))
+    print("|---- Best-checkpoint Test IoU: {:.2f}%  Test Dice: {:.2f}%".format(100 * test_iou, 100 * test_dice))
     print("Total Run Time: {:.4f}s".format(total_time))
 
     if wandb is not None and wandb.run is not None:
         wandb.summary["test_iou"] = test_iou
         wandb.summary["test_dice"] = test_dice
+        wandb.summary["best_iou"] = best.iou
+        wandb.summary["best_dice"] = best.dice
+        wandb.summary["best_round"] = best.round
         wandb.summary["total_time_s"] = total_time
 
     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
@@ -145,4 +158,7 @@ def run(cfg_path: str):
             "train_loss": training_loss, "train_accuracy": train_accuracy,
             "client_time_list": client_time_list, "client_cpu_list": client_cpu_list,
             "client_ram_list": client_ram_list, "client_gpu_ram_list": client_gpu_ram_list,
+            "test_iou": test_iou, "test_dice": test_dice,
+            "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
+            "last_iou": last_iou, "last_dice": last_dice,
         }, f, indent=4)

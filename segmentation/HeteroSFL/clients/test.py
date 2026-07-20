@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from .DiceFocalLoss import DiceFocalLoss
@@ -35,6 +36,10 @@ def test_inference(args, model, test_dataset):
         for inputs, masks in testloader:
             inputs, masks = inputs.to(device), masks.to(device)
             outputs = model(inputs)
+            if outputs.shape[-2:] != masks.shape[-2:]:
+                outputs = F.interpolate(
+                    outputs, size=masks.shape[-2:], mode="bilinear", align_corners=False
+                )
             size = inputs.size(0)
 
             total_loss += criterion(outputs, masks).item()

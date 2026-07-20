@@ -217,30 +217,33 @@ def supervised_contrastive_loss(features, labels, temperature=0.5):
     Supervised Contrastive Loss (SupCon) — Paper Eq. 1.
     Positive pairs P(i) are samples sharing the same class label.
     """
-    features = nn.functional.normalize(features, dim=1)
-    batch_size = features.shape[0]
-    device = features.device
+    # Keep the inexpensive SupCon reduction in fp32.  In particular, its
+    # matmul/exp/log operations are not numerically safe under fp16 autocast.
+    with torch.autocast(device_type=features.device.type, enabled=False):
+        features = nn.functional.normalize(features.float(), dim=1)
+        batch_size = features.shape[0]
+        device = features.device
 
-    sim_matrix = torch.matmul(features, features.T) / temperature
+        sim_matrix = torch.matmul(features, features.T) / temperature
 
-    labels_col = labels.view(-1, 1)
-    positive_mask = torch.eq(labels_col, labels_col.T).float()
-    self_mask = torch.eye(batch_size, device=device)
-    positive_mask = positive_mask - self_mask
+        labels_col = labels.view(-1, 1)
+        positive_mask = torch.eq(labels_col, labels_col.T).float()
+        self_mask = torch.eye(batch_size, device=device)
+        positive_mask = positive_mask - self_mask
 
-    logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
-    logits = sim_matrix - logits_max.detach()
+        logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
+        logits = sim_matrix - logits_max.detach()
 
-    exp_logits = torch.exp(logits) * (1 - self_mask)
-    log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
+        exp_logits = torch.exp(logits) * (1 - self_mask)
+        log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
 
-    num_positives = positive_mask.sum(dim=1)
-    mean_log_prob = (positive_mask * log_prob).sum(dim=1) / (num_positives + 1e-8)
+        num_positives = positive_mask.sum(dim=1)
+        mean_log_prob = (positive_mask * log_prob).sum(dim=1) / (num_positives + 1e-8)
 
-    valid = (num_positives > 0).float()
-    loss = -(valid * mean_log_prob).sum() / (valid.sum() + 1e-8)
+        valid = (num_positives > 0).float()
+        loss = -(valid * mean_log_prob).sum() / (valid.sum() + 1e-8)
 
-    return loss
+        return loss
 
 # --- Class utility functions (HFL utils) ---
 

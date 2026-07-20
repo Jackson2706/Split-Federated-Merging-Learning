@@ -108,9 +108,6 @@ class Client(ABC):
             outputs = model(inputs)
             batch_loss = criterion(outputs, masks)
             loss += batch_loss.item()
-            outputs = torch.sigmoid(
-                outputs
-            )  # Apply sigmoid if the output is logits
             outputs = (outputs > 0.5).float()
             iou, dice = compute_iou_and_dice(outputs, masks)
             test_iou += iou * inputs.size(0)  # Multiply by batch size

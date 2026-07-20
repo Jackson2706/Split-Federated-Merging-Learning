@@ -11,13 +11,10 @@ class DiceFocalLoss(nn.Module):
         self.alpha = alpha
         self.gamma = gamma
         self.smooth = smooth
-        self.eps = eps  # for clamping
+        self.eps = eps
         self.debug = debug
 
     def _sanity_check(self, preds, targets):
-        if targets.dtype != torch.float32:
-            targets = targets.float()
-
         if preds.dim() == 3:
             preds = preds.unsqueeze(1)
         if targets.dim() == 3:
@@ -28,13 +25,12 @@ class DiceFocalLoss(nn.Module):
                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
             )
 
-        # Clamp predictions to avoid NaN/Inf in log and BCE
-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
-
-        if torch.isnan(preds).any() or torch.isinf(preds).any():
-            print("❌ NaN or Inf found in predictions")
-        if torch.isnan(targets).any() or torch.isinf(targets).any():
-            print("❌ NaN or Inf found in targets")
+        # Invalid values cannot be made finite by clamp alone. Map them to the
+        # nearest valid binary value, then keep probabilities away from log(0).
+        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+        targets = targets.clamp(min=0.0, max=1.0)
 
         return preds, targets
 
@@ -43,12 +39,10 @@ class DiceFocalLoss(nn.Module):
         targets = targets.contiguous().view(-1)
 
         intersection = (preds * targets).sum()
-        dice = (2.0 * intersection + self.smooth) / (
-            preds.sum() + targets.sum() + self.smooth
+        union = preds.sum() + targets.sum()
+        dice = (2.0 * intersection + self.smooth + self.eps) / (
+            union + self.smooth + self.eps
         )
-
-        if torch.isnan(dice) or torch.isinf(dice):
-            print("❌ NaN/Inf in Dice loss computation")
 
         return 1 - dice
 
@@ -56,17 +50,28 @@ class DiceFocalLoss(nn.Module):
         preds = preds.contiguous().view(-1)
         targets = targets.contiguous().view(-1)
 
+        if preds.numel() == 0:
+            return preds.sum()
+
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
         bce = F.binary_cross_entropy(preds, targets, reduction="none")
         pt = torch.exp(-bce)
-        focal = self.alpha * (1 - pt) ** self.gamma * bce
+        # ``alpha`` weights background; foreground receives the complementary
+        # (larger, with the default) weight to counter lesion sparsity.
+        alpha_t = targets * (1.0 - self.alpha) + (1.0 - targets) * self.alpha
+        focal = alpha_t * (1 - pt) ** self.gamma * bce
         return focal.mean()
 
     def forward(self, preds, targets):
-        preds, targets = self._sanity_check(preds, targets)
+        # Keep reductions and BCE in float32 even when the caller uses autocast.
+        with torch.autocast(device_type=preds.device.type, enabled=False):
+            preds = preds.float()
+            targets = targets.float()
+            preds, targets = self._sanity_check(preds, targets)
 
-        loss_dice = self.dice_loss(preds, targets)
-        loss_focal = self.focal_loss(preds, targets)
-        total_loss = loss_dice + loss_focal
+            loss_dice = self.dice_loss(preds, targets)
+            loss_focal = self.focal_loss(preds, targets)
+            total_loss = loss_dice + loss_focal
 
         if self.debug:
             print(

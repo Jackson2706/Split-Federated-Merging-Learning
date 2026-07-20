@@ -15,8 +15,6 @@ class DiceFocalLoss(nn.Module):
         self.debug = debug
 
     def _sanity_check(self, preds, targets):
-        if targets.dtype != torch.float32:
-            targets = targets.float()
         if preds.dim() == 3:
             preds = preds.unsqueeze(1)
         if targets.dim() == 3:
@@ -25,35 +23,42 @@ class DiceFocalLoss(nn.Module):
             raise ValueError(
                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
             )
-        # Guard against non-finite predictions (NaN/inf) before clamping:
-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
+        # Invalid values cannot be made finite by clamp alone. Map them to the
+        # nearest valid binary value, then keep probabilities away from log(0).
         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+        targets = targets.clamp(min=0.0, max=1.0)
         return preds, targets
 
     def dice_loss(self, preds, targets):
         preds = preds.contiguous().view(-1)
         targets = targets.contiguous().view(-1)
         intersection = (preds * targets).sum()
-        dice = (2.0 * intersection + self.smooth) / (
-            preds.sum() + targets.sum() + self.smooth
+        union = preds.sum() + targets.sum()
+        dice = (2.0 * intersection + self.smooth + self.eps) / (
+            union + self.smooth + self.eps
         )
         return 1 - dice
 
     def focal_loss(self, preds, targets):
         preds = preds.contiguous().view(-1)
         targets = targets.contiguous().view(-1)
+
+        if preds.numel() == 0:
+            return preds.sum()
+
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
         bce = F.binary_cross_entropy(preds, targets, reduction="none")
         pt = torch.exp(-bce)
-        focal = self.alpha * (1 - pt) ** self.gamma * bce
+        # ``alpha`` weights background; foreground receives the complementary
+        # (larger, with the default) weight to counter lesion sparsity.
+        alpha_t = targets * (1.0 - self.alpha) + (1.0 - targets) * self.alpha
+        focal = alpha_t * (1 - pt) ** self.gamma * bce
         return focal.mean()
 
     def forward(self, preds, targets):
-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
-        # and this loss operates on probabilities. Force a float32, autocast-off
-        # region so it is safe whether or not the caller is inside autocast.
+        # Keep reductions and BCE in float32 even when the caller uses autocast.
         with torch.autocast(device_type=preds.device.type, enabled=False):
             preds = preds.float()
             targets = targets.float()

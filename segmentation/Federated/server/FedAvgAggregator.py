@@ -18,6 +18,8 @@ class FedAvgAggregator(Aggregator):
         server_comm = sys.getsizeof(client_updates)
         w_avg = copy.deepcopy(client_updates[0])
         for key in w_avg.keys():
+            if not w_avg[key].is_floating_point():
+                continue
             for i in range(1, len(client_updates)):
                 w_avg[key] += client_updates[i][key]
             w_avg[key] = torch.div(w_avg[key], len(client_updates))

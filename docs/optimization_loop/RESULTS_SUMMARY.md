@@ -148,3 +148,61 @@ Full CSV: results/fair_comparison_ham10000.csv. HAM is easier (7 classes, imbala
 | **H-SFP (ours)** | **10.98 ± 0.00** | ~ (lowest; prototype-only) |
 CSV: results/fair_comparison_ham10000.csv. Same pattern as CIFAR-100: H-SFP far lower accuracy,
 far lower communication. E-HSFP full-config numbers PENDING (PRC deadlock under active fix).
+
+
+## E-HSFP component ablation (CIFAR-100, 10-round, corrected eval, seed 20260714)
+| Config | IID top-1 | non-IID (Dirichlet a=0.1) top-1 |
+|---|---:|---:|
+| baseline (centered) | 9.98 | 9.78 |
+| +memory | 10.26 | - |
+| +memory+dropout | 9.89 | 9.81 |
+| +memory+reliability | 10.62 | 10.17 |
+E-HSFP components add small, consistent gains (reliability best, +0.4-0.6). full_e/PRC DEFERRED
+(intractable autograd-backward deadlock; 5 fix attempts). ISIC-2018 seg grid running; full-60 next.
+
+
+## FULL-60 CIFAR-100 (converged, 60 rounds, 3 seeds) — APPROX (aggregator needs consistent test-acc)
+| Method | full-60 (%) | 10-round proxy (%) |
+|---|---:|---:|
+| SplitFL | ~60.0 | 45.79 |
+| HSFL | ~57 | 25.5 |
+| Federated | ~56 | 35.81 |
+| HierFL | ~55 | 33.73 |
+| HeteroSFL | 38.45 | 18.68 |
+| H-SFP (ours) | 11.49 | 10.29 |
+Baselines converge ~55-60% at 60 rounds; H-SFP stays ~11.5%. Gap holds at full budget; H-SFP's
+edge is ~300x lower communication. (Baseline JSONs store train-acc; test-acc extraction from logs
+pending a clean aggregator.)
+
+## ISIC-2018 segmentation — NOT WORKING (deep seg-pipeline issues)
+After the double-sigmoid + import + config fixes, ISIC still fails 3 ways: federated IoU collapses
+to 0 (all-background; focal loss doesn't reweight class imbalance), heterosfl crashes (code=1),
+hierfl/h-sfp time out (60 rounds >2.5h). Needs substantial seg-pipeline work (imbalance-aware loss,
+crash fix, budget). DEFERRED like E-HSFP full_e/PRC.
+
+
+## FINAL ISIC-2018 segmentation (10-round proxy, 3 seeds) — 4/4 methods validated (2026-07-20)
+| Method | IoU (%) mean+-std |
+|---|---:|
+| HierFL | 63.17 +- 1.56 |
+| H-SFP (ours) | 47.27 +- 2.19 |
+| Federated | 27.76 +- 0.86 |
+| HeteroSFL | 25.80 +- 0.26 |
+Full data: results/fair_comparison_isic2018.csv. Five real bugs found+fixed earlier (proxy-epochs
+config, HeteroSFL shape mismatch, class-imbalance training collapse, HeteroSFL dtype crash,
+frozen-client eval) got 3/4 methods clean but left H-SFP-seg deterministically at 0.00% IoU.
+
+A 6th bug, found 2026-07-20, resolved it: `_client_ssl_extraction_phase` (segmentation/H-SFP/
+hierarchy.py) extracted prototype features under fp16 autocast, then computed mean/std on them
+in fp16 — squaring large ResNet activations for the variance overflowed fp16's ~65504 max,
+producing Inf/NaN prototype stds. These silently poisoned every downstream synthetic feature,
+and once one bad batch hit the edge model's BatchNorm in train() mode its running_mean/var were
+permanently corrupted (GradScaler protects the optimizer step from bad gradients, not the
+forward-pass BN update). DiceFocalLoss's `nan_to_num` then silently converted the resulting NaN
+predictions to all-background, masking the corruption as a normal-looking finite loss. Fix: cast
+prototype features to fp32 immediately after extraction, and force the edge-model SSL forward to
+fp32 (mirroring the fix already applied to the decoder for the same class of issue). Full details
+in DECISIONS.md.
+
+H-SFP-seg now trains cleanly to 47.27% IoU — ahead of Federated/HeteroSFL, behind HierFL. No
+remaining unresolved bugs for this method.

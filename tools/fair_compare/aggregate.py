@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,9 @@ COLUMNS = [
     "method", "config", "seed", "dataset", "rounds", "best_val_top1",
     "macro_f1", "total_comm_MB", "peak_vram_MB", "runtime_s", "partition_hash",
     "config_hash", "status",
+]
+FULL60_COLUMNS = [
+    "method", "seed", "test_top1", "total_comm_MB", "peak_vram_MB", "runtime_s",
 ]
 KNOWN_PARTITIONS = {
     20260714: "93e523640b9820c12f7cbf570ecb253a8610531942569577831a8b34d822dcb1",
@@ -137,6 +141,10 @@ def best_accuracy(metric: dict[str, Any]) -> float | str:
 
 def macro_f1(metric: dict[str, Any]) -> float | str:
     """Read a scalar or history while avoiding legacy accuracy-named-as-F1 fields."""
+    # Segmentation artifacts use this existing CSV column for their paired Dice
+    # score. Prefer the Dice value tied to the best-IoU round, never the last.
+    if metric.get("best_dice") is not None:
+        return as_percent(metric["best_dice"])
     for key in ("macro_f1", "best_val_macro_f1", "final_test_f1", "test_macro_f1"):
         if metric.get(key) is not None:
             value = metric[key]
@@ -161,6 +169,74 @@ def total_comm(metric: dict[str, Any]) -> float | str:
         return float(metric["total_comm_MB"])
     comm_keys = [k for k in metric if k.endswith("_MB") and ("upload" in k or "download" in k)]
     return sum(float(metric[k]) for k in comm_keys) if comm_keys else ""
+
+
+def as_percent(value: Any) -> float | str:
+    if value is None or value == "":
+        return ""
+    number = float(value)
+    return round(number * 100 if number <= 1 else number, 10)
+
+
+def full60_log(method: str, seed: int | str) -> Path | None:
+    """Locate the held-out-evaluation log produced by plans 26/27."""
+    patterns = (
+        f"plan27*/hsfp60_{seed}.log" if method == "h-sfp"
+        else f"plan26*/f60_{method}_{seed}.log",
+    )
+    log_root = ROOT / "docs/optimization_loop/logs"
+    matches = [path for pattern in patterns for path in log_root.glob(pattern)]
+    return sorted(matches)[-1] if matches else None
+
+
+def log_test_top1(path: Path | None) -> float | str:
+    if path is None:
+        return ""
+    text = path.read_text(errors="replace")
+    matches = re.findall(r"(?:Final\s+)?Test Acc:\s*([0-9]+(?:\.[0-9]+)?)%", text, re.I)
+    return float(matches[-1]) if matches else ""
+
+
+def log_runtime(path: Path | None) -> float | str:
+    if path is None:
+        return ""
+    matches = re.findall(r"\bruntime_s=([0-9]+(?:\.[0-9]+)?)", path.read_text(errors="replace"))
+    return float(matches[-1]) if matches else ""
+
+
+def aggregate_full60(raw_dir: str) -> dict[str, Any]:
+    """Aggregate one FULL-60 run using held-out accuracy, never train accuracy."""
+    run_dir = Path(raw_dir).resolve()
+    _, metric = first_metric_json(run_dir)
+    metadata_paths = sorted(run_dir.rglob("run_metadata.json"))
+    metadata = load_json(metadata_paths[0]) if metadata_paths else {}
+    method = infer_method(run_dir, metric)
+    seed = infer_seed(run_dir, metadata)
+    log = full60_log(method, seed)
+
+    # The conventional baselines report held-out accuracy explicitly. SplitFL's
+    # JSON lacks that field, so use its "Final Test Acc" log. H-SFP historically
+    # calls CIFAR-100 top-1 ``best_f1``; retain that 10-round-table convention.
+    if method == "h-sfp":
+        test_top1 = as_percent(metric.get("best_f1"))
+    else:
+        test_top1 = as_percent(metric.get("final_test_accuracy", metric.get("test_accuracy")))
+        if test_top1 == "":
+            test_top1 = log_test_top1(log)
+
+    peak_bytes = metric.get("peak_vram_bytes", metadata.get("peak_vram_bytes"))
+    peak_mb = metric.get("peak_vram_MB", "")
+    runtime = metric.get("runtime_s", metadata.get("runtime_s", ""))
+    if runtime == "":
+        runtime = log_runtime(log)
+    return {
+        "method": method,
+        "seed": seed,
+        "test_top1": test_top1,
+        "total_comm_MB": total_comm(metric),
+        "peak_vram_MB": float(peak_bytes) / 1024**2 if peak_bytes is not None else peak_mb,
+        "runtime_s": runtime,
+    }
 
 
 def aggregate_dir(raw_dir: str, dataset_hint: str = "cifar100") -> dict[str, Any]:
@@ -214,6 +290,16 @@ def main() -> None:
     parser.add_argument("--output", help="Destination CSV (defaults according to --dataset)")
     args = parser.parse_args()
     output = Path(args.output) if args.output else OUTPUTS[args.dataset]
+    if args.dataset == "cifar100_full60":
+        rows = [aggregate_full60(directory) for directory in args.run_dirs]
+        rows = [row for row in rows if row["method"] != "unknown"]
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=FULL60_COLUMNS)
+            writer.writeheader()
+            writer.writerows(sorted(rows, key=lambda row: (row["method"], str(row["seed"]))))
+        print(f"Wrote {len(rows)} rows to {output}")
+        return
     existing: dict[tuple[str, str, str], dict[str, Any]] = {}
     if output.exists():
         with output.open(newline="") as handle:

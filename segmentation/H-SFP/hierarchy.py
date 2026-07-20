@@ -143,28 +143,31 @@ def build_edge_ssl_transforms(spatial_size):
 
 
 def supervised_contrastive_loss(features, labels, temperature=0.5):
-    features = nn.functional.normalize(features, dim=1)
-    batch_size = features.shape[0]
-    device = features.device
+    # Keep the inexpensive SupCon reduction in fp32.  In particular, its
+    # matmul/exp/log operations are not numerically safe under fp16 autocast.
+    with torch.autocast(device_type=features.device.type, enabled=False):
+        features = nn.functional.normalize(features.float(), dim=1)
+        batch_size = features.shape[0]
+        device = features.device
 
-    sim_matrix = torch.matmul(features, features.T) / temperature
-    labels_col = labels.view(-1, 1)
-    positive_mask = torch.eq(labels_col, labels_col.T).float()
-    self_mask = torch.eye(batch_size, device=device)
-    positive_mask = positive_mask - self_mask
+        sim_matrix = torch.matmul(features, features.T) / temperature
+        labels_col = labels.view(-1, 1)
+        positive_mask = torch.eq(labels_col, labels_col.T).float()
+        self_mask = torch.eye(batch_size, device=device)
+        positive_mask = positive_mask - self_mask
 
-    logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
-    logits = sim_matrix - logits_max.detach()
+        logits_max, _ = sim_matrix.max(dim=1, keepdim=True)
+        logits = sim_matrix - logits_max.detach()
 
-    exp_logits = torch.exp(logits) * (1 - self_mask)
-    log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
+        exp_logits = torch.exp(logits) * (1 - self_mask)
+        log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
 
-    num_positives = positive_mask.sum(dim=1)
-    mean_log_prob = (positive_mask * log_prob).sum(dim=1) / (num_positives + 1e-8)
+        num_positives = positive_mask.sum(dim=1)
+        mean_log_prob = (positive_mask * log_prob).sum(dim=1) / (num_positives + 1e-8)
 
-    valid = (num_positives > 0).float()
-    loss = -(valid * mean_log_prob).sum() / (valid.sum() + 1e-8)
-    return loss
+        valid = (num_positives > 0).float()
+        loss = -(valid * mean_log_prob).sum() / (valid.sum() + 1e-8)
+        return loss
 
 
 def average_state_dicts(state_dicts):
@@ -176,6 +179,10 @@ def average_state_dicts(state_dicts):
         tensors = [d[key].to(device) for d in state_dicts]
         avg_dict[key] = sum(tensors) / len(tensors)
     return avg_dict
+
+
+def _diag_nan_keys(state_dict):
+    return [k for k, v in state_dict.items() if torch.is_floating_point(v) and torch.isnan(v).any()]
 
 
 def get_model_size_MB(state_dict):
@@ -414,6 +421,10 @@ class HierarchicalFL:
             if not client_models_states:
                 continue
             avg_client_model = average_state_dicts(client_models_states)
+            if os.environ.get("HSFP_SEG_DIAG") == "1":
+                nan_keys = _diag_nan_keys(avg_client_model)
+                if nan_keys:
+                    print(f"[DIAG-WEIGHTS] edge {eid} POST-CLIENT-AVG nan_keys={nan_keys}")
             self.edge_cache[eid] = {"edge_model": self.structure[0][eid].state_dict()}
 
             size_MB = get_model_size_MB(avg_client_model)
@@ -438,6 +449,10 @@ class HierarchicalFL:
             if not edge_models_states:
                 continue
             avg_edge_model = average_state_dicts(edge_models_states)
+            if os.environ.get("HSFP_SEG_DIAG") == "1":
+                nan_keys = _diag_nan_keys(avg_edge_model)
+                if nan_keys:
+                    print(f"[DIAG-WEIGHTS] cloud {cid} POST-EDGE-AVG nan_keys={nan_keys}")
             size_edge_MB = get_model_size_MB(avg_edge_model)
             self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_edge_MB
             self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * size_edge_MB
@@ -508,7 +523,11 @@ class HierarchicalFL:
         with torch.no_grad(), torch.amp.autocast(device_type=self.device.type):
             for data, mask in loader:
                 data = data.to(self.device, non_blocking=True)
-                out = model(data)
+                # Cast out of autocast's fp16 before storing: mean/std below square
+                # these values, and squared ResNet activations routinely exceed
+                # fp16's ~65504 max, producing Inf/NaN prototypes+stds that silently
+                # poison every synthetic feature (and downstream edge BN buffers).
+                out = model(data).float()
                 target = _mask_to_label(mask)
                 target_np = target.numpy()
                 for i, cls_id in enumerate(target_np):
@@ -523,6 +542,21 @@ class HierarchicalFL:
             all_protos[cls_id] = stacked.mean(0).cpu()
             all_stds[cls_id] = stacked.std(0, unbiased=False).cpu()
             support_counts[int(cls_id)] = len(tensors)
+
+        nan_classes = [cls_id for cls_id, proto in all_protos.items() if torch.isnan(proto).any()]
+        if nan_classes:
+            logging.warning(
+                "H-SFP client %s produced NaN prototype features for classes %s after SSL training; "
+                "downstream edge/decoder features may be corrupted.",
+                cid,
+                nan_classes,
+            )
+
+        if os.environ.get("HSFP_SEG_DIAG") == "1":
+            nan_params = [n for n, p in model.named_parameters() if torch.isnan(p).any()]
+            nan_bufs = [n for n, b in model.named_buffers() if torch.isnan(b).any()]
+            if nan_params or nan_bufs:
+                print(f"[DIAG-WEIGHTS] client {cid} POST-SSL nan_params={nan_params} nan_bufs={nan_bufs}")
 
         del feats_by_cls
         gc.collect()
@@ -567,14 +601,25 @@ class HierarchicalFL:
 
         for _ in range(ssl_epochs):
             for features, labels in syn_loader_L1:
-                features = features.to(self.device)
+                # Prototypes (and thus synthetic features sampled from them) may be
+                # float16 if they were extracted under autocast in Phase 1; the edge
+                # forward below now runs in forced fp32, so cast explicitly.
+                features = features.to(self.device).float()
                 labels = labels.to(self.device)
 
                 if self.ssl_transforms_edge is None:
                     spatial_size = features.shape[-1]
                     self.ssl_transforms_edge = build_edge_ssl_transforms(spatial_size).to(self.device)
 
-                with torch.amp.autocast(device_type="cuda", enabled=(self.device.type == "cuda")):
+                # Edge model is a deep 13-block ResNet stack (layer2+3+4) fed
+                # unbounded-magnitude synthetic Gaussian-sampled prototype features
+                # (not normalized images). Under fp16 autocast this overflows and
+                # produces inf/nan activations; GradScaler only guards the optimizer
+                # step against bad *gradients*, it does not protect BatchNorm's
+                # running_mean/running_var, which are updated unconditionally during
+                # the forward pass and stay NaN forever once poisoned. Run in fp32
+                # (same fix already applied to the decoder for the same reason).
+                with torch.amp.autocast(device_type="cuda", enabled=False):
                     view_1 = self.ssl_transforms_edge(features)
                     view_2 = self.ssl_transforms_edge(features)
                     z1, z2 = model(view_1), model(view_2)
@@ -606,16 +651,22 @@ class HierarchicalFL:
                 scaler.step(optimizer)
                 scaler.update()
 
+        if os.environ.get("HSFP_SEG_DIAG") == "1":
+            nan_params = [n for n, p in model.named_parameters() if torch.isnan(p).any()]
+            nan_bufs = [n for n, b in model.named_buffers() if torch.isnan(b).any()]
+            if nan_params or nan_bufs:
+                print(f"[DIAG-WEIGHTS] edge {eid} POST-SSL nan_params={nan_params} nan_bufs={nan_bufs}")
+
         # Extract edge-level prototypes
         model.to(self.device).eval()
         edge_feats_L2 = []
-        with torch.no_grad(), torch.amp.autocast(device_type="cuda", enabled=(self.device.type == "cuda")):
+        with torch.no_grad(), torch.amp.autocast(device_type="cuda", enabled=False):
             syn_loader_eval = DataLoader(
                 syn_dataset_L1, batch_size=self.args["local_bs"],
                 shuffle=False, num_workers=0, pin_memory=False,
             )
             for features, _ in syn_loader_eval:
-                features = features.to(self.device)
+                features = features.to(self.device).float()
                 out_4d = model(features)
                 out_2d = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(out_4d), start_dim=1)
                 edge_feats_L2.append(out_2d)
@@ -702,9 +753,25 @@ class HierarchicalFL:
         """Run validation using the full pipeline (client -> edge -> decoder)."""
         from clients import compute_iou_and_dice, DiceFocalLoss
 
-        client_model = self.structure[-1][0]
+        client_layer = self.structure[-1]
+        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+        if trained_cids:
+            global_client_state = average_state_dicts(
+                [client_layer[c].state_dict() for c in trained_cids]
+            )
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        else:
+            client_model = self.structure[-1][0]
         eid = self.connectivity[-1][0]
         edge_model = self.structure[0][eid]
+
+        if os.environ.get("HSFP_SEG_DIAG") == "1":
+            c_nan = [n for n, p in client_model.named_parameters() if torch.isnan(p).any()]
+            c_nan += [n for n, b in client_model.named_buffers() if torch.isnan(b).any()]
+            e_nan = [n for n, p in edge_model.named_parameters() if torch.isnan(p).any()]
+            e_nan += [n for n, b in edge_model.named_buffers() if torch.isnan(b).any()]
+            print(f"[DIAG-WEIGHTS] VAL trained_cids={trained_cids} client_nan={c_nan} edge_nan={e_nan}")
 
         client_model.to(self.device).eval()
         edge_model.to(self.device).eval()
@@ -712,13 +779,21 @@ class HierarchicalFL:
 
         loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
         test_iou, test_dice, total_samples = 0.0, 0.0, 0
+        _diag = os.environ.get("HSFP_SEG_DIAG") == "1"
 
         with torch.no_grad():
-            for data, mask in loader:
+            for _vi, (data, mask) in enumerate(loader):
                 data, mask = data.to(self.device), mask.to(self.device)
                 out = client_model(data)
                 out = edge_model(out)
                 out = self.cloud_decoder(out)
+                if _diag and _vi == 0:
+                    print(
+                        f"[DIAG-VAL] epoch={epoch} raw_pred mean={out.mean().item():.6f} "
+                        f"max={out.max().item():.6f} min={out.min().item():.6f} "
+                        f"frac_gt_0.5={(out > 0.5).float().mean().item():.6f} "
+                        f"mask_fg_frac={mask.mean().item():.6f}"
+                    )
                 out = (out > 0.5).float()
                 iou, dice = compute_iou_and_dice(out, mask)
                 test_iou += iou
@@ -746,9 +821,25 @@ class HierarchicalFL:
         """Train the cloud decoder using full forward pass through frozen client+edge."""
         from clients import DiceFocalLoss
 
-        client_model = self.structure[-1][0]
+        client_layer = self.structure[-1]
+        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+        if trained_cids:
+            global_client_state = average_state_dicts(
+                [client_layer[c].state_dict() for c in trained_cids]
+            )
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        else:
+            client_model = self.structure[-1][0]
         eid = self.connectivity[-1][0]
         edge_model = self.structure[0][eid]
+
+        if os.environ.get("HSFP_SEG_DIAG") == "1":
+            c_nan = [n for n, p in client_model.named_parameters() if torch.isnan(p).any()]
+            c_nan += [n for n, b in client_model.named_buffers() if torch.isnan(b).any()]
+            e_nan = [n for n, p in edge_model.named_parameters() if torch.isnan(p).any()]
+            e_nan += [n for n, b in edge_model.named_buffers() if torch.isnan(b).any()]
+            print(f"[DIAG-WEIGHTS] DECODER trained_cids={trained_cids} client_nan={c_nan} edge_nan={e_nan}")
 
         client_model.to(self.device).eval()
         edge_model.to(self.device).eval()
@@ -763,14 +854,25 @@ class HierarchicalFL:
         subset = DatasetSplit(train_dataset, all_idxs)
         loader = DataLoader(subset, batch_size=self.args["local_bs"], shuffle=True, drop_last=True)
 
-        for _ in range(decoder_epochs):
-            for data, mask in loader:
+        _diag = os.environ.get("HSFP_SEG_DIAG") == "1"
+        for _dep in range(decoder_epochs):
+            _epoch_losses = []
+            for _bi, (data, mask) in enumerate(loader):
                 data, mask = data.to(self.device), mask.to(self.device)
                 self.decoder_optimizer.zero_grad()
 
                 with torch.no_grad():
                     feat = client_model(data)
                     feat = edge_model(feat)
+
+                if _diag and _dep == 0 and _bi == 0:
+                    print(
+                        f"[DIAG] feat shape={tuple(feat.shape)} "
+                        f"mean={feat.mean().item():.6f} std={feat.std().item():.6f} "
+                        f"min={feat.min().item():.6f} max={feat.max().item():.6f} "
+                        f"isnan={torch.isnan(feat).any().item()} "
+                        f"mask_fg_frac={mask.mean().item():.6f}"
+                    )
 
                 # The decoder head ends in sigmoid and feeds Dice/BCE. Under fp16
                 # autocast the conv stack can overflow -> pre-sigmoid inf/NaN ->
@@ -780,9 +882,21 @@ class HierarchicalFL:
                 pred = self.cloud_decoder(feat)
                 loss = seg_criterion(pred, mask)
 
+                if _diag and _dep == 0 and _bi == 0:
+                    print(
+                        f"[DIAG] pred mean={pred.mean().item():.6f} "
+                        f"max={pred.max().item():.6f} min={pred.min().item():.6f} "
+                        f"frac_gt_0.5={(pred > 0.5).float().mean().item():.6f} "
+                        f"loss={loss.item():.6f}"
+                    )
+
                 self.decoder_scaler.scale(loss).backward()
                 self.decoder_scaler.step(self.decoder_optimizer)
                 self.decoder_scaler.update()
+                _epoch_losses.append(loss.item())
+
+            if _diag:
+                print(f"[DIAG] decoder epoch {_dep} mean_loss={sum(_epoch_losses)/max(len(_epoch_losses),1):.6f}")
 
         self.cloud_decoder.eval()
         return loss.item() if isinstance(loss, torch.Tensor) else 0.0

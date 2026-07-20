@@ -102,3 +102,80 @@ No mandated core component remains a demonstrated dead path after the plumbing r
 - num_workers now configurable (hierarchy.py:408). PIVOT to Phase-6-lite: 3-seed confirm of best
   config freeze+centered (9.76% seed0) + comms/VRAM Pareto vs SplitFL 44.57.
 
+
+## E-HSFP PRC/full_e DEADLOCK — DEFERRED after 5 fixes (2026-07-16)
+- The PRC component (and full_e which includes it) deadlocks in torch.autograd _engine_run_backward
+  at hierarchy.py:908 (edge SSL backward) whenever PRC is active. 5 Codex fixes failed: PRC batching,
+  .item() sync removal, tensorboardX writer removal (red herring), graph-bounding via detach.
+  Root cause is a genuine autograd-backward hang under PRC that cannot be reproduced by Codex
+  (no GPU) and resists blind fixes. Needs a GPU-attached debugger (py-spy+sudo / gdb / minimal repro).
+- DEFERRED. E-HSFP reported via WORKING components: memory / +dropout / +reliability (IID gains tiny,
+  as expected; E-HSFP targets non-IID/staleness). Running a non-IID comparison of these vs baseline.
+- IID ablation (10-round, corrected eval, seed 20260714): baseline 9.98, +memory 10.26,
+  +memory+dropout 9.89, +memory+reliability (see registry).
+
+## ISIC-2018 segmentation — 3/4 methods fixed and validated; H-SFP unresolved (2026-07-19)
+Five real bugs found and fixed across this investigation:
+1. Proxy configs weren't proxies (inherited full 60-round budget) -> added epochs:10 override.
+2. HeteroSFL shape mismatch (pred_wide 112x112 vs mask 224x224) -> added align_prediction_to_mask()
+   upsample before the loss.
+3. Federated training collapse (IoU 26.8%->0.0% over rounds) -> uniform alpha=0.25 in DiceFocalLoss
+   didn't reweight the lesion/background imbalance -> made alpha foreground-weighted (alpha_t =
+   targets*0.75 + (1-targets)*0.25) across all 4 methods' DiceFocalLoss.py.
+4. HeteroSFL aggregation dtype crash (Long dest vs Float source in index_put) -> generic
+   is_floating_point() guard in aggregate_hetero() (and the same latent bug fixed in
+   Federated/HierFL's FedAvgAggregator.py, which hadn't crashed but was silently wrong for
+   integer buffers like num_batches_tracked).
+5. Frozen-client-0 eval bug ported from classification/H-SFP/hierarchy.py's PROVEN fix into
+   segmentation/H-SFP/hierarchy.py's _run_validation()/_train_decoder_phase() (use FedAvg-global
+   client via client_cache, not structure[-1][0]) — a real, valid correctness fix (AST-identical
+   to the working classification pattern, 27/27 tests pass) but did NOT resolve H-SFP-seg's issue.
+
+RESULT: Federated 27.76+-0.86%, HierFL 63.17+-1.56%, HeteroSFL 25.80+-0.26% IoU — all clean,
+stable, validated across 3 seeds. H-SFP-seg: DETERMINISTIC 0.00% IoU across all 3 seeds (not noise,
+not resolved by the eval fix). Investigated and ruled out: decoder missing sigmoid (has one),
+image/mask pairing (correctly identifier-based), edge-model selection (identical pattern to working
+classification code), which client feeds the decoder (fix applied, no change). Remaining unexplored
+hypotheses: decoder capacity/training budget (5 decoder epochs x 10 rounds = 50 total, on frozen
+SSL-contrastive features never optimized for dense/spatial tasks) may be a genuine, real limitation
+paralleling H-SFP classification's established structural encoder-ceiling finding, OR a
+not-yet-found bug in decoder gradient flow / feature statistics between client-encoder output and
+decoder input. DEFERRED pending user decision on further investigation.
+
+## ISIC-2018 H-SFP 0% IoU — ROOT CAUSE FOUND AND FIXED (2026-07-20)
+Bug #6, missed by the 2026-07-19 investigation above (which checked decoder-side hypotheses):
+the NaN originates upstream, in client-side prototype extraction, not the decoder.
+
+**Mechanism**: `_client_ssl_extraction_phase` (segmentation/H-SFP/hierarchy.py) extracts per-class
+prototype features with `out = model(data)` inside `torch.amp.autocast` (fp16), then computes
+`stacked.mean(0)` / `stacked.std(0, unbiased=False)` on those fp16 tensors. Squaring large ResNet
+layer1 activations for the variance calculation routinely overflows fp16's ~65504 max, silently
+producing Inf/NaN prototype stds (no crash, no exception). These NaN stds feed
+`_generate_synthetic_data` (ehsfp/aggregation.py), so every synthetic feature sampled for Phase-2
+edge SSL training is poisoned. Once one such NaN batch hits the edge model's BatchNorm layers in
+`train()` mode, `running_mean`/`running_var` are corrupted permanently via the momentum-based EMA
+update — `GradScaler` only guards the optimizer step against bad *gradients*, it does not protect
+this forward-pass side effect, so once poisoned the buffers stay NaN forever (confirmed via
+targeted `named_buffers()` NaN checks added at every phase boundary: clean after Phase 1, NaN in
+100% of edge BatchNorm running stats after Phase 2, on all 4 edges, every run). Downstream,
+`DiceFocalLoss`'s `torch.nan_to_num(preds, nan=0.0, ...)` (added by the earlier `64f8c4d` stability
+fix) then silently converts the resulting NaN predictions to all-background, which is why training
+looked normal (finite, non-NaN loss ~3-4) while actually learning nothing — hence the deterministic
+0.00% IoU across all seeds.
+
+**Fix** (segmentation/H-SFP/hierarchy.py):
+1. `_client_ssl_extraction_phase`: cast `out = model(data)` to `.float()` immediately after the
+   autocast forward, before it's stored/reduced — the actual root-cause fix.
+2. `_edge_ssl_extraction_phase`: force the edge-model SSL forward (both the SupCon training loop
+   and the eval-mode prototype-extraction loop) to fp32 (`autocast(enabled=False)` + explicit
+   `.float()` casts on the loaded features), matching the precedent already set for the decoder
+   in `64f8c4d`. Defense-in-depth given the edge model is a deep 13-block ResNet stack (layer2+3+4)
+   fed unbounded-magnitude synthetic features.
+Diagnosed via `HSFP_SEG_DIAG=1`-gated weight/buffer NaN checks added at every phase boundary
+(post-client-SSL, post-client-aggregation, post-edge-SSL, post-edge-aggregation, pre-decoder-
+forward) — left in place, zero cost when the env var is unset.
+
+**RESULT** (3-seed re-run, same proxy config/methodology as the 2026-07-19 run):
+H-SFP 50.28% / 45.14% / 46.38% IoU (mean 47.27 +- 2.19%), all clean exits, no NaN, no crashes.
+Now ahead of Federated (27.76+-0.86%) and HeteroSFL (25.80+-0.26%), behind HierFL (63.17+-1.56%).
+See RESULTS_SUMMARY.md for the updated table. No remaining unresolved bugs for H-SFP-seg.
