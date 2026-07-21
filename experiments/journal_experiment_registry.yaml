@@ -1,0 +1,354 @@
+# E-HSFP Journal Experiment Registry
+#
+# Single source of truth for experiment identity, config, and status. This file is
+# machine-readable and is summarized/linked from docs/JOURNAL_SIMULATION_RESULTS.md,
+# which is the human-readable source of truth — keep both in sync.
+#
+# Schema per entry (all fields required; use null only where genuinely N/A):
+#   experiment_id, result_group, dataset, task, method, variant, backbone, model_split,
+#   num_clients, num_edges, participation_rate, num_rounds, local_epochs,
+#   client_edge_interval, edge_cloud_interval, partition_type, dirichlet_alpha,
+#   memory_size, memory_replay_ratio, dropout_rate, staleness, serverless_stress,
+#   stress_parameters, aggregation_rule, synthesis_module, enabled_modules, seed_list,
+#   required_metrics, output_directory, dependencies, protocol_hash, status, provenance,
+#   failure_reason
+#
+# Status values: AUDIT_PENDING, IMPLEMENTATION_MISSING, READY, RUNNING, PARTIAL,
+#   FAILED_RETRYABLE, FAILED_PERMANENT, COMPLETE_UNVALIDATED, VERIFIED_EXISTING,
+#   VERIFIED_NEW, NOT_COMPARABLE, BLOCKED
+#
+# This file is populated incrementally as the campaign proceeds (Claude designs entries,
+# Codex extends mechanically per docs/JOURNAL_SIMULATION_RESULTS.md Section 20's priority
+# queue). It is NOT yet exhaustive — see docs/JOURNAL_SIMULATION_RESULTS.md Section 12/20.
+
+schema_version: 1
+last_updated: "2026-07-20"
+frozen_protocol_ref: "docs/JOURNAL_SIMULATION_RESULTS.md#3-frozen-experimental-protocol"
+
+entries:
+
+  # ── Verified existing (Section 4.2/4.3 of the master doc) ────────────────────────
+  - experiment_id: plan9_raw_evalfix
+    result_group: main_classification
+    dataset: cifar100
+    task: classification
+    method: h-sfp
+    variant: baseline_hsfp+raw+EVALFIX
+    backbone: resnet50_label_actual_resnet18  # see protocol Section 3.4 naming caveat
+    model_split: "client:[1,3,32,32]->[1,128,1,1]; edge:[1,256,1,1]; cloud:[1,256]->[1,100]"
+    num_clients: 200
+    num_edges: 5
+    participation_rate: 0.1  # 20/200 per PROJECT_STATE.md
+    num_rounds: 10
+    local_epochs: 10  # ssl_epochs_client
+    client_edge_interval: null  # not recorded distinctly for this plan; TODO verify
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: 0.0
+    staleness: 0
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: diagonal_gaussian
+    enabled_modules: []
+    seed_list: [20260714]
+    required_metrics: [best_val_top1]
+    output_directory: outputs/proxy/plan9_raw_evalfix_seed20260714
+    dependencies: []
+    protocol_hash: null  # TODO: recover from run_metadata.json resolved_config_hash
+    status: VERIFIED_EXISTING
+    provenance: docs/optimization_loop/EXPERIMENT_REGISTRY.csv#plan9_raw_evalfix
+    failure_reason: null
+
+  - experiment_id: plan11_freeze_centered
+    result_group: main_classification
+    dataset: cifar100
+    task: classification
+    method: h-sfp
+    variant: baseline_hsfp+centered_cosine+FREEZE+EVALFIX
+    backbone: resnet50_label_actual_resnet18
+    model_split: "client:[1,3,32,32]->[1,128,1,1]; edge:[1,256,1,1]; cloud:[1,256]->[1,100]"
+    num_clients: 200
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: 10
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: 0.0
+    staleness: 0
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: diagonal_gaussian
+    enabled_modules: [centered_cosine_prototype_space, frozen_backbone]
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_val_top1]
+    output_directory: outputs/proxy/plan11_freeze_centered_seed20260714
+    dependencies: []
+    protocol_hash: null
+    status: VERIFIED_EXISTING
+    provenance: "docs/optimization_loop/EXPERIMENT_REGISTRY.csv#plan11_freeze_centered + plan14 (s715/s716); mean=10.29 std=0.37 (n=3, date-seed protocol)"
+    failure_reason: null
+
+  - experiment_id: isic2018_hsfp_fixed_3seed
+    result_group: isic_segmentation
+    dataset: isic2018
+    task: segmentation
+    method: h-sfp
+    variant: baseline_hsfp
+    backbone: resnet50
+    model_split: "client:[1,3,224,224]->[1,256,56,56]; edge:[1,2048,7,7]; decoder:[1,2048,7,7]->[1,1,224,224]"
+    num_clients: 50
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: 10
+    client_edge_interval: 5
+    edge_cloud_interval: 10
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: 0.0
+    staleness: 0
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: diagonal_gaussian
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_iou, best_dice, runtime_s]
+    output_directory: "outputs/isic2018/hsfp_seed{seed}_nanfix"
+    dependencies: []
+    protocol_hash: null
+    status: VERIFIED_EXISTING
+    provenance: "results/fair_comparison_isic2018.csv; docs/optimization_loop/logs/plan36_hsfp_fix_rerun/; mean_iou=47.27 std=2.19 (n=3, date-seed protocol)"
+    failure_reason: null
+
+  - experiment_id: isic2018_hierfl_3seed
+    result_group: isic_segmentation
+    dataset: isic2018
+    task: segmentation
+    method: hierfl
+    variant: baseline
+    backbone: resnet50
+    model_split: null
+    num_clients: 50
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: null
+    staleness: null
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: null
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_iou, best_dice]
+    output_directory: "outputs/isic2018/hierfl_seed*_v2"
+    dependencies: []
+    protocol_hash: null
+    status: VERIFIED_EXISTING
+    provenance: "results/fair_comparison_isic2018.csv; mean_iou=63.17 std=1.56 (n=3, date-seed protocol)"
+    failure_reason: null
+
+  - experiment_id: isic2018_federated_3seed
+    result_group: isic_segmentation
+    dataset: isic2018
+    task: segmentation
+    method: federated
+    variant: fedavg
+    backbone: resnet50
+    model_split: null
+    num_clients: 50
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: null
+    staleness: null
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: null
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_iou, best_dice]
+    output_directory: "outputs/isic2018/federated_seed*_v2"
+    dependencies: []
+    protocol_hash: null
+    status: VERIFIED_EXISTING
+    provenance: "results/fair_comparison_isic2018.csv; mean_iou=27.76 std=0.86 (n=3, date-seed protocol)"
+    failure_reason: null
+
+  - experiment_id: isic2018_heterosfl_3seed
+    result_group: isic_segmentation
+    dataset: isic2018
+    task: segmentation
+    method: hetero-sfl
+    variant: baseline
+    backbone: resnet50
+    model_split: null
+    num_clients: 50
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: null
+    staleness: null
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: null
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_iou, best_dice]
+    output_directory: "outputs/isic2018/heterosfl_seed*_v3"
+    dependencies: []
+    protocol_hash: null
+    status: VERIFIED_EXISTING
+    provenance: "results/fair_comparison_isic2018.csv; mean_iou=25.80 std=0.26 (n=3, date-seed protocol)"
+    failure_reason: null
+
+  - experiment_id: cifar100_full60_all_methods
+    result_group: main_classification
+    dataset: cifar100
+    task: classification
+    method: [splitfl, hsfl, federated, hierfl, hetero-sfl, h-sfp]
+    variant: baseline
+    backbone: resnet50_label_actual_resnet18
+    model_split: null
+    num_clients: 200
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 60
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: null
+    staleness: null
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: diagonal_gaussian  # h-sfp only
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [test_top1, total_comm_MB, runtime_s]
+    output_directory: "outputs/full60/{method}_seed{seed}"
+    dependencies: []
+    protocol_hash: null
+    status: COMPLETE_UNVALIDATED
+    provenance: "results/fair_comparison_cifar100_full60.csv (NOT git-tracked, local only)"
+    failure_reason: "HeteroSFL round-count field absent from raw JSON; F1-validity and comm-accounting checks not yet applied to any row"
+
+  # ── Known-invalid, kept for provenance/traceability ───────────────────────────────
+  - experiment_id: ham10000_hsfp_3seed_SUSPECT
+    result_group: main_classification
+    dataset: ham10000
+    task: classification
+    method: h-sfp
+    variant: baseline
+    backbone: resnet50
+    model_split: null
+    num_clients: 200
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: null
+    memory_replay_ratio: null
+    dropout_rate: null
+    staleness: null
+    serverless_stress: none
+    stress_parameters: {}
+    aggregation_rule: average
+    synthesis_module: diagonal_gaussian
+    enabled_modules: []
+    seed_list: [20260714, 20260715, 20260716]
+    required_metrics: [best_val_top1]
+    output_directory: "outputs/proxy/plan_ham10000_hsfp_seed*"
+    dependencies: []
+    protocol_hash: null
+    status: INVALID
+    provenance: results/fair_comparison_ham10000.csv
+    failure_reason: "Reported top-1 (10.983524712930603) is bit-identical across all 3 seeds - almost certainly a seed-not-applied bug. Do not reuse until investigated (registry task #12 in the master doc)."
+
+  - experiment_id: full_e_hsfp_proxy_scale_DEADLOCK
+    result_group: component_ablation
+    dataset: cifar100
+    task: classification
+    method: h-sfp
+    variant: full_e_hsfp
+    backbone: resnet50_label_actual_resnet18
+    model_split: null
+    num_clients: 200
+    num_edges: 5
+    participation_rate: 0.1
+    num_rounds: 10
+    local_epochs: null
+    client_edge_interval: null
+    edge_cloud_interval: null
+    partition_type: iid
+    dirichlet_alpha: null
+    memory_size: 500
+    memory_replay_ratio: 0.3
+    dropout_rate: 0.2
+    staleness: 20
+    serverless_stress: combined
+    stress_parameters: {cold_start_probability: 0.15, function_timeout_probability: 0.05}
+    aggregation_rule: learnable_reliability
+    synthesis_module: diagonal_gaussian  # residual generator is a STUB, does not actually run - see master doc Section 4.5
+    enabled_modules: [episodic_memory, prototype_dropout, learnable_reliability, prc_loss, serverless_sim]
+    seed_list: [20260714]
+    required_metrics: [best_val_top1]
+    output_directory: null
+    dependencies: ["fix torch.autograd backward-pass deadlock at hierarchy.py:908 (edge SSL backward)"]
+    protocol_hash: null
+    status: FAILED_PERMANENT
+    provenance: "docs/optimization_loop/DECISIONS.md 2026-07-16 entry; PLAN-11/13 registry rows (DNF_HANG, DNF_HANG_DEFERRED)"
+    failure_reason: "torch.autograd backward-pass deadlock, 5+ fix attempts failed (PRC batching, .item() sync removal, tensorboardX removal, graph-bounding via detach). Needs GPU-attached debugger (py-spy+sudo/gdb). Blocks nearly every experiment family that requires the complete proposed method."
+
+  # ── The remainder of the required grid (Sections 5-17 of the master doc) is not yet
+  # enumerated here. Adding ~500-1000+ entries by hand is not productive; the next step
+  # is a Codex task to mechanically generate READY/IMPLEMENTATION_MISSING/BLOCKED entries
+  # for the full cartesian product of {dataset x method x variant x seed} per family,
+  # cross-referenced against docs/JOURNAL_SIMULATION_RESULTS.md Section 20's priority
+  # queue, so status reflects real implementation/data availability rather than being
+  # asserted. See docs/JOURNAL_SIMULATION_RESULTS.md Section 12 for the field-by-field
+  # requirements this generation must satisfy.
