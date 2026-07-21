@@ -2,6 +2,7 @@ import copy
 
 import numpy as np
 import torch
+from ehsfp.communication import add_communication, new_communication_tracker
 from clients import test_inference
 from servers import FedAvgAggregator
 
@@ -24,11 +25,7 @@ class HierarchicalFL:
         self.total_layers = len(args["mid_server"]) + 1  # +1 for cloud layer
         self.test_dataset = test_dataset
         self.aggregator = FedAvgAggregator(args)
-        self.comm_cost_dict = {
-            "client_model_upload_MB": 0.0,
-            "client_model_download_MB": 0.0,
-            "edge_model_upload_MB": 0.0,
-        }
+        self.comm_cost_dict = new_communication_tracker()
 
     def print_structure(self):
         print("\n--- Hierarchical Federated Learning Structure ---")
@@ -175,12 +172,8 @@ class HierarchicalFL:
                 model.load_state_dict(model_weights)
 
                 
-                size_mb = (
-                    sum(torch.numel(v) for v in model_weights.values())
-                    * 4
-                    / (1024**2)
-                )
-                self.comm_cost_dict["client_model_download_MB"] += size_mb
+                if download_from_edge:
+                    add_communication(self.comm_cost_dict, "edge_to_client_MB", payload=model_weights)
                 return model, server_id
 
     def upload_client_weights(self, client_weights):
@@ -204,8 +197,7 @@ class HierarchicalFL:
                     )
 
                     for client_weights_dict in weight_list:
-                        size_mb = _get_weight_size_mb(client_weights_dict)
-                        self.comm_cost_dict["client_model_upload_MB"] += size_mb
+                        add_communication(self.comm_cost_dict, "client_to_edge_MB", payload=client_weights_dict)
 
             else:
                 # Edge Servers → Next Tier (or Cloud)
@@ -220,15 +212,7 @@ class HierarchicalFL:
                     )
 
                     for w in lower_weights:
-                        size_mb = _get_weight_size_mb(w)
-                        if layer_idx == self.total_layers - 1:
-                            self.comm_cost_dict[
-                                "edge_model_upload_MB"
-                            ] += size_mb
-                        else:
-                            self.comm_cost_dict[
-                                "edge_model_upload_MB"
-                            ] += size_mb  # mid→mid
+                        add_communication(self.comm_cost_dict, "edge_to_cloud_MB", payload=w)
             aggregate_upward(layer_idx+1)
         aggregate_upward(0)
 
@@ -257,6 +241,7 @@ class HierarchicalFL:
                         self.structure[layer_idx - 1][lower_id][1] = (
                             copy.deepcopy(top_weights)
                         )
+                        add_communication(self.comm_cost_dict, "cloud_to_edge_MB", payload=top_weights)
 
             propagate(layer_idx - 1)
 

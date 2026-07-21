@@ -8,6 +8,8 @@ from collections import deque
 import numpy as np
 import psutil
 import torch
+from ehsfp.communication import add_communication, mb_of, new_communication_tracker
+from ehsfp.research_metrics import rounds_to_convergence, trailing_window_stability
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
@@ -186,7 +188,7 @@ def _diag_nan_keys(state_dict):
 
 
 def get_model_size_MB(state_dict):
-    return sum(param.numel() for param in state_dict.values()) * 4 / 1e6
+    return mb_of(state_dict)
 
 
 def get_proto_dist_size_MB(proto_dist_tuple):
@@ -274,15 +276,7 @@ class HierarchicalFL:
         # Config-gated and applied identically to H-SFP and E-HSFP (fair).
         self.supcon_temp = float(args.get("supcon_temperature", 0.1))
 
-        self.comm_tracker = {
-            "client_to_edge_data_MB": 0.0,
-            "edge_to_cloud_data_MB": 0.0,
-            "client_model_upload_MB": 0.0,
-            "client_model_download_MB": 0.0,
-            "edge_model_upload_MB": 0.0,
-            "edge_model_download_MB": 0.0,
-            "total_comm_MB": 0.0,
-        }
+        self.comm_tracker = new_communication_tracker()
         self.client_cache = deque(maxlen=20)
         self.optimizers = {}
         self.num_workers = 2 if os.name != "nt" else 0
@@ -313,6 +307,7 @@ class HierarchicalFL:
                 weight_decay=self.ecfg["reliability_weight_decay"],
             )
         else:
+            # Uniform and sample-count weighting do not use a learned network.
             self.reliability_net = None
             self.reliability_optimizer = None
 
@@ -428,10 +423,10 @@ class HierarchicalFL:
             self.edge_cache[eid] = {"edge_model": self.structure[0][eid].state_dict()}
 
             size_MB = get_model_size_MB(avg_client_model)
-            self.comm_tracker["client_model_upload_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "client_to_edge_MB", mb=size_MB, copies=len(cids))
             for cid in cids:
                 client_layer[cid].load_state_dict(avg_client_model)
-            self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "edge_to_client_MB", mb=size_MB, copies=len(cids))
 
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
@@ -454,15 +449,13 @@ class HierarchicalFL:
                 if nan_keys:
                     print(f"[DIAG-WEIGHTS] cloud {cid} POST-EDGE-AVG nan_keys={nan_keys}")
             size_edge_MB = get_model_size_MB(avg_edge_model)
-            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_edge_MB
-            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * size_edge_MB
+            add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=size_edge_MB, copies=len(edge_ids))
+            add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=size_edge_MB, copies=len(edge_ids))
 
             for eid in edge_ids:
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
     def print_comm_report(self):
-        total = sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB")
-        self.comm_tracker["total_comm_MB"] = total
         print("\n=== Communication Report ===")
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
@@ -585,6 +578,7 @@ class HierarchicalFL:
             generator=self.residual_generator,
             support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
             runtime_counters=self.runtime_counters,
+            aggregation_mode=self.ecfg["aggregation_mode"],
         )
 
         if syn_features_L1.shape[0] == 0:
@@ -702,6 +696,7 @@ class HierarchicalFL:
             generator=self.residual_generator,
             support_map=getattr(self, "_edge_support", {}),
             runtime_counters=self.runtime_counters,
+            aggregation_mode=self.ecfg["aggregation_mode"],
         )
 
         if syn_features_L2.shape[0] == 0:
@@ -862,8 +857,19 @@ class HierarchicalFL:
                 self.decoder_optimizer.zero_grad()
 
                 with torch.no_grad():
-                    feat = client_model(data)
-                    feat = edge_model(feat)
+                    client_feat = client_model(data)
+                    feat = edge_model(client_feat)
+
+                # Decoder supervision executes at the cloud. The frozen forward
+                # still transmits both cut features and the target mask.
+                add_communication(
+                    self.comm_tracker, "client_to_edge_MB",
+                    payload=(client_feat, mask),
+                )
+                add_communication(
+                    self.comm_tracker, "edge_to_cloud_MB",
+                    payload=(feat, mask),
+                )
 
                 if _diag and _dep == 0 and _bi == 0:
                     print(
@@ -965,7 +971,7 @@ class HierarchicalFL:
                     cid, loader, ssl_epochs=config.get("ssl_epochs_client", 10),
                 )
                 cost = get_proto_dist_size_MB(client_outputs[cid])
-                self.comm_tracker["client_to_edge_data_MB"] += cost
+                add_communication(self.comm_tracker, "client_to_edge_MB", mb=cost)
                 self._client_support[cid] = support_counts
 
                 # E-HSFP: Store client prototypes in memory
@@ -1019,7 +1025,7 @@ class HierarchicalFL:
                     syn_samples_per_class=config.get("syn_samples_per_class", 50),
                 )
                 cost = get_proto_dist_size_MB(edge_outputs[eid])
-                self.comm_tracker["edge_to_cloud_data_MB"] += cost
+                add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=cost)
                 self._edge_support[eid] = edge_support
 
                 # E-HSFP: Store edge prototypes in memory
@@ -1146,8 +1152,8 @@ class HierarchicalFL:
             self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
             self.ehsfp_logger.log("ehsfp/decoder_loss", decoder_loss)
             self.ehsfp_logger.log_communication(
-                self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
-                sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB"),
+                self.comm_tracker["client_to_edge_MB"] + self.comm_tracker["edge_to_cloud_MB"],
+                self.comm_tracker["total_comm_MB"],
             )
 
             epoch_time = time.time() - epoch_start_time
@@ -1156,8 +1162,8 @@ class HierarchicalFL:
                 "cloud_loss": cloud_loss,
                 "decoder_loss": decoder_loss,
                 "epoch_time_s": epoch_time,
-                "client_to_edge_MB": self.comm_tracker["client_to_edge_data_MB"],
-                "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_data_MB"],
+                "client_to_edge_MB": self.comm_tracker["client_to_edge_MB"],
+                "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_MB"],
             }
             if validation_iou_list:
                 log_data["validation_iou"] = validation_iou_list[-1]
@@ -1178,12 +1184,25 @@ class HierarchicalFL:
         print("TRAINING FINISHED.")
         self.print_comm_report()
 
+        stability_window = 5
+        convergence_definition = (
+            "trailing moving average window=3; threshold=0.95*best validation "
+            "IoU; patience=3 consecutive smoothed rounds; 1-based round"
+        )
+
         output = {
             "validation_iou": validation_iou_list,
             "validation_dice": validation_dice_list,
             "cloud_loss": cloud_loss_list,
             "best_iou": best_iou,
+            "stability_per_round": trailing_window_stability(
+                validation_iou_list, window=stability_window
+            ),
+            "stability_window": stability_window,
+            "rounds_to_convergence": rounds_to_convergence(validation_iou_list),
+            "rounds_to_convergence_definition": convergence_definition,
             "best_weight": best_pipeline_model,
+            "total_comm_MB": self.comm_tracker["total_comm_MB"],
             "comm_report": self.comm_tracker,
             "ehsfp_metrics": self.ehsfp_logger.finalize(),
             "ehsfp_runtime_counters": self.runtime_counters.snapshot(),

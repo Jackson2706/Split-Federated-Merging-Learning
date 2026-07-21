@@ -149,7 +149,8 @@ def run(cfg_path: str):
         "client_ram_list": client_ram_list, "client_gpu_ram_list": client_gpu_ram_list,
         "test_accuracy": test_acc, "test_loss": test_loss,
         "best_val_top1": max(train_accuracy),
-        "total_comm_MB": sum(hierarchical_fl.get_communication_status().values()),
+        "total_comm_MB": hierarchical_fl.get_communication_status()["total_comm_MB"],
+        "comm_report": hierarchical_fl.get_communication_status(),
         "peak_vram_MB": max(client_gpu_ram_list, default=0), "runtime_s": total_time,
     }
     with open(os.path.join(out_dir, f"HierFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:

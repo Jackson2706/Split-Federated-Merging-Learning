@@ -4,6 +4,9 @@ from .CNN_Cifar import ClientModel, CloudModel, EdgeModel
 from .CNN_ham10000_ResNet50 import (HAM10000ClientModelResNet50,
                                     HAM10000CloudModelResNet50,
                                     HAM10000EdgeModelResNet50)
+from .ISIC_ResNet50 import (ISICClientModelResNet50,
+                            ISICCloudModelResNet50,
+                            ISICEdgeModelResNet50)
 from .VGG_HAM10000 import VGGClient_Ours, VGGCloud_Ours, VGGEedge_Ours
 
 model_dataset_map = {
@@ -12,6 +15,11 @@ model_dataset_map = {
             HAM10000ClientModelResNet50,
             HAM10000EdgeModelResNet50,
             HAM10000CloudModelResNet50,
+        ],
+        "isic-2018": [
+            ISICClientModelResNet50,
+            ISICEdgeModelResNet50,
+            ISICCloudModelResNet50,
         ],
         "cifar100": [ClientModel, EdgeModel, CloudModel],
     },

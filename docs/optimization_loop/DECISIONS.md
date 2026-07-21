@@ -179,3 +179,58 @@ forward) — left in place, zero cost when the env var is unset.
 H-SFP 50.28% / 45.14% / 46.38% IoU (mean 47.27 +- 2.19%), all clean exits, no NaN, no crashes.
 Now ahead of Federated (27.76+-0.86%) and HeteroSFL (25.80+-0.26%), behind HierFL (63.17+-1.56%).
 See RESULTS_SUMMARY.md for the updated table. No remaining unresolved bugs for H-SFP-seg.
+
+## "Full E-HSFP" claimed-component scope — DECISION (2026-07-20)
+A full implementation-status audit (docs/JOURNAL_SIMULATION_RESULTS.md Section 4.5) cross-checked
+against the paper's 9 claimed novel components found 4 are not genuinely functional in a live
+training run today:
+
+| Component | Status |
+|---|---|
+| Episodic prototype memory | Real, wired, exercised |
+| Prototype dropout (dropping mechanism) | Real, wired, exercised |
+| Prototype dropout consistency loss | Implemented, imported, never called - dead code |
+| Reliability-aware aggregation | Real, wired, exercised |
+| Prototype replay consistency (PRC) | Real, wired, exercised - but deadlocks at proxy scale (see PRC entry above) |
+| Diagonal Gaussian synthesis | Real, always-on default path (not really a distinguishing "component") |
+| Low-rank covariance synthesis | Implemented, but only as an offline analysis script (scripts/camera_ready/run_covariance.py) - never reachable from a live E-HSFP run, no config flag exists to enable it live |
+| Residual prototype generation | Implemented (ehsfp/generator.py), but both hierarchy.py files hardcode self.residual_generator = None regardless of the flag - complete stub. Every stored full_e_hsfp run's metadata falsely claims use_residual_generator: true. |
+| Prototype fidelity regularization | Not implemented as a training-time regularizer at all. Only an offline MMD measurement exists; the sibling Frechet-distance function has zero call sites anywhere in the repo (dead code) |
+| Prototype-induced drift control | Not implemented anywhere under this name. Closest adjacent code (prototype_space centering/whitening) is a different, classification-only ablation, not framed as drift control |
+
+**Decision**: the `full_e_hsfp` ablation preset and any "full E-HSFP" result must NOT be reported
+as validating all 9 claimed components - as currently implemented it validates at most 4 (memory,
+dropout-masking, reliability, PRC-when-not-deadlocked), plus the always-on default synthesis. Two
+components (residual generator, dropout-consistency loss) are inert despite their flags reading
+`true`; two more (fidelity regularization, drift control) have no training-time implementation at
+all; low-rank covariance synthesis is real but never live.
+
+Rather than silently narrow the paper's claims or silently patch in throwaway implementations
+under time pressure, this is escalated for explicit scoping: either (a) implement the 4 gaps for
+real before any "full E-HSFP" number is used in the paper, or (b) reduce the journal's empirically-
+claimed contribution to the subset that is genuinely implemented and validated (memory + dropout +
+reliability + PRC, once unblocked), reframing low-rank synthesis / residual generation / fidelity
+regularization / drift control as motivating design directions or future work rather than validated
+components. This document does not choose between (a) and (b) - that is a paper-scope decision,
+not an engineering one - but no further work should silently proceed as if `full_e_hsfp` already
+means what its name implies. Tracked as an open item in docs/JOURNAL_SIMULATION_RESULTS.md Section 20.
+
+## classification/H-SFP reliability-aggregation NaN crash — ROOT CAUSE FOUND AND FIXED (2026-07-21)
+`--ablation hsfp_memory_reliability` on HAM10000 crashed at epoch 1 with `ValueError: Out of range
+float values are not JSON compliant: nan` while flushing runtime counters. This is the same fp16-
+autocast-overflow-in-std-computation bug already fixed in `segmentation/H-SFP/hierarchy.py`
+(2026-07-20 entry above) but never ported to the separate classification codebase:
+`calculate_prototypes_and_distribution` and the client SSL extraction loop computed `mean`/`std`
+on fp16 autocast output; squaring large activations for the variance overflowed fp16's ~65504 max,
+producing non-finite prototype sigmas. These fed `build_reliability_features()`'s `sigma_magnitude`
+feature into `PrototypeReliabilityNetwork` (`Sigmoid`-terminated, so its *output* is bounded in
+(0,1) — but `Sigmoid(NaN) = NaN`, so a NaN input still poisons the output), and from there into the
+`reliability.weight_variance_sum` runtime counter, which accumulates via `+=` and so stays NaN
+forever once poisoned.
+
+**Fix** (`classification/H-SFP/hierarchy.py`): cast to `.float()` immediately after the autocast
+forward, before mean/std reduction, in both `calculate_prototypes_and_distribution` and the client
+SSL extraction loop — same pattern as the segmentation fix, root-caused rather than patched with
+`nan_to_num`. Diagnosed and fixed by Codex; reviewed and GPU-verified by Claude (the exact
+previously-crashing command now completes cleanly end-to-end). This also explains 3 earlier
+2026-07-14 `scripts/journal_experiments` interval failures with the identical crash signature.

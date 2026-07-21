@@ -6,6 +6,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+from ehsfp.communication import add_communication, new_communication_tracker
 import torch.nn.functional as F
 from config.config_loader import ConfigLoader
 from data import get_dataset
@@ -121,7 +122,7 @@ def run(cfg_path: str):
     np.random.shuffle(client_types)
 
     criterion = DiceFocalLoss().to(device)
-    comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+    comm_cost_dict = new_communication_tracker()
     best = BestSegmentationMetrics()
     best_client_weights = None
     best_server_weights = None
@@ -148,6 +149,7 @@ def run(cfg_path: str):
                     last_layer.bias = nn.Parameter(narrow_state[list(narrow_state.keys())[-1]])
 
             local_client_model.to(device).train()
+            add_communication(comm_cost_dict, "server_to_client_MB", payload=local_client_model.state_dict())
             client_optimizer = SGD(
                 local_client_model.parameters(), lr=config["lr"], momentum=config["momentum"]
             )
@@ -198,9 +200,12 @@ def run(cfg_path: str):
                     activation.backward(activation_grad)
                     client_optimizer.step()
                     client_losses.append(loss.item())
-                    comm_cost_dict["upload_MB"] += activation.numel() * 4 / (1024**2)
+                    add_communication(comm_cost_dict, "client_to_server_MB", payload=(activation, mask))
+                    add_communication(comm_cost_dict, "server_to_client_MB", payload=activation_grad)
 
-            local_weights.append(copy.deepcopy(local_client_model.state_dict()))
+            local_state = copy.deepcopy(local_client_model.state_dict())
+            add_communication(comm_cost_dict, "client_to_server_MB", payload=local_state)
+            local_weights.append(local_state)
             epoch_losses.append(np.mean(client_losses))
             del local_client_model
             torch.cuda.empty_cache()
@@ -263,7 +268,7 @@ def run(cfg_path: str):
 
     print(f"\nBest Validation IoU: {best.iou:.4f}  Dice: {best.dice:.4f}  Round: {best.round}")
     print(f"Best-checkpoint Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
-    print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
+    print(f"Total Communication: {comm_cost_dict['total_comm_MB']:.2f} MB")
     print(f"Total Run Time: {total_time:.2f}s")
 
     if wandb is not None and wandb.run is not None:
@@ -283,4 +288,5 @@ def run(cfg_path: str):
             "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
             "last_iou": eval_iou, "last_dice": eval_dice, "total_time": total_time,
             "comm_cost": comm_cost_dict,
+            "total_comm_MB": comm_cost_dict["total_comm_MB"],
         }, f, indent=4)

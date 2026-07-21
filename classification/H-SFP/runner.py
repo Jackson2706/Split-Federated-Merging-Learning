@@ -113,10 +113,10 @@ def run(cfg_path: str):
 
         acc = accuracy_score(all_targets, all_preds)
         print(f"\nResults after {config['epochs']} global rounds:")
-        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_val_top1"]))
         print("|---- Test Acc: {:.2f}%".format(100 * acc))
     else:
         print("\nNo best model was saved during training.")
-        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_val_top1"]))
 
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))

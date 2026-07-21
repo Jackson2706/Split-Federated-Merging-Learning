@@ -150,4 +150,6 @@ def run(cfg_path: str):
             "test_iou": test_iou, "test_dice": test_dice,
             "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
             "last_iou": last_iou, "last_dice": last_dice,
+            "total_comm_MB": hierarchical_fl.get_communication_status()["total_comm_MB"],
+            "comm_report": hierarchical_fl.get_communication_status(),
         }, f, indent=4)

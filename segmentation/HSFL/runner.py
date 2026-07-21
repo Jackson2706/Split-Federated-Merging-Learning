@@ -3,11 +3,11 @@ import os
 import time
 
 import torch
+from segmentation.HeteroSFL.clients import compute_iou_and_dice
 from config import ConfigLoader
 from data import get_dataset
 from hierarchy import HierarchicalFL
 from models import get_model
-from sklearn.metrics import f1_score
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 
@@ -51,6 +51,10 @@ def run(cfg_path: str):
     )
 
     filtered_output = {k: v for k, v in output.items() if k != "best_weight"}
+    filtered_output.update({
+        "total_comm_MB": hierarchical_fl.comm_tracker["total_comm_MB"],
+        "comm_report": hierarchical_fl.comm_tracker,
+    })
     filename = (
         f"HSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
         f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
@@ -62,16 +66,22 @@ def run(cfg_path: str):
 
     best_model = output["best_weight"].to(device)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, drop_last=False)
-    all_preds, all_targets = [], []
+    total_iou, total_dice, total_samples = 0.0, 0.0, 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            pred = best_model(data).argmax(dim=1)
-            all_preds.extend(pred.cpu().numpy())
-            all_targets.extend(target.cpu().numpy())
+            prediction = best_model(data)
+            iou, dice = compute_iou_and_dice(prediction, target)
+            size = data.size(0)
+            total_iou += iou * size
+            total_dice += dice * size
+            total_samples += size
 
-    f1 = f1_score(all_targets, all_preds, average="macro")
+    test_iou = total_iou / total_samples
+    test_dice = total_dice / total_samples
     print(f"\nResults after {config['epochs']} global rounds:")
-    print("|---- Avg Train F1: {:.2f}%".format(100 * output["train_accuracy"][-1]))
-    print("|---- Test F1: {:.2f}%".format(100 * f1))
+    print("|---- Validation IoU: {:.2f}%".format(100 * output["train_iou"][-1]))
+    print("|---- Validation Dice: {:.2f}%".format(100 * output["train_dice"][-1]))
+    print("|---- Test IoU: {:.2f}%".format(100 * test_iou))
+    print("|---- Test Dice: {:.2f}%".format(100 * test_dice))
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))

@@ -9,11 +9,13 @@ import gc
 import numpy as np
 import psutil
 import torch
+from ehsfp.communication import add_communication, mb_of, new_communication_tracker
+from ehsfp.research_metrics import rounds_to_convergence, trailing_window_stability
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import kornia.augmentation as K
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 
 try:
     import wandb
@@ -134,10 +136,15 @@ def calculate_prototypes_and_distribution(fx: torch.Tensor, fy: torch.Tensor):
         class_features = fx[mask]
         
         if class_features.shape[0] > 0:
-            # Avoid FutureWarning
-            with torch.amp.autocast(device_type='cuda', enabled=(fx.device.type == 'cuda')):
-                prototypes[cls_label] = torch.mean(class_features, dim=0)
-                distributions_std[cls_label] = torch.std(class_features, dim=0, unbiased=False)
+            # Variance squares its inputs.  Features produced by a CUDA-autocast
+            # model may be fp16, where moderately large activations overflow the
+            # ~65504 range and silently create a non-finite prototype sigma.
+            # Reduce in fp32; these statistics feed synthetic data and reliability.
+            class_features = class_features.float()
+            prototypes[cls_label] = torch.mean(class_features, dim=0)
+            distributions_std[cls_label] = torch.std(
+                class_features, dim=0, unbiased=False,
+            )
         else:
             print(f"Warning: class {cls_label} has no samples in the processed data.")
 
@@ -258,7 +265,7 @@ def average_state_dicts(state_dicts):
 
 def get_model_size_MB(state_dict):
     """Compute model size (MB) from a state_dict."""
-    return (sum(param.numel() for param in state_dict.values()) * 4 / 1e6)
+    return mb_of(state_dict)
 
 def get_proto_dist_size_MB(proto_dist_tuple: tuple) -> float:
     """Compute the size (MB) of a (proto_dict, dist_dict) tuple."""
@@ -390,15 +397,7 @@ class HierarchicalFL:
         self.supcon_temp = float(args.get("supcon_temperature", 0.1))
         
         # --- Communication tracker ---
-        self.comm_tracker = {
-            "client_to_edge_data_MB": 0.0,  # cost of sending (proto, dist)
-            "edge_to_cloud_data_MB": 0.0,   # cost of sending (proto, dist)
-            "client_model_upload_MB": 0.0,  # FedAvg model cost
-            "client_model_download_MB": 0.0,
-            "edge_model_upload_MB": 0.0,
-            "edge_model_download_MB": 0.0,
-            "total_comm_MB": 0.0           # total cost
-        }
+        self.comm_tracker = new_communication_tracker()
         # --- end ---
         
         self.client_cache = deque(maxlen=20)
@@ -445,6 +444,7 @@ class HierarchicalFL:
                 weight_decay=self.ecfg["reliability_weight_decay"],
             )
         else:
+            # Uniform and sample-count weighting do not use a learned network.
             self.reliability_net = None
             self.reliability_optimizer = None
 
@@ -620,11 +620,11 @@ class HierarchicalFL:
             self.edge_cache[eid] = {"edge_model": edge_layer[eid].state_dict()}
 
             size_MB = get_model_size_MB(avg_client_model)
-            self.comm_tracker["client_model_upload_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "client_to_edge_MB", mb=size_MB, copies=len(cids))
 
             for cid in cids:
                 client_layer[cid].load_state_dict(avg_client_model)
-            self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "edge_to_client_MB", mb=size_MB, copies=len(cids))
 
     def cloud_aggregation(self):
         # ... (original code - unchanged) ...
@@ -645,20 +645,14 @@ class HierarchicalFL:
                 
             avg_edge_model = average_state_dicts(edge_models_states)
             size_edge_MB = get_model_size_MB(avg_edge_model)
-            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_edge_MB
-            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * size_edge_MB
+            add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=size_edge_MB, copies=len(edge_ids))
+            add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=size_edge_MB, copies=len(edge_ids))
 
             for eid in edge_ids:
                 edge_layer[eid].load_state_dict(avg_edge_model)
 
     def print_comm_report(self):
         """Print the communication-cost report and total."""
-        total = 0.0
-        for k, v in self.comm_tracker.items():
-            if k != "total_comm_MB":
-                total += v
-        self.comm_tracker["total_comm_MB"] = total
-        
         print("\n=== Communication Report ===")
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
@@ -788,7 +782,10 @@ class HierarchicalFL:
         with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
-                out = model(data)
+                # Cast immediately after the autocast forward, before retaining
+                # activations for mean/std.  fp16 variance can overflow and poison
+                # the sigma feature consumed by the reliability network.
+                out = model(data).float()
                 
                 # Move target to CPU once
                 target_cpu = target.numpy()
@@ -834,6 +831,7 @@ class HierarchicalFL:
             generator=self.residual_generator,
             support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
             runtime_counters=self.runtime_counters,
+            aggregation_mode=self.ecfg["aggregation_mode"],
         )
 
         if syn_features_L1.shape[0] == 0:
@@ -980,6 +978,7 @@ class HierarchicalFL:
             generator=self.residual_generator,
             support_map=getattr(self, "_edge_support", {}),
             runtime_counters=self.runtime_counters,
+            aggregation_mode=self.ecfg["aggregation_mode"],
         )
         
         if syn_features_L2.shape[0] == 0:
@@ -1044,7 +1043,7 @@ class HierarchicalFL:
         del syn_dataset_L2, syn_loader_L2
         return total_loss
         
-    def _run_validation(self, valid_dataset, best_f1, epoch):
+    def _run_validation(self, valid_dataset, best_val_top1, epoch):
         """(Phase 5) Run evaluation (optimized).
 
         Evaluate on the FedAvg GLOBAL client model (average of the clients
@@ -1122,15 +1121,19 @@ class HierarchicalFL:
         print("--- End Validation Debug Info ---")
         # --- END DEBUG ---
 
-        f1 = 0.0 # Default value (holds accuracy; name kept for output-key compatibility)
+        accuracy = 0.0
+        f1 = 0.0
         pipeline_model = None
         try:
-            # Primary metric: top-1 accuracy
-            f1 = accuracy_score(all_targets, all_preds)
+            accuracy = accuracy_score(all_targets, all_preds)
+            f1 = f1_score(
+                all_targets, all_preds, average="macro", zero_division=0
+            )
 
-            if best_f1 < f1:
-                print(f"Saved best model at epoch {epoch} with Acc: {f1 * 100:.2f} %")
-                best_f1 = f1
+            # Preserve the historical accuracy-based checkpoint selection.
+            if best_val_top1 < accuracy:
+                print(f"Saved best model at epoch {epoch} with Acc: {accuracy * 100:.2f} %")
+                best_val_top1 = accuracy
                 pipeline_model = self._full_pipeline(
                     client_model=copy.deepcopy(client_model),
                     edge_model=copy.deepcopy(edge_model),
@@ -1139,9 +1142,9 @@ class HierarchicalFL:
         except ValueError as e:
             print(f"!!! ERROR calculating F1 score: {e}")
             print("!!! Check debug info above for potential issues (NaNs, label ranges, types).")
-            # Keep best_f1 as it was, don't update pipeline_model
+            # Keep best_val_top1 as it was, don't update pipeline_model
             
-        return f1, best_f1, pipeline_model
+        return f1, accuracy, best_val_top1, pipeline_model
 
     def _full_pipeline(self, client_model, edge_model, cloud_model):
         """Build an eval/checkpoint pipeline in the same spaces used to train."""
@@ -1205,8 +1208,9 @@ class HierarchicalFL:
         t1, t2 = int(config["t1"]), int(config["t2"])
         
         # Initialize metric storage
-        validation_f1_list, cloud_loss_list = [], []
+        validation_f1_list, validation_accuracy_list, cloud_loss_list = [], [], []
         best_f1 = 0
+        best_val_top1 = 0
         best_pipeline_model = None
         start_epoch = 1
 
@@ -1260,7 +1264,7 @@ class HierarchicalFL:
 
                 # Track data transmission
                 cost = get_proto_dist_size_MB(client_outputs[cid])
-                self.comm_tracker["client_to_edge_data_MB"] += cost
+                add_communication(self.comm_tracker, "client_to_edge_MB", mb=cost)
                 self._client_support[cid] = support_counts
 
                 # E-HSFP: Store client prototypes in memory
@@ -1347,7 +1351,7 @@ class HierarchicalFL:
                 )
 
                 cost = get_proto_dist_size_MB(edge_outputs[eid])
-                self.comm_tracker["edge_to_cloud_data_MB"] += cost
+                add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=cost)
                 self._edge_support[eid] = edge_support
 
                 # E-HSFP: Store edge prototypes in memory
@@ -1456,21 +1460,26 @@ class HierarchicalFL:
             # epoch); always evaluate on the final epoch too.
             eval_every = max(int(self.args.get("eval_every", 1)), 1)
             if epoch % eval_every == 0 or epoch == epochs:
-                f1, current_best_f1, model_snapshot = self._run_validation(valid_dataset, best_f1, epoch)
+                f1, accuracy, current_best_val_top1, model_snapshot = self._run_validation(
+                    valid_dataset, best_val_top1, epoch
+                )
                 validation_f1_list.append(f1)
+                validation_accuracy_list.append(accuracy)
+                best_f1 = max(best_f1, f1)
 
                 if model_snapshot is not None:
-                    best_f1 = current_best_f1
+                    best_val_top1 = current_best_val_top1
                     best_pipeline_model = model_snapshot
                     # Save the best-model checkpoint
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model_snapshot.state_dict(),
-                        'best_f1': best_f1,
+                        'best_f1': f1,
+                        'best_val_top1': best_val_top1,
                         'config': config
                         ,'resolved_config_hash': config["resolved_config_hash"]
                     }, checkpoint_path)
-                    print(f"*** Checkpoint saved: {checkpoint_path} (F1: {best_f1*100:.2f}%)")
+                    print(f"*** Checkpoint saved: {checkpoint_path} (Acc: {best_val_top1*100:.2f}%)")
 
             # E-HSFP: End serverless episode
             if self.serverless_tracker is not None:
@@ -1508,8 +1517,8 @@ class HierarchicalFL:
             self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
             self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
             self.ehsfp_logger.log_communication(
-                self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
-                sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB"),
+                self.comm_tracker["client_to_edge_MB"] + self.comm_tracker["edge_to_cloud_MB"],
+                self.comm_tracker["total_comm_MB"],
             )
 
             epoch_time = time.time() - epoch_start_time
@@ -1519,12 +1528,14 @@ class HierarchicalFL:
                 "epoch": epoch,
                 "cloud_loss": cloud_loss,
                 "epoch_time_s": epoch_time,
-                "client_to_edge_MB": self.comm_tracker["client_to_edge_data_MB"],
-                "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_data_MB"],
+                "client_to_edge_MB": self.comm_tracker["client_to_edge_MB"],
+                "edge_to_cloud_MB": self.comm_tracker["edge_to_cloud_MB"],
             }
             if validation_f1_list:
                 log_data["validation_f1"] = validation_f1_list[-1]
                 log_data["best_f1"] = best_f1
+                log_data["validation_accuracy"] = validation_accuracy_list[-1]
+                log_data["best_val_top1"] = best_val_top1
             # Merge E-HSFP metrics
             log_data.update(self.ehsfp_logger.get_current())
             if self.serverless_tracker is not None:
@@ -1553,11 +1564,26 @@ class HierarchicalFL:
 
         self.print_comm_report()
 
+        stability_window = 5
+        convergence_definition = (
+            "trailing moving average window=3; threshold=0.95*best validation "
+            "accuracy; patience=3 consecutive smoothed rounds; 1-based round"
+        )
+
         output = {
             "validation_f1": validation_f1_list,
+            "validation_accuracy": validation_accuracy_list,
             "cloud_loss": cloud_loss_list,
             "best_f1": best_f1,
+            "best_val_top1": best_val_top1,
+            "stability_per_round": trailing_window_stability(
+                validation_accuracy_list, window=stability_window
+            ),
+            "stability_window": stability_window,
+            "rounds_to_convergence": rounds_to_convergence(validation_accuracy_list),
+            "rounds_to_convergence_definition": convergence_definition,
             "best_weight": best_pipeline_model,
+            "total_comm_MB": self.comm_tracker["total_comm_MB"],
             "comm_report": self.comm_tracker,
             "ehsfp_metrics": self.ehsfp_logger.finalize(),
             "ehsfp_runtime_counters": self.runtime_counters.snapshot(),

@@ -6,6 +6,7 @@ import time
 import numpy as np
 import torch
 import torch.nn as nn
+from ehsfp.communication import add_communication, new_communication_tracker
 import torch.nn.functional as F
 from config import ConfigLoader
 from data import get_dataset
@@ -125,7 +126,7 @@ def run(cfg_path: str):
     client_types = ["high"] * num_high + ["low"] * (num_users - num_high)
     np.random.shuffle(client_types)
 
-    comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+    comm_cost_dict = new_communication_tracker()
     best_f1 = 0.0
 
     for epoch in tqdm(range(config["epochs"])):
@@ -146,6 +147,7 @@ def run(cfg_path: str):
                     last_layer.bias = nn.Parameter(narrow_state[list(narrow_state.keys())[-1]])
 
             local_client_model.to(device).train()
+            add_communication(comm_cost_dict, "server_to_client_MB", payload=local_client_model.state_dict())
             client_optimizer = SGD(local_client_model.parameters(), lr=config["lr"], momentum=config["momentum"])
             loader = DataLoader(DatasetSplit(train_dataset, user_groups[idx]), batch_size=config["local_bs"], shuffle=True)
             client_losses = []
@@ -180,9 +182,14 @@ def run(cfg_path: str):
                     activation.backward(activation_grad)
                     client_optimizer.step()
                     client_losses.append(loss.item())
-                    comm_cost_dict["upload_MB"] += activation.numel() * 4 / (1024**2)
+                    # Cut activation and target go to the server; the gradient at
+                    # that same cut is returned to the client.
+                    add_communication(comm_cost_dict, "client_to_server_MB", payload=(activation, label))
+                    add_communication(comm_cost_dict, "server_to_client_MB", payload=activation_grad)
 
-            local_weights.append(copy.deepcopy(local_client_model.state_dict()))
+            local_state = copy.deepcopy(local_client_model.state_dict())
+            add_communication(comm_cost_dict, "client_to_server_MB", payload=local_state)
+            local_weights.append(local_state)
             epoch_losses.append(np.mean(client_losses))
             del local_client_model
             torch.cuda.empty_cache()
@@ -237,7 +244,7 @@ def run(cfg_path: str):
     final_acc = accuracy_score(test_labels, test_preds)
     total_time = time.time() - start_time
     print(f"\nFinal Test Acc: {final_acc*100:.2f}%  (F1: {final_f1*100:.2f}%)")
-    print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
+    print(f"Total Communication: {comm_cost_dict['total_comm_MB']:.2f} MB")
     print("Total Run Time: {:.2f}s".format(total_time))
 
     if wandb is not None and wandb.run is not None:
@@ -248,7 +255,8 @@ def run(cfg_path: str):
     with open(os.path.join(out_dir, f"HeteroSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
         json.dump({
             "best_val_top1": best_f1, "final_test_accuracy": final_acc,
-            "final_test_f1": final_f1, "total_comm_MB": sum(comm_cost_dict.values()),
+            "final_test_f1": final_f1, "total_comm_MB": comm_cost_dict["total_comm_MB"],
+            "comm_report": comm_cost_dict,
             "peak_vram_MB": torch.cuda.max_memory_allocated(device) / (1024**2),
             "runtime_s": total_time,
         }, f, indent=4)

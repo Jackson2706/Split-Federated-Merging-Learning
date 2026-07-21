@@ -7,6 +7,12 @@ behavior is preserved when no E-HSFP config keys are present.
 
 from typing import Dict, Any
 
+AGGREGATION_MODES = {
+    "average",
+    "sample_count_weighted",
+    "learnable_reliability",
+}
+
 EHSFP_DEFAULTS: Dict[str, Any] = {
     # --- Episodic Prototype Memory ---
     "use_episodic_memory": False,
@@ -15,8 +21,9 @@ EHSFP_DEFAULTS: Dict[str, Any] = {
     "memory_top_k": 5,
     "max_prototype_age": 20,
 
-    # --- Learnable Reliability-Aware Aggregation ---
-    "aggregation_mode": "average",     # "average" | "learnable_reliability"
+    # --- Prototype Aggregation ---
+    # "average" | "sample_count_weighted" | "learnable_reliability"
+    "aggregation_mode": "average",
     "reliability_hidden_dim": 32,
     "reliability_lr": 1e-3,
     "reliability_weight_decay": 1e-4,
@@ -112,4 +119,6 @@ def get_ehsfp_config(user_config: dict) -> dict:
             raise ValueError(f"Unknown E-HSFP ablation preset: {ablation}")
         cfg.update(ABLATION_PRESETS[ablation])
         cfg["ablation_mode"] = ablation
+    if cfg["aggregation_mode"] not in AGGREGATION_MODES:
+        raise ValueError(f"Unknown aggregation mode: {cfg['aggregation_mode']}")
     return cfg

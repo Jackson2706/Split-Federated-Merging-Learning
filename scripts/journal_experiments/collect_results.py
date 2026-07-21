@@ -25,27 +25,92 @@ from pathlib import Path
 
 
 def parse_log_metrics(log_path: str) -> dict:
-    """Extract final-line metrics from a log file.
-
-    Looks for patterns like:
-        [Summary] test_f1=0.8523
-        [Summary] test_iou=0.7123 test_dice=0.8045
-        best_f1: 0.8523
-        best_iou: 0.7123
-    """
+    """Extract explicitly labelled final metrics from a runner log."""
     metrics = {}
     if not os.path.isfile(log_path):
         return metrics
 
     with open(log_path, "r", errors="replace") as f:
-        for line in f:
-            # Pattern: key=value or key: value
-            for m in re.finditer(r"(test_f1|best_f1|test_iou|test_dice|best_iou|best_dice|total_time_s|train_loss)\s*[=:]\s*([\d.]+)", line):
-                key, val = m.group(1), m.group(2)
-                try:
-                    metrics[key] = float(val)
-                except ValueError:
-                    pass
+        text = f.read()
+
+    number = r"([0-9]+(?:\.[0-9]+)?)"
+    patterns = {
+        "best_val_top1": rf"(?m)^\s*\|----\s+Best Validation Acc:\s*{number}%\s*$",
+        "test_top1": rf"(?m)^\s*(?:\|----\s+)?(?:Final\s+)?Test Acc:\s*{number}%(?:\s+\(F1:\s*[0-9]+(?:\.[0-9]+)?%\))?\s*$",
+        "best_iou": rf"(?m)^\s*(?:\|----\s+)?Best Validation IoU:\s*{number}%?(?:\s+Dice:\s*[0-9]+(?:\.[0-9]+)?%?)?(?:\s+Round:\s*\d+)?\s*$",
+        "test_iou": rf"(?m)^\s*(?:\|----\s+)?(?:Best-checkpoint\s+)?Test IoU:\s*{number}%?(?:\s+(?:Test\s+)?Dice:\s*[0-9]+(?:\.[0-9]+)?%?)?\s*$",
+        "runtime_s": rf"(?m)^\s*Total Run Time:\s*{number}s\s*$",
+    }
+    for key, pattern in patterns.items():
+        matches = re.findall(pattern, text)
+        if matches:
+            metrics[key] = float(matches[-1])
+
+    # Accept Dice only on the Test IoU line or one of the next two labelled lines.
+    test_iou_line = re.compile(
+        rf"^\s*(?:\|----\s+)?(?:Best-checkpoint\s+)?Test IoU:\s*{number}%?"
+    )
+    dice_label = re.compile(rf"\b(?:Test\s+)?Dice:\s*{number}%?")
+    standalone_dice = re.compile(
+        rf"^\s*(?:\|----\s+)?(?:Test\s+)?Dice:\s*{number}%?\s*$"
+    )
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        iou_match = test_iou_line.match(line)
+        if not iou_match:
+            continue
+        dice_match = dice_label.search(line, iou_match.end())
+        if dice_match:
+            metrics["test_dice"] = float(dice_match.group(1))
+            continue
+        for nearby_line in lines[index + 1:index + 3]:
+            nearby_match = standalone_dice.fullmatch(nearby_line)
+            if nearby_match:
+                metrics["test_dice"] = float(nearby_match.group(1))
+                break
+
+    comm_keys = (
+        "total_comm_MB",
+        "client_to_edge_data_MB",
+        "edge_to_cloud_data_MB",
+        "client_model_upload_MB",
+        "client_model_download_MB",
+        "edge_model_upload_MB",
+        "edge_model_download_MB",
+    )
+    comm_pattern = re.compile(
+        rf"^\s*({'|'.join(map(re.escape, comm_keys))}):\s*{number}\s*MB\s*$"
+    )
+    any_comm_line = re.compile(
+        rf"^\s*[a-z][a-z0-9_]*:\s*{number}\s*MB\s*$"
+    )
+    in_report = False
+    for line in text.splitlines():
+        if re.fullmatch(r"\s*=== Communication Report ===\s*", line):
+            in_report = True
+            continue
+        if not in_report:
+            continue
+        match = comm_pattern.fullmatch(line)
+        if match:
+            metrics[match.group(1)] = float(match.group(2))
+        elif line.strip() and not any_comm_line.fullmatch(line):
+            in_report = False
+
+    runtime_matches = list(re.finditer(patterns["runtime_s"], text))
+    traceback_matches = list(
+        re.finditer(r"(?m)^Traceback \(most recent call last\):\s*$", text)
+    )
+    ended_with_traceback = bool(
+        traceback_matches
+        and (
+            not runtime_matches
+            or traceback_matches[-1].start() > runtime_matches[-1].start()
+        )
+    )
+    metrics["status"] = (
+        "no_final_metric" if not runtime_matches or ended_with_traceback else "complete"
+    )
     return metrics
 
 
@@ -114,7 +179,10 @@ def aggregate_seeds(results: list) -> dict:
     aggregated = {}
     for key, runs in grouped.items():
         agg = {"experiment_id": key, "n_seeds": len(runs)}
-        metric_keys = [k for k in runs[0] if k not in ("experiment_id", "seed", "group")]
+        metric_keys = sorted(
+            set().union(*(run.keys() for run in runs))
+            - {"experiment_id", "seed", "group", "status"}
+        )
         for mk in metric_keys:
             vals = [r[mk] for r in runs if mk in r and r[mk] is not None]
             if vals and all(isinstance(v, (int, float)) for v in vals):
@@ -124,6 +192,11 @@ def aggregate_seeds(results: list) -> dict:
                     agg[f"{mk}_std"] = statistics.stdev(vals)
                 else:
                     agg[f"{mk}_std"] = 0.0
+        agg["status"] = (
+            "complete"
+            if all(run.get("status") == "complete" for run in runs)
+            else "no_final_metric"
+        )
         agg["group"] = runs[0].get("group", "unknown")
         aggregated[key] = agg
 
@@ -135,7 +208,7 @@ def write_csv(rows: list, output_path: str, fieldnames: list = None):
     if not rows:
         return
     if fieldnames is None:
-        fieldnames = list(rows[0].keys())
+        fieldnames = list(dict.fromkeys(key for row in rows for key in row))
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")

@@ -7,6 +7,7 @@ import time
 import numpy as np
 import psutil
 import torch
+from ehsfp.communication import add_communication, mb_of, new_communication_tracker
 from clients import get_client_update_strategy, test_inference
 from config import ConfigLoader
 from data import get_dataset
@@ -49,7 +50,7 @@ def run(cfg_path: str):
     training_loss, train_accuracy = [], []
     client_cpu_list, client_time_list, client_ram_list, client_gpu_ram_list = [], [], [], []
     print_every = 2
-    comm_cost_dict = {"client_model_upload_MB": 0, "client_model_download_MB": 0}
+    comm_cost_dict = new_communication_tracker()
     best = BestSegmentationMetrics()
     best_weights = None
 
@@ -81,10 +82,8 @@ def run(cfg_path: str):
             client_ram_usages.append(mem_after - mem_before)
             client_gpu_ram_usage.append(torch.cuda.max_memory_allocated(device) / (1024**2))
 
-            if config["strategy"] == "fednova":
-                comm_cost_dict["client_model_upload_MB"] += get_weight_size_mb(w) + sys.getsizeof(loss) / (1024**2)
-            else:
-                comm_cost_dict["client_model_upload_MB"] += get_weight_size_mb(w)
+            upload_mb = mb_of(w) + (8 / (1024**2) if config["strategy"] == "fednova" else 0)
+            add_communication(comm_cost_dict, "client_to_server_MB", mb=upload_mb)
 
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
@@ -105,7 +104,7 @@ def run(cfg_path: str):
 
         global_weights, _ = strategy.aggregate(local_updates, global_weights, local_weights)
         global_model.load_state_dict(global_weights)
-        comm_cost_dict["client_model_download_MB"] += get_weight_size_mb(global_model.state_dict()) * config["num_users"]
+        add_communication(comm_cost_dict, "server_to_client_MB", payload=global_model.state_dict(), copies=len(idxs_users))
 
         global_model.eval()
         test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
@@ -161,4 +160,6 @@ def run(cfg_path: str):
             "test_iou": test_iou, "test_dice": test_dice,
             "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
             "last_iou": last_iou, "last_dice": last_dice,
+            "total_comm_MB": comm_cost_dict["total_comm_MB"],
+            "comm_report": comm_cost_dict,
         }, f, indent=4)

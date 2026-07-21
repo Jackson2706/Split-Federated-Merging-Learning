@@ -8,11 +8,12 @@ import numpy as np
 import psutil
 import torch
 import torch.nn as nn
+from ehsfp.communication import add_communication, new_communication_tracker
 from config import ConfigLoader
 from data import get_dataset
 from FedServer import get_strategy
 from models import get_model
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from tensorboardX import SummaryWriter
 from torch.optim import SGD
 from torch.utils.data import DataLoader, Dataset
@@ -76,14 +77,12 @@ def run(cfg_path: str):
     )
 
     strategy = get_strategy(config["strategy"])(config)
-    training_loss, eval_f1_scores = [], []
+    training_loss, eval_f1_scores, eval_accuracy_scores = [], [], []
     round_cpu_usages, round_ram_usages, round_gpu_usages = [], [], []
-    comm_cost_dict = {
-        "client_upload_smashed_MB": 0, "client_model_upload_MB": 0,
-        "client_model_download_MB": 0, "cloud_download_grad_MB": 0,
-    }
+    comm_cost_dict = new_communication_tracker()
     criterion = nn.NLLLoss().to(device)
     best_f1 = 0.0
+    best_val_top1 = 0.0
     best_model_weights = None
 
     for epoch in tqdm(range(config["epochs"])):
@@ -96,6 +95,7 @@ def run(cfg_path: str):
 
         for idx in idxs_users:
             client_model = copy.deepcopy(client_model_abs).to(device)
+            add_communication(comm_cost_dict, "server_to_client_MB", payload=client_model.state_dict())
             client_optimizer = SGD(client_model.parameters(), lr=config["lr"], momentum=config["momentum"])
             client_model.train()
 
@@ -124,8 +124,9 @@ def run(cfg_path: str):
                     server_optimizer.step()
                     client_optimizer.step()
                     losses.append(loss.item())
-                    comm_cost_dict["client_upload_smashed_MB"] += (activation.numel() + label.numel()) * 4 / (1024**2)
-                    comm_cost_dict["cloud_download_grad_MB"] += estimate_gradient_size_mb(main_server_model, activation.shape, device)
+                    add_communication(comm_cost_dict, "client_to_server_MB", payload=(activation, label))
+                    # Backprop returns d(loss)/d(activation), exactly the cut shape.
+                    add_communication(comm_cost_dict, "server_to_client_MB", payload=activation)
                 user_losses_per_iter.append(np.mean(losses))
 
             round_cpu_per_client.append(np.mean(local_cpu_usages))
@@ -134,12 +135,12 @@ def run(cfg_path: str):
                 round_gpu_per_client.append(np.mean(local_gpu_usages))
 
             user_losses_per_epoch.append(np.mean(user_losses_per_iter))
-            comm_cost_dict["client_model_upload_MB"] += get_weight_size_mb(client_model.state_dict())
-            local_weights.append(copy.deepcopy(client_model.state_dict()))
+            local_state = copy.deepcopy(client_model.state_dict())
+            add_communication(comm_cost_dict, "client_to_server_MB", payload=local_state)
+            local_weights.append(local_state)
 
         training_loss.append(np.mean(user_losses_per_epoch))
         client_model_abs.load_state_dict(strategy.aggregate(None, None, local_weights))
-        comm_cost_dict["client_model_download_MB"] += get_weight_size_mb(client_model_abs.state_dict()) * config["num_users"]
 
         merge_model.load_weight(copy.deepcopy(client_model_abs.state_dict()), copy.deepcopy(main_server_model.state_dict()))
         merge_model.to(device).eval()
@@ -153,16 +154,22 @@ def run(cfg_path: str):
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(label.cpu().numpy())
 
-        eval_f1 = accuracy_score(all_labels, all_preds)
+        eval_accuracy = accuracy_score(all_labels, all_preds)
+        eval_f1 = f1_score(
+            all_labels, all_preds, average="macro", zero_division=0
+        )
         eval_f1_scores.append(eval_f1)
+        eval_accuracy_scores.append(eval_accuracy)
         round_cpu_usages.append(np.mean(round_cpu_per_client))
         round_ram_usages.append(np.mean(round_ram_per_client))
         round_gpu_usages.append(np.mean(round_gpu_per_client) if config["is_gpu"] else 0)
 
-        if eval_f1 > best_f1:
-            best_f1 = eval_f1
+        # Preserve the historical accuracy-based checkpoint selection.
+        if eval_accuracy > best_val_top1:
+            best_val_top1 = eval_accuracy
             best_model_weights = copy.deepcopy(merge_model.state_dict())
-            print(f"New Best F1: {best_f1:.4f} at Epoch {epoch+1}")
+            print(f"New Best Acc: {best_val_top1:.4f} at Epoch {epoch+1}")
+        best_f1 = max(best_f1, eval_f1)
 
         if wandb is not None and wandb.run is not None:
             wandb.log({
@@ -170,6 +177,8 @@ def run(cfg_path: str):
                 "train_loss": training_loss[-1],
                 "f1": eval_f1,
                 "best_f1": best_f1,
+                "accuracy": eval_accuracy,
+                "best_val_top1": best_val_top1,
                 "avg_cpu_pct": round_cpu_usages[-1],
                 "avg_ram_pct": round_ram_usages[-1],
                 "avg_gpu_ram_MB": round_gpu_usages[-1],
@@ -192,21 +201,29 @@ def run(cfg_path: str):
             test_preds.extend(predicted.cpu().numpy())
             test_labels.extend(label.cpu().numpy())
 
-    test_f1 = accuracy_score(test_labels, test_preds)
+    test_accuracy = accuracy_score(test_labels, test_preds)
+    test_f1 = f1_score(
+        test_labels, test_preds, average="macro", zero_division=0
+    )
     total_time = time.time() - start_time
-    print(f"\nFinal Test Acc: {test_f1*100:.2f}%")
+    print(f"\nFinal Test Acc: {test_accuracy*100:.2f}%  (F1: {test_f1*100:.2f}%)")
     print("Total Run Time: {:.2f}s".format(total_time))
 
     if wandb is not None and wandb.run is not None:
         wandb.summary["test_f1"] = test_f1
         wandb.summary["best_f1"] = best_f1
+        wandb.summary["test_accuracy"] = test_accuracy
+        wandb.summary["best_val_top1"] = best_val_top1
         wandb.summary["total_time_s"] = total_time
 
     with open(os.path.join(out_dir, f"SplitFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
         json.dump({
             "avg_cpu_percent": round_cpu_usages, "avg_ram_percent": round_ram_usages,
-            "avg_gpu_memory_MB": round_gpu_usages, "train_accuracy": eval_f1_scores,
+            "avg_gpu_memory_MB": round_gpu_usages, "train_accuracy": eval_accuracy_scores,
+            "validation_f1": eval_f1_scores,
             "train_loss": training_loss, "final_test_f1": test_f1,
-            "best_val_top1": best_f1, "total_comm_MB": sum(comm_cost_dict.values()),
+            "final_test_accuracy": test_accuracy, "best_f1": best_f1,
+            "best_val_top1": best_val_top1, "total_comm_MB": comm_cost_dict["total_comm_MB"],
+            "comm_report": comm_cost_dict,
             "peak_vram_MB": max(round_gpu_usages, default=0), "runtime_s": total_time,
         }, f, indent=4)

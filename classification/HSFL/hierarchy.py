@@ -7,9 +7,10 @@ from collections import deque
 import numpy as np
 import psutil
 import torch
+from ehsfp.communication import add_communication, mb_of, new_communication_tracker
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
 
 try:
@@ -86,16 +87,7 @@ class HierarchicalFL:
         self.total_layers = len(args["mid_server"]) + 1
         self.test_dataset = test_dataset
 
-        self.comm_tracker = {
-            "client_upload_smashed_MB": 0.0,
-            "edge_upload_smashed_MB": 0.0,
-            "client_model_upload_MB": 0.0,
-            "client_model_download_MB": 0.0,
-            "edge_model_upload_MB": 0.0,
-            "edge_model_download_MB": 0.0,
-            "cloud_download_grad_MB": 0.0,
-            "edge_download_grad_MB": 0.0,
-        }
+        self.comm_tracker = new_communication_tracker()
         self.client_cache = deque(maxlen=20)
 
     def _build_hierarchy(self):
@@ -201,9 +193,7 @@ class HierarchicalFL:
                 logging.info(f"  Node ID {node_id}: {model_type}")
 
     def get_model_size(self, state_dict):
-        return (
-            sum(param.numel() for param in state_dict.values()) * 4 / 1e6
-        )  # MB
+        return mb_of(state_dict)
 
     def average_state_dicts(self, state_dicts):
         avg_dict = {}
@@ -239,12 +229,12 @@ class HierarchicalFL:
 
             # Estimate upload cost from clients to edge
             size_MB = self.get_model_size(avg_client_model)
-            self.comm_tracker["client_model_upload_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "client_to_edge_MB", mb=size_MB, copies=len(cids))
 
             # Distribute aggregated client model to all clients under this edge
             for cid in cids:
                 client_layer[cid].load_state_dict(avg_client_model)
-            self.comm_tracker["client_model_download_MB"] += len(cids) * size_MB
+            add_communication(self.comm_tracker, "edge_to_client_MB", mb=size_MB, copies=len(cids))
 
     def cloud_aggregation(self):
         edge_layer = self.structure[0]
@@ -273,8 +263,8 @@ class HierarchicalFL:
 
             # Communication tracking
             size_edge_MB = self.get_model_size(avg_edge_model)
-            self.comm_tracker["edge_model_upload_MB"] += len(edge_ids) * size_edge_MB
-            self.comm_tracker["edge_model_download_MB"] += len(edge_ids) * size_edge_MB
+            add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=size_edge_MB, copies=len(edge_ids))
+            add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=size_edge_MB, copies=len(edge_ids))
 
             # Send back aggregated models
             for eid in edge_ids:
@@ -307,7 +297,7 @@ class HierarchicalFL:
             copy.deepcopy(cloud_model).cpu(),
         )
 
-    def _validate(self, valid_dataset, device, best_f1, epoch):
+    def _validate(self, valid_dataset, device, best_val_top1, epoch):
         """Evaluate the end-to-end pipeline (client 0 -> its edge -> cloud)."""
         client_model = self.structure[-1][0].to(device).eval()
         eid = self.connectivity[-1][0]
@@ -323,21 +313,25 @@ class HierarchicalFL:
                 all_preds.extend(logits.argmax(dim=1).cpu().numpy())
                 all_targets.extend(target.numpy())
 
-        f1 = accuracy_score(all_targets, all_preds)  # primary metric: top-1 accuracy
+        accuracy = accuracy_score(all_targets, all_preds)
+        f1 = f1_score(
+            all_targets, all_preds, average="macro", zero_division=0
+        )
         snap = None
-        if f1 >= best_f1:
-            best_f1 = f1
+        # Preserve the historical accuracy-based checkpoint selection.
+        if accuracy >= best_val_top1:
+            best_val_top1 = accuracy
             snap = FullPipelineModel(
                 copy.deepcopy(client_model).cpu(),
                 copy.deepcopy(edge_model).cpu(),
                 copy.deepcopy(cloud_model).cpu(),
             )
-            print(f"Save best weight at epoch {epoch} with f1: {f1 * 100:.2f} %")
+            print(f"Save best weight at epoch {epoch} with Acc: {accuracy * 100:.2f} %")
 
         client_model.train()
         edge_model.train()
         cloud_model.train()
-        return f1, best_f1, snap
+        return f1, accuracy, best_val_top1, snap
 
     def train_end_to_end(
         self,
@@ -375,12 +369,13 @@ class HierarchicalFL:
             edge_model.to(device)
             edge_opts[eid] = self._make_optimizer(edge_model)
 
-        train_f1, train_loss = [], []
+        train_f1, train_accuracy, train_loss = [], [], []
         client_cpu_list, client_ram_list, client_gpu_ram_list = [], [], []
         edge_cpu_list, edge_ram_list, edge_gpu_ram_list = [], [], []
         cloud_cpu_list, cloud_ram_list, cloud_gpu_ram_list = [], [], []
         client_compute_times = []
         best_f1 = 0.0
+        best_val_top1 = 0.0
         best_pipeline_model = None
 
         for epoch in tqdm(range(1, epochs + 1)):
@@ -435,10 +430,10 @@ class HierarchicalFL:
                         # Communication: smashed activations up; equal-size grads down
                         c_MB = smashed_c.numel() * smashed_c.element_size() / (1024**2)
                         e_MB = smashed_e.numel() * smashed_e.element_size() / (1024**2)
-                        self.comm_tracker["client_upload_smashed_MB"] += c_MB
-                        self.comm_tracker["edge_upload_smashed_MB"] += e_MB
-                        self.comm_tracker["cloud_download_grad_MB"] += e_MB
-                        self.comm_tracker["edge_download_grad_MB"] += c_MB
+                        add_communication(self.comm_tracker, "client_to_edge_MB", payload=(smashed_c, target))
+                        add_communication(self.comm_tracker, "edge_to_cloud_MB", payload=(smashed_e, target))
+                        add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=e_MB)
+                        add_communication(self.comm_tracker, "edge_to_client_MB", mb=c_MB)
 
                 epoch_losses.append(
                     float(np.mean(client_losses)) if client_losses else 0.0
@@ -485,12 +480,14 @@ class HierarchicalFL:
 
             # --- Validation: after a cloud aggregation, or on the final epoch ---
             if epoch % int(config["t2"]) == 0 or epoch == epochs:
-                f1, best_f1, snap = self._validate(
-                    valid_dataset, device, best_f1, epoch
+                f1, accuracy, best_val_top1, snap = self._validate(
+                    valid_dataset, device, best_val_top1, epoch
                 )
                 if snap is not None:
                     best_pipeline_model = snap
                 train_f1.append(f1)
+                train_accuracy.append(accuracy)
+                best_f1 = max(best_f1, f1)
 
                 print(f"\n=== Epoch {epoch} | F1: {f1 * 100:.2f} % ===")
                 for k, v in self.comm_tracker.items():
@@ -501,6 +498,8 @@ class HierarchicalFL:
                         "epoch": epoch,
                         "f1": f1,
                         "best_f1": best_f1,
+                        "accuracy": accuracy,
+                        "best_val_top1": best_val_top1,
                         "train_loss": train_loss[-1],
                         "avg_client_cpu_pct": client_cpu_list[-1],
                         "avg_client_ram_MB": client_ram_list[-1],
@@ -514,13 +513,17 @@ class HierarchicalFL:
             best_pipeline_model = self._snapshot_pipeline()
         if not train_f1:
             train_f1.append(0.0)
+            train_accuracy.append(0.0)
 
         print("\n=== Communication Summary ===")
         for k, v in self.comm_tracker.items():
             print(f"{k}: {v:.2f} MB")
 
         return {
-            "train_accuracy": train_f1,
+            "train_accuracy": train_accuracy,
+            "validation_f1": train_f1,
+            "best_f1": best_f1,
+            "best_val_top1": best_val_top1,
             "train_loss": train_loss,
             "client_cpu": client_cpu_list,
             "client_ram": client_ram_list,

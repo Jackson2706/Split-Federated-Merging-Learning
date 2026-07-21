@@ -4,6 +4,9 @@ from .CNN_Cifar import CifarClientModel, CifarServerModel, MergedModel
 from .CNN_HAM10000_ResNet50 import (HAM10000ClientModelResNet50,
                                     HAM10000MergedModelResNet50,
                                     HAM10000ServerModelResNet50)
+from .ISIC_ResNet50 import (ISICClientModelResNet50,
+                            ISICMergedModelResNet50,
+                            ISICServerModelResNet50)
 from .VGG_HAM10000 import (HAM10000MergedModelVGG, VGGClient_SplitFed,
                            VGGServer_SplitFed)
 
@@ -13,6 +16,11 @@ model_dataset_map = {
             HAM10000ClientModelResNet50,
             HAM10000ServerModelResNet50,
             HAM10000MergedModelResNet50,
+        ],
+        "isic-2018": [
+            ISICClientModelResNet50,
+            ISICServerModelResNet50,
+            ISICMergedModelResNet50,
         ],
         "cifar100": [CifarClientModel, CifarServerModel, MergedModel],
     },

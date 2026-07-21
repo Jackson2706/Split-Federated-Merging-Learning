@@ -63,7 +63,8 @@ def run(cfg_path: str):
     filtered_output = {k: v for k, v in output.items() if k != "best_weight"}
     filtered_output.update({
         "best_val_top1": max(output["train_accuracy"]),
-        "total_comm_MB": sum(hierarchical_fl.comm_tracker.values()),
+        "total_comm_MB": hierarchical_fl.comm_tracker["total_comm_MB"],
+        "comm_report": hierarchical_fl.comm_tracker,
         "peak_vram_MB": max(
             output.get("client_gpu_ram", []) + output.get("edge_gpu_ram", []) + output.get("cloud_gpu_ram", []),
             default=0,

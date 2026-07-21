@@ -2,8 +2,8 @@
 Reliability-weighted prototype aggregation for E-HSFP.
 
 Drop-in replacement for the simple mean aggregation in
-`_aggregate_prototypes_and_generate_data`. When no reliability network
-is provided, falls back to the original simple-mean behavior.
+`_aggregate_prototypes_and_generate_data`. Supports uniform, sample-count,
+and learned reliability weighting.
 """
 
 import torch
@@ -49,11 +49,12 @@ def reliability_weighted_aggregate(
     generator=None,
     support_map: Optional[Dict] = None,
     runtime_counters=None,
+    aggregation_mode: Optional[str] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Aggregate prototypes with optional reliability weighting and generate synthetic data.
+    """Aggregate prototypes under the selected rule and generate synthetic data.
 
-    When reliability_net is None: identical to the original simple-mean aggregation.
-    When provided: uses learned weights for weighted mean/variance.
+    If aggregation_mode is omitted, the legacy reliability_net-based mode
+    inference is retained for backward compatibility.
 
     Args:
         input_outputs: {source_id: (proto_dict, dist_dict)} or None values.
@@ -62,6 +63,9 @@ def reliability_weighted_aggregate(
         reliability_net: optional learned reliability network.
         memory: optional episodic memory (for building reliability features).
         generator: optional ResidualPrototypeGenerator for enhanced synthesis.
+        aggregation_mode: ``average``, ``sample_count_weighted``, or
+            ``learnable_reliability``. If omitted, infer the legacy mode from
+            whether reliability_net is present.
 
     Returns:
         (features, labels) tensors.
@@ -87,7 +91,15 @@ def reliability_weighted_aggregate(
 
     final_labels = sorted(merged.keys())
 
-    if reliability_net is None:
+    if aggregation_mode is None:
+        aggregation_mode = (
+            "average" if reliability_net is None else "learnable_reliability"
+        )
+    valid_modes = {"average", "sample_count_weighted", "learnable_reliability"}
+    if aggregation_mode not in valid_modes:
+        raise ValueError(f"Unknown aggregation mode: {aggregation_mode}")
+
+    if aggregation_mode == "average":
         # Original simple-mean aggregation (baseline behavior)
         final_protos = torch.stack([
             torch.stack([p.to(device) for p in merged[l]["p"]]).mean(0)
@@ -97,8 +109,39 @@ def reliability_weighted_aggregate(
             torch.sqrt(torch.stack([d.to(device) ** 2 for d in merged[l]["d"]]).mean(0))
             for l in final_labels
         ])
+    elif aggregation_mode == "sample_count_weighted":
+        proto_list = []
+        dist_list = []
+        for l in final_labels:
+            mus = torch.stack([mu.to(device) for mu in merged[l]["p"]])
+            sigmas = torch.stack([sigma.to(device) for sigma in merged[l]["d"]])
+            counts = torch.tensor([
+                support_map.get(sid, {}).get(l, 0) if support_map is not None else 0
+                for sid in merged[l]["sids"]
+            ], device=device, dtype=mus.dtype)
+            if counts.sum().item() == 0:
+                # Missing/all-zero support carries no preference, so use the
+                # neutral uniform weighting rather than dividing by zero.
+                weights = torch.ones_like(counts)
+            else:
+                weights = counts
+            w = (weights / weights.sum()).view(-1, *([1] * (mus.dim() - 1)))
+
+            # Use the same weighted mean/variance definition as reliability mode.
+            mu_agg = (w * mus).sum(0)
+            var_agg = (w * (sigmas ** 2 + (mus - mu_agg.unsqueeze(0)) ** 2)).sum(0)
+            sigma_agg = torch.sqrt(var_agg + 1e-8)
+            proto_list.append(mu_agg)
+            dist_list.append(sigma_agg)
+
+        final_protos = torch.stack(proto_list)
+        final_dists = torch.stack(dist_list)
     else:
         # Learnable reliability-weighted aggregation
+        if reliability_net is None:
+            raise ValueError(
+                "learnable_reliability aggregation requires a reliability network"
+            )
         if runtime_counters is not None:
             runtime_counters.increment("reliability.aggregation_calls")
         proto_list = []
