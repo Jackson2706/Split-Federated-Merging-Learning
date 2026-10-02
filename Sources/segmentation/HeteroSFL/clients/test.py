@@ -1,0 +1,39 @@
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
+from .DiceFocalLoss import DiceFocalLoss
+from segmentation.training_metrics import compute_iou_and_dice
+
+
+def test_inference(args, model, test_dataset):
+    """Returns test IoU, Dice, and loss."""
+    model.eval()
+    device = "cuda" if args["is_gpu"] else "cpu"
+    criterion = DiceFocalLoss().to(device)
+    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    model = model.to(device)
+
+    total_loss, test_iou, test_dice, total_samples = 0.0, 0.0, 0.0, 0
+    torch.cuda.empty_cache()
+
+    with torch.no_grad():
+        for inputs, masks in testloader:
+            inputs, masks = inputs.to(device), masks.to(device)
+            outputs = model(inputs)
+            if outputs.shape[-2:] != masks.shape[-2:]:
+                outputs = F.interpolate(
+                    outputs, size=masks.shape[-2:], mode="bilinear", align_corners=False
+                )
+            size = inputs.size(0)
+
+            total_loss += criterion(outputs, masks).item()
+            outputs = (outputs > 0.5).float()
+            iou, dice = compute_iou_and_dice(outputs, masks)
+            test_iou += iou * size
+            test_dice += dice * size
+            total_samples += size
+
+    test_iou /= total_samples
+    test_dice /= total_samples
+    return test_iou, test_dice, total_loss / len(testloader)
