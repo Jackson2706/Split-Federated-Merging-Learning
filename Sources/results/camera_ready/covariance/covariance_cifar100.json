@@ -1,0 +1,80 @@
+{
+  "args": {
+    "cfg": "configs/classification/h-sfp/cifar_our_resnet50_5_10.yaml",
+    "ckpt": "checkpoint_hfl.pt",
+    "modes": [
+      "mu_only",
+      "diag_sigma",
+      "full_covariance",
+      "low_rank_covariance",
+      "mixture_gaussian"
+    ],
+    "rank": 8,
+    "k": 3,
+    "max_classes": null,
+    "probe_per_class": 100,
+    "test_per_class": 50,
+    "syn_per_class": 100,
+    "clf_epochs": 5,
+    "seed": 0,
+    "device": "cuda",
+    "tag": "cifar100"
+  },
+  "rows": [
+    {
+      "mode": "mu_only",
+      "transmitted": "$\\mu$",
+      "asymptotic_comm": "$O(D)$",
+      "comm_MB": 0.2048,
+      "accuracy": 0.0194,
+      "mmd": 0.0,
+      "runtime_s": 0.1381929439958185,
+      "dim": 512,
+      "num_classes": 100
+    },
+    {
+      "mode": "diag_sigma",
+      "transmitted": "$\\mu,\\sigma$",
+      "asymptotic_comm": "$O(D)$",
+      "comm_MB": 0.4096,
+      "accuracy": 0.0206,
+      "mmd": 0.15887153239920734,
+      "runtime_s": 1.0808605560159776,
+      "dim": 512,
+      "num_classes": 100
+    },
+    {
+      "mode": "full_covariance",
+      "transmitted": "$\\mu,\\Sigma$",
+      "asymptotic_comm": "$O(D^2)$",
+      "comm_MB": 52.736,
+      "accuracy": 0.0164,
+      "mmd": 0.23749304653611034,
+      "runtime_s": 0.4946791920228861,
+      "dim": 512,
+      "num_classes": 100
+    },
+    {
+      "mode": "low_rank_covariance",
+      "transmitted": "$\\mu,U_r,d$",
+      "asymptotic_comm": "$O(8D)$",
+      "comm_MB": 2.048,
+      "accuracy": 0.0156,
+      "mmd": 0.2388408987224102,
+      "runtime_s": 1.0849107870017178,
+      "dim": 512,
+      "num_classes": 100
+    },
+    {
+      "mode": "mixture_gaussian",
+      "transmitted": "$\\{\\pi_k,\\mu_k,\\sigma_k\\}$",
+      "asymptotic_comm": "$O(3D)$",
+      "comm_MB": 1.23,
+      "accuracy": 0.0156,
+      "mmd": 0.22327481895685197,
+      "runtime_s": 9.618561177019728,
+      "dim": 512,
+      "num_classes": 100
+    }
+  ]
+}

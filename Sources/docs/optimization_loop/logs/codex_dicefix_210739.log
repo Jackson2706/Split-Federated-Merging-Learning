@@ -1,0 +1,2274 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f6b41-2c2e-7951-adc6-65e441bcb417
+--------
+user
+You are Codex. ISIC-2018 SEGMENTATION runs crash after ~73 min with 'NaN/Inf in Dice loss computation' at segmentation/*/clients/DiceFocalLoss.py:51 (present in segmentation/Federated/clients/DiceFocalLoss.py, segmentation/HierFL/clients/, and likely HeteroSFL + H-SFP seg dirs — grep 'NaN/Inf in Dice' across segmentation/). Fix the numerical instability in the Dice+Focal loss so it NEVER produces NaN/Inf: add an epsilon to the Dice denominator (2*inter+eps)/(union+eps); clamp probabilities to [eps, 1-eps] before any log in the focal term; guard empty-mask / all-zero cases; ensure the loss is computed in float32 even under autocast (cast logits/targets to float32 for the loss). Apply the SAME robust fix to ALL segmentation methods' DiceFocalLoss (Federated, HierFL, HeteroSFL, H-SFP seg). Do NOT change the loss's intended behavior on valid inputs — only add numerical guards. NO GPU (Claude re-runs the ISIC grid). Preserve uncommitted changes; local only; compile-check. FINAL: file:line diffs for each DiceFocalLoss touched + the guards added.
+codex
+I’ll locate every segmentation DiceFocalLoss implementation, inspect repository guidance and local changes, then apply one consistent minimal numerical-hardening patch and compile-check it without running GPU workloads.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'DiceFocalLoss.py' -g '"'!**/.git/**'"' && git status --short && rg -n \"NaN/Inf in Dice|class Dice|Focal\" segmentation -g 'DiceFocalLoss.py'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+/home/jackson/Desktop/Split-Federated-Merging-Learning
+segmentation/HierFL/clients/DiceFocalLoss.py
+segmentation/HeteroSFL/clients/DiceFocalLoss.py
+segmentation/Federated/clients/DiceFocalLoss.py
+segmentation/H-SFP/clients/DiceFocalLoss.py
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+segmentation/Federated/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/Federated/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/Federated/clients/DiceFocalLoss.py:28:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/Federated/clients/DiceFocalLoss.py:51:            print("❌ NaN/Inf in Dice loss computation")
+segmentation/Federated/clients/DiceFocalLoss.py:73:                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:26:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/HierFL/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/HierFL/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/HierFL/clients/DiceFocalLoss.py:28:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/HierFL/clients/DiceFocalLoss.py:51:            print("❌ NaN/Inf in Dice loss computation")
+segmentation/HierFL/clients/DiceFocalLoss.py:73:                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+segmentation/H-SFP/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/H-SFP/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/H-SFP/clients/DiceFocalLoss.py:26:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+
+exec
+/bin/bash -lc 'for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/clients/DiceFocalLoss.py; do echo "$f"; nl -ba "$f"; done' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/Federated/clients/DiceFocalLoss.py
+     1	import torch
+     2	import torch.nn as nn
+     3	import torch.nn.functional as F
+     4	
+     5	
+     6	class DiceFocalLoss(nn.Module):
+     7	    def __init__(
+     8	        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+     9	    ):
+    10	        super(DiceFocalLoss, self).__init__()
+    11	        self.alpha = alpha
+    12	        self.gamma = gamma
+    13	        self.smooth = smooth
+    14	        self.eps = eps  # for clamping
+    15	        self.debug = debug
+    16	
+    17	    def _sanity_check(self, preds, targets):
+    18	        if targets.dtype != torch.float32:
+    19	            targets = targets.float()
+    20	
+    21	        if preds.dim() == 3:
+    22	            preds = preds.unsqueeze(1)
+    23	        if targets.dim() == 3:
+    24	            targets = targets.unsqueeze(1)
+    25	
+    26	        if preds.shape != targets.shape:
+    27	            raise ValueError(
+    28	                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+    29	            )
+    30	
+    31	        # Clamp predictions to avoid NaN/Inf in log and BCE
+    32	        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+    33	
+    34	        if torch.isnan(preds).any() or torch.isinf(preds).any():
+    35	            print("❌ NaN or Inf found in predictions")
+    36	        if torch.isnan(targets).any() or torch.isinf(targets).any():
+    37	            print("❌ NaN or Inf found in targets")
+    38	
+    39	        return preds, targets
+    40	
+    41	    def dice_loss(self, preds, targets):
+    42	        preds = preds.contiguous().view(-1)
+    43	        targets = targets.contiguous().view(-1)
+    44	
+    45	        intersection = (preds * targets).sum()
+    46	        dice = (2.0 * intersection + self.smooth) / (
+    47	            preds.sum() + targets.sum() + self.smooth
+    48	        )
+    49	
+    50	        if torch.isnan(dice) or torch.isinf(dice):
+    51	            print("❌ NaN/Inf in Dice loss computation")
+    52	
+    53	        return 1 - dice
+    54	
+    55	    def focal_loss(self, preds, targets):
+    56	        preds = preds.contiguous().view(-1)
+    57	        targets = targets.contiguous().view(-1)
+    58	
+    59	        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+    60	        pt = torch.exp(-bce)
+    61	        focal = self.alpha * (1 - pt) ** self.gamma * bce
+    62	        return focal.mean()
+    63	
+    64	    def forward(self, preds, targets):
+    65	        preds, targets = self._sanity_check(preds, targets)
+    66	
+    67	        loss_dice = self.dice_loss(preds, targets)
+    68	        loss_focal = self.focal_loss(preds, targets)
+    69	        total_loss = loss_dice + loss_focal
+    70	
+    71	        if self.debug:
+    72	            print(
+    73	                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+    74	            )
+    75	
+    76	        return total_loss
+segmentation/HierFL/clients/DiceFocalLoss.py
+     1	import torch
+     2	import torch.nn as nn
+     3	import torch.nn.functional as F
+     4	
+     5	
+     6	class DiceFocalLoss(nn.Module):
+     7	    def __init__(
+     8	        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+     9	    ):
+    10	        super(DiceFocalLoss, self).__init__()
+    11	        self.alpha = alpha
+    12	        self.gamma = gamma
+    13	        self.smooth = smooth
+    14	        self.eps = eps  # for clamping
+    15	        self.debug = debug
+    16	
+    17	    def _sanity_check(self, preds, targets):
+    18	        if targets.dtype != torch.float32:
+    19	            targets = targets.float()
+    20	
+    21	        if preds.dim() == 3:
+    22	            preds = preds.unsqueeze(1)
+    23	        if targets.dim() == 3:
+    24	            targets = targets.unsqueeze(1)
+    25	
+    26	        if preds.shape != targets.shape:
+    27	            raise ValueError(
+    28	                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+    29	            )
+    30	
+    31	        # Clamp predictions to avoid NaN/Inf in log and BCE
+    32	        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+    33	
+    34	        if torch.isnan(preds).any() or torch.isinf(preds).any():
+    35	            print("❌ NaN or Inf found in predictions")
+    36	        if torch.isnan(targets).any() or torch.isinf(targets).any():
+    37	            print("❌ NaN or Inf found in targets")
+    38	
+    39	        return preds, targets
+    40	
+    41	    def dice_loss(self, preds, targets):
+    42	        preds = preds.contiguous().view(-1)
+    43	        targets = targets.contiguous().view(-1)
+    44	
+    45	        intersection = (preds * targets).sum()
+    46	        dice = (2.0 * intersection + self.smooth) / (
+    47	            preds.sum() + targets.sum() + self.smooth
+    48	        )
+    49	
+    50	        if torch.isnan(dice) or torch.isinf(dice):
+    51	            print("❌ NaN/Inf in Dice loss computation")
+    52	
+    53	        return 1 - dice
+    54	
+    55	    def focal_loss(self, preds, targets):
+    56	        preds = preds.contiguous().view(-1)
+    57	        targets = targets.contiguous().view(-1)
+    58	
+    59	        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+    60	        pt = torch.exp(-bce)
+    61	        focal = self.alpha * (1 - pt) ** self.gamma * bce
+    62	        return focal.mean()
+    63	
+    64	    def forward(self, preds, targets):
+    65	        preds, targets = self._sanity_check(preds, targets)
+    66	
+    67	        loss_dice = self.dice_loss(preds, targets)
+    68	        loss_focal = self.focal_loss(preds, targets)
+    69	        total_loss = loss_dice + loss_focal
+    70	
+    71	        if self.debug:
+    72	            print(
+    73	                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+    74	            )
+    75	
+    76	        return total_loss
+segmentation/HeteroSFL/clients/DiceFocalLoss.py
+     1	import torch
+     2	import torch.nn as nn
+     3	import torch.nn.functional as F
+     4	
+     5	
+     6	class DiceFocalLoss(nn.Module):
+     7	    def __init__(
+     8	        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+     9	    ):
+    10	        super(DiceFocalLoss, self).__init__()
+    11	        self.alpha = alpha
+    12	        self.gamma = gamma
+    13	        self.smooth = smooth
+    14	        self.eps = eps
+    15	        self.debug = debug
+    16	
+    17	    def _sanity_check(self, preds, targets):
+    18	        if targets.dtype != torch.float32:
+    19	            targets = targets.float()
+    20	        if preds.dim() == 3:
+    21	            preds = preds.unsqueeze(1)
+    22	        if targets.dim() == 3:
+    23	            targets = targets.unsqueeze(1)
+    24	        if preds.shape != targets.shape:
+    25	            raise ValueError(
+    26	                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+    27	            )
+    28	        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+    29	        return preds, targets
+    30	
+    31	    def dice_loss(self, preds, targets):
+    32	        preds = preds.contiguous().view(-1)
+    33	        targets = targets.contiguous().view(-1)
+    34	        intersection = (preds * targets).sum()
+    35	        dice = (2.0 * intersection + self.smooth) / (
+    36	            preds.sum() + targets.sum() + self.smooth
+    37	        )
+    38	        return 1 - dice
+    39	
+    40	    def focal_loss(self, preds, targets):
+    41	        preds = preds.contiguous().view(-1)
+    42	        targets = targets.contiguous().view(-1)
+    43	        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+    44	        pt = torch.exp(-bce)
+    45	        focal = self.alpha * (1 - pt) ** self.gamma * bce
+    46	        return focal.mean()
+    47	
+    48	    def forward(self, preds, targets):
+    49	        preds, targets = self._sanity_check(preds, targets)
+    50	        loss_dice = self.dice_loss(preds, targets)
+    51	        loss_focal = self.focal_loss(preds, targets)
+    52	        return loss_dice + loss_focal
+segmentation/H-SFP/clients/DiceFocalLoss.py
+     1	import torch
+     2	import torch.nn as nn
+     3	import torch.nn.functional as F
+     4	
+     5	
+     6	class DiceFocalLoss(nn.Module):
+     7	    def __init__(
+     8	        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+     9	    ):
+    10	        super(DiceFocalLoss, self).__init__()
+    11	        self.alpha = alpha
+    12	        self.gamma = gamma
+    13	        self.smooth = smooth
+    14	        self.eps = eps
+    15	        self.debug = debug
+    16	
+    17	    def _sanity_check(self, preds, targets):
+    18	        if targets.dtype != torch.float32:
+    19	            targets = targets.float()
+    20	        if preds.dim() == 3:
+    21	            preds = preds.unsqueeze(1)
+    22	        if targets.dim() == 3:
+    23	            targets = targets.unsqueeze(1)
+    24	        if preds.shape != targets.shape:
+    25	            raise ValueError(
+    26	                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+    27	            )
+    28	        # Guard against non-finite predictions (NaN/inf) before clamping:
+    29	        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+    30	        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+    31	        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
+    32	        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+    33	        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+    34	        return preds, targets
+    35	
+    36	    def dice_loss(self, preds, targets):
+    37	        preds = preds.contiguous().view(-1)
+    38	        targets = targets.contiguous().view(-1)
+    39	        intersection = (preds * targets).sum()
+    40	        dice = (2.0 * intersection + self.smooth) / (
+    41	            preds.sum() + targets.sum() + self.smooth
+    42	        )
+    43	        return 1 - dice
+    44	
+    45	    def focal_loss(self, preds, targets):
+    46	        preds = preds.contiguous().view(-1)
+    47	        targets = targets.contiguous().view(-1)
+    48	        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+    49	        pt = torch.exp(-bce)
+    50	        focal = self.alpha * (1 - pt) ** self.gamma * bce
+    51	        return focal.mean()
+    52	
+    53	    def forward(self, preds, targets):
+    54	        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+    55	        # and this loss operates on probabilities. Force a float32, autocast-off
+    56	        # region so it is safe whether or not the caller is inside autocast.
+    57	        with torch.autocast(device_type=preds.device.type, enabled=False):
+    58	            preds = preds.float()
+    59	            targets = targets.float()
+    60	            preds, targets = self._sanity_check(preds, targets)
+    61	            loss_dice = self.dice_loss(preds, targets)
+    62	            loss_focal = self.focal_loss(preds, targets)
+    63	            return loss_dice + loss_focal
+
+codex
+There are four implementations. One already has partial autocast/non-finite protection, but all four differ and none handles every requested case (notably empty tensors and the Dice denominator epsilon). I’m standardizing them while preserving the existing smoothing and focal formula for valid inputs.
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/clients/DiceFocalLoss.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/DiceFocalLoss.py
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e3084dac33f4f427691f49486176acbbe01bc..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc69852fed8a45c6f4c82e640c405a26f81..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e3084dac33f4f427691f49486176acbbe01bc..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc69852fed8a45c6f4c82e640c405a26f81..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+exec
+/bin/bash -lc 'python -m py_compile segmentation/Federated/clients/DiceFocalLoss.py segmentation/HierFL/clients/DiceFocalLoss.py segmentation/HeteroSFL/clients/DiceFocalLoss.py segmentation/H-SFP/clients/DiceFocalLoss.py && git diff --check && git diff -- segmentation/Federated/clients/DiceFocalLoss.py segmentation/HierFL/clients/DiceFocalLoss.py segmentation/HeteroSFL/clients/DiceFocalLoss.py segmentation/H-SFP/clients/DiceFocalLoss.py && git status --short' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b24..bdeb92d 100644
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@ class DiceFocalLoss(nn.Module):
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@ class DiceFocalLoss(nn.Module):
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,30 +39,36 @@ class DiceFocalLoss(nn.Module):
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+ 
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+-
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e308..4ddd4b5 100644
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@ class DiceFocalLoss(nn.Module):
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@ class DiceFocalLoss(nn.Module):
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc..4ddd4b5 100644
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@ class DiceFocalLoss(nn.Module):
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@ class DiceFocalLoss(nn.Module):
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b24..bdeb92d 100644
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@ class DiceFocalLoss(nn.Module):
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@ class DiceFocalLoss(nn.Module):
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,30 +39,36 @@ class DiceFocalLoss(nn.Module):
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+ 
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+-
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e3084dac33f4f427691f49486176acbbe01bc..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc69852fed8a45c6f4c82e640c405a26f81..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+codex
+The four files now compile and pass whitespace/error checks. I’m doing a small CPU-only edge-case verification (finite normal, all-zero, empty, and NaN/Inf inputs) and collecting exact final line references; no training or GPU execution.
+exec
+/bin/bash -lc "python - <<'PY'
+import importlib.util
+from pathlib import Path
+import torch
+
+files = [
+    Path('segmentation/Federated/clients/DiceFocalLoss.py'),
+    Path('segmentation/HierFL/clients/DiceFocalLoss.py'),
+    Path('segmentation/HeteroSFL/clients/DiceFocalLoss.py'),
+    Path('segmentation/H-SFP/clients/DiceFocalLoss.py'),
+]
+cases = [
+    (torch.tensor([[[[0.2, 0.8]]]], dtype=torch.float16), torch.tensor([[[[0., 1.]]]], dtype=torch.float16)),
+    (torch.zeros((1, 1, 2, 2)), torch.zeros((1, 1, 2, 2))),
+    (torch.empty((0, 1, 2, 2)), torch.empty((0, 1, 2, 2))),
+    (torch.tensor([[[[float('nan'), float('inf'), -float('inf')]]]]), torch.tensor([[[[float('nan'), float('inf'), -float('inf')]]]])),
+]
+for i, path in enumerate(files):
+    spec = importlib.util.spec_from_file_location(f'dice_focal_{i}', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    loss_fn = module.DiceFocalLoss()
+    values = [loss_fn(preds, targets) for preds, targets in cases]
+    assert all(v.dtype == torch.float32 and torch.isfinite(v) for v in values)
+    print(f'{path}: PASS ({[v.item() for v in values]})')
+PY
+for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/clients/DiceFocalLoss.py; do rg -n \"nan_to_num|preds = preds.clamp|targets = targets.clamp|union =|self.smooth \\+ self.eps|numel\\(\\)|torch.autocast|preds = preds.float|targets = targets.float\" \""'$f"; done' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e3084dac33f4f427691f49486176acbbe01bc..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc69852fed8a45c6f4c82e640c405a26f81..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+ succeeded in 1227ms:
+segmentation/Federated/clients/DiceFocalLoss.py: PASS ([0.13562697172164917, 3.5762786865234375e-07, 0.0, 5.960464477539063e-08])
+segmentation/HierFL/clients/DiceFocalLoss.py: PASS ([0.13562697172164917, 3.5762786865234375e-07, 0.0, 5.960464477539063e-08])
+segmentation/HeteroSFL/clients/DiceFocalLoss.py: PASS ([0.13562697172164917, 3.5762786865234375e-07, 0.0, 5.960464477539063e-08])
+segmentation/H-SFP/clients/DiceFocalLoss.py: PASS ([0.13562697172164917, 3.5762786865234375e-07, 0.0, 5.960464477539063e-08])
+30:        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+31:        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+32:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+33:        targets = targets.clamp(min=0.0, max=1.0)
+42:        union = preds.sum() + targets.sum()
+43:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+44:            union + self.smooth + self.eps
+53:        if preds.numel() == 0:
+56:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+64:        with torch.autocast(device_type=preds.device.type, enabled=False):
+65:            preds = preds.float()
+66:            targets = targets.float()
+30:        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+31:        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+32:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+33:        targets = targets.clamp(min=0.0, max=1.0)
+42:        union = preds.sum() + targets.sum()
+43:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+44:            union + self.smooth + self.eps
+53:        if preds.numel() == 0:
+56:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+64:        with torch.autocast(device_type=preds.device.type, enabled=False):
+65:            preds = preds.float()
+66:            targets = targets.float()
+28:        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+29:        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+30:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+31:        targets = targets.clamp(min=0.0, max=1.0)
+38:        union = preds.sum() + targets.sum()
+39:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+40:            union + self.smooth + self.eps
+48:        if preds.numel() == 0:
+51:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+59:        with torch.autocast(device_type=preds.device.type, enabled=False):
+60:            preds = preds.float()
+61:            targets = targets.float()
+28:        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+29:        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+30:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+31:        targets = targets.clamp(min=0.0, max=1.0)
+38:        union = preds.sum() + targets.sum()
+39:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+40:            union + self.smooth + self.eps
+48:        if preds.numel() == 0:
+51:        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+59:        with torch.autocast(device_type=preds.device.type, enabled=False):
+60:            preds = preds.float()
+61:            targets = targets.float()
+
+codex
+Implemented the same robust Dice+Focal numerical guards across all four segmentation methods:
+
+- [Federated DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py:30)
+  - Non-finite sanitization and clamping: lines 30–33
+  - Stabilized Dice numerator/denominator: lines 42–44
+  - Empty-tensor focal guard and probability clamp: lines 53–56
+  - Autocast-disabled float32 computation: lines 64–66
+
+- [HierFL DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/DiceFocalLoss.py:30)
+  - Same changes at lines 30–33, 42–44, 53–56, and 64–66
+
+- [HeteroSFL DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/clients/DiceFocalLoss.py:28)
+  - Same changes at lines 28–31, 38–40, 48–51, and 59–61
+
+- [H-SFP DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/clients/DiceFocalLoss.py:28)
+  - Same changes at lines 28–31, 38–40, 48–51, and 59–61
+
+Guards added:
+
+- Loss runs in float32 with autocast disabled.
+- NaN/Inf predictions and targets are converted to valid binary-range values.
+- Probabilities are clamped to `[eps, 1-eps]` before BCE/focal logarithms.
+- Dice retains existing smoothing and adds epsilon to numerator and denominator.
+- Empty tensors return a finite, gradient-connected zero focal loss.
+- All-zero masks remain finite.
+
+Validation passed:
+
+- `python -m py_compile` on all four files
+- `git diff --check`
+- CPU-only checks for float16 inputs, all-zero masks, empty tensors, and NaN/±Inf inputs
+- Existing uncommitted documentation changes were preserved.
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+diff --git a/segmentation/H-SFP/clients/DiceFocalLoss.py b/segmentation/H-SFP/clients/DiceFocalLoss.py
+index 113e3084dac33f4f427691f49486176acbbe01bc..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/H-SFP/clients/DiceFocalLoss.py
++++ b/segmentation/H-SFP/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,35 +23,39 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        # Guard against non-finite predictions (NaN/inf) before clamping:
+-        # torch.clamp PROPAGATES NaN, which then trips the BCE CUDA assert
+-        # `input_val >= 0 && input_val <= 1`. Since preds are probabilities,
+-        # map nan->0, +inf->1, -inf->0, then clamp into (eps, 1-eps).
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
+         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        # F.binary_cross_entropy (used by focal_loss) is unsafe under autocast,
+-        # and this loss operates on probabilities. Force a float32, autocast-off
+-        # region so it is safe whether or not the caller is inside autocast.
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
+         with torch.autocast(device_type=preds.device.type, enabled=False):
+             preds = preds.float()
+             targets = targets.float()
+diff --git a/segmentation/HeteroSFL/clients/DiceFocalLoss.py b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+index ec64bbc69852fed8a45c6f4c82e640c405a26f81..4ddd4b58ad740f6f1a7ff7dcd2d0909163436f3e
+--- a/segmentation/HeteroSFL/clients/DiceFocalLoss.py
++++ b/segmentation/HeteroSFL/clients/DiceFocalLoss.py
+@@ -15,8 +15,6 @@
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -25,28 +23,43 @@
+             raise ValueError(
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+         return preds, targets
+ 
+     def dice_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
++
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        return loss_dice + loss_focal
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            return loss_dice + loss_focal
+diff --git a/segmentation/HierFL/clients/DiceFocalLoss.py b/segmentation/HierFL/clients/DiceFocalLoss.py
+index 0183b243ade494dbdf6274f0c2a2ba9c7c1cc5b5..bdeb92d1c10c09deba30a0de5d1d74b2ff83693e
+--- a/segmentation/HierFL/clients/DiceFocalLoss.py
++++ b/segmentation/HierFL/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,12 +39,10 @@
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+-
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+ 
+         return 1 - dice
+ 
+@@ -56,17 +50,25 @@
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+tokens used
+33,707
+Implemented the same robust Dice+Focal numerical guards across all four segmentation methods:
+
+- [Federated DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py:30)
+  - Non-finite sanitization and clamping: lines 30–33
+  - Stabilized Dice numerator/denominator: lines 42–44
+  - Empty-tensor focal guard and probability clamp: lines 53–56
+  - Autocast-disabled float32 computation: lines 64–66
+
+- [HierFL DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/DiceFocalLoss.py:30)
+  - Same changes at lines 30–33, 42–44, 53–56, and 64–66
+
+- [HeteroSFL DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/clients/DiceFocalLoss.py:28)
+  - Same changes at lines 28–31, 38–40, 48–51, and 59–61
+
+- [H-SFP DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/clients/DiceFocalLoss.py:28)
+  - Same changes at lines 28–31, 38–40, 48–51, and 59–61
+
+Guards added:
+
+- Loss runs in float32 with autocast disabled.
+- NaN/Inf predictions and targets are converted to valid binary-range values.
+- Probabilities are clamped to `[eps, 1-eps]` before BCE/focal logarithms.
+- Dice retains existing smoothing and adds epsilon to numerator and denominator.
+- Empty tensors return a finite, gradient-connected zero focal loss.
+- All-zero masks remain finite.
+
+Validation passed:
+
+- `python -m py_compile` on all four files
+- `git diff --check`
+- CPU-only checks for float16 inputs, all-zero masks, empty tensors, and NaN/±Inf inputs
+- Existing uncommitted documentation changes were preserved.

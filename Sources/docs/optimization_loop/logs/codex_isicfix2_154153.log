@@ -1,0 +1,3321 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f6f3d-4928-7fc3-b043-46c031e2b6ea
+--------
+user
+You are Codex. APPLY the fixes you diagnosed in CODEX_REPORT_ISIC_DEBUG.md for ISIC-2018 segmentation. Fixes: (1) DOUBLE SIGMOID: the seg models already apply torch.sigmoid (e.g. segmentation/Federated/models/CNN_ISIC.py:63); the eval path applies sigmoid AGAIN in segmentation/*/clients/test.py (~line 59) before thresholding >0.5, causing IoU=0. Remove the redundant sigmoid in the EVAL/metric path for ALL seg methods (Federated, HierFL, HeteroSFL, H-SFP) so IoU/Dice are computed on the model's actual probability output (threshold the model output directly at 0.5). Verify the metric (IoU/Dice) is then meaningful. (2) code=1 CRASHES in heterosfl + h-sfp seg happen before the model runs — grep the traceback in docs/optimization_loop/logs/plan26_isicfix_*/isic_heterosfl_*.log and isic_h-sfp_*.log, identify the setup/config/data error, and fix it minimally. (3) Pair ISIC image/mask lists by ISIC identifier (sorted, matched) instead of independent unsorted globs, in the ISIC dataset loader. Do NOT change training hyperparameters beyond what's needed to make seg learn/evaluate correctly. NO GPU (Claude re-runs the ISIC grid). Preserve uncommitted changes; local only; compile-check. FINAL: file:line diffs for the double-sigmoid removal (all methods), the crash root-cause + fix, and the mask-pairing fix.
+codex
+I’ll inspect the report, repository guidance, affected evaluation paths, crash logs, and dataset loader first. I’ll keep the edits narrow, preserve the current worktree, and finish with compile checks only—no GPU runs.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'CODEX_REPORT_ISIC_DEBUG.md' -g 'test.py' -g '*.log' -g '*ISIC*' | sed -n '1,240p' && git status --short" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+/home/jackson/Desktop/Split-Federated-Merging-Learning
+results/journal/orchestrator.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_ham10000_our_resnet50_25_50_full_e_hsfp_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_hsfp_memory_s0.log
+results/journal/logs/conv_fed_classification_federated_ham10000_fednova_resnet50_s0.log
+results/journal/logs/conv_heterosfl_classification_hetero-sfl_cifar_heteroSFL_resnet18_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/conv_fed_classification_federated_cifar_fedavg_resnet50_s0.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_cifar_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_hsfp_memory_reliability_prc_s0.log
+results/journal/logs/conv_hsfp_classification_h-sfp_ham10000_our_resnet50_5_10_s0.log
+results/journal/logs/conv_fed_classification_federated_ham10000_fedprox_resnet50_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_hsfp_memory_dropout_s0.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_ham10000_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_baseline_hsfp_s0.log
+results/journal/logs/conv_hierfl_classification_hierfl_cifar_hierfl_resnet50_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_hsfp_memory_reliability_prc_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/conv_hierfl_classification_hierfl_ham10000_hierfl_resnet50_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_cifar_our_resnet50_5_10_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_cifar_our_resnet50_10_20_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_ham10000_our_resnet50_25_50_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_ham10000_our_resnet50_5_10_s0.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_cifar_our_resnet50_10_20_full_e_hsfp_s0.log
+results/journal/logs/conv_splitfl_classification_splitfl_ham10000_splitfed_resnet50_s0.log
+results/journal/logs/conv_hsfl_classification_hsfl_ham10000_our_resnet50_5_10_s0.log
+results/journal/logs/conv_ehsfp_classification_h-sfp_cifar_our_alexnet_5_10_full_e_hsfp_s0.log
+results/journal/logs/conv_ehsfp_classification_h-sfp_ham10000_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/conv_heterosfl_classification_hetero-sfl_ham10000_heteroSFL_resnet50_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_hsfp_memory_reliability_s0.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_cifar_our_resnet50_25_50_full_e_hsfp_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_cifar_our_resnet50_25_50_s0.log
+results/journal/logs/intv_hsfp_classification_h-sfp_ham10000_our_resnet50_10_20_s0.log
+results/journal/logs/intv_ehsfp_classification_h-sfp_ham10000_our_resnet50_10_20_full_e_hsfp_s0.log
+results/journal/logs/conv_fed_classification_federated_ham10000_fedavg_resnet50_s0.log
+results/journal/logs/conv_fed_classification_federated_ham10000_fedsgd_resnet50_s0.log
+results/journal/logs/conv_hsfp_classification_h-sfp_cifar_our_resnet50_5_10_s0.log
+results/journal/logs/conv_fed_classification_federated_cifar_fedsgd_resnet50_s0.log
+results/journal/logs/conv_ehsfp_classification_h-sfp_cifar_our_resnet50_5_10_full_e_hsfp_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_baseline_hsfp_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_hsfp_memory_dropout_s0.log
+results/journal/logs/conv_fed_classification_federated_cifar_fednova_resnet50_s0.log
+results/journal/logs/abl_classification_h-sfp_ham10000_our_resnet50_5_10_hsfp_memory_s0.log
+results/journal/logs/conv_splitfl_classification_splitfl_cifar_splitfed_resnet50_s0.log
+results/journal/logs/conv_hsfl_classification_hsfl_cifar_our_resnet50_5_10_s0.log
+results/journal/logs/conv_hsfp_classification_h-sfp_ham10000_our_vgg_5_10_s0.log
+results/journal/logs/conv_fed_classification_federated_cifar_fedprox_resnet50_s0.log
+results/journal/logs/conv_hsfp_classification_h-sfp_cifar_our_alexnet_5_10_s0.log
+results/journal/logs/abl_classification_h-sfp_cifar_our_resnet50_5_10_hsfp_memory_reliability_s0.log
+results/journal/logs/conv_ehsfp_classification_h-sfp_ham10000_our_vgg_5_10_full_e_hsfp_s0.log
+results/camera_ready/submission_20260623_234934.log
+results/camera_ready/submission_20260623_222428.log
+results/camera_ready/logs/partial_splitfl_frac0.5_dir0.05_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.5_iid_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.5_dir0.1_s0.log
+results/camera_ready/logs/profiling_h-sfp_s0.log
+results/camera_ready/logs/hetero_federated_ae1.0_ac1.0_s0.log
+results/camera_ready/logs/partial_hierfl_frac1.0_dir0.05_s0.log
+results/camera_ready/logs/hetero_hierfl_ae0.1_ac0.1_s0.log
+results/camera_ready/logs/hetero_splitfl_ae1.0_ac1.0_s0.log
+results/camera_ready/logs/partial_splitfl_frac1.0_dir0.1_s0.log
+results/camera_ready/logs/partial_federated_frac0.1_dir0.05_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.1_iid_s0.log
+results/camera_ready/logs/partial_splitfl_frac0.1_dir0.1_s0.log
+results/camera_ready/logs/partial_h-sfp_frac1.0_iid_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.1_dir0.05_s0.log
+results/camera_ready/smoke_logs/smoke_h-sfp.log
+results/camera_ready/logs/hetero_federated_ae0.1_ac0.1_s0.log
+results/camera_ready/logs/hetero_h-sfp_ae0.1_ac0.1_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.1_iid_s0.log
+results/camera_ready/logs/hetero_hsfl_ae1.0_ac1.0_s0.log
+results/camera_ready/logs/partial_h-sfp_frac1.0_dir0.05_s0.log
+results/camera_ready/logs/partial_federated_frac0.1_dir0.1_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.1_dir0.1_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.5_dir0.1_s0.log
+results/camera_ready/logs/partial_h-sfp_frac1.0_dir0.1_s0.log
+results/camera_ready/logs/partial_splitfl_frac1.0_dir0.05_s0.log
+results/camera_ready/logs/validate_hsfp_full.log
+results/camera_ready/logs/hetero_splitfl_ae1.0_ac0.1_s0.log
+results/camera_ready/logs/partial_hierfl_frac1.0_iid_s0.log
+results/camera_ready/logs/partial_splitfl_frac0.5_dir0.1_s0.log
+results/camera_ready/logs/hetero_federated_ae0.1_ac1.0_s0.log
+results/camera_ready/logs/partial_hsfl_frac0.1_dir0.05_s0.log
+results/camera_ready/logs/partial_federated_frac0.1_iid_s0.log
+results/camera_ready/logs/hetero_federated_ae1.0_ac0.1_s0.log
+results/camera_ready/logs/partial_hierfl_frac1.0_dir0.1_s0.log
+results/camera_ready/logs/submission_master.log
+results/camera_ready/smoke_logs/verify_acc_splitfl.log
+results/camera_ready/smoke_logs/reverify_hierfl2.log
+results/camera_ready/smoke_logs/smoke_h-sfp_hetero.log
+results/camera_ready/smoke_logs/smoke_hsfl_hetero.log
+results/camera_ready/smoke_logs/verify_acc_federated.log
+results/camera_ready/smoke_logs/smoke_hsfl.log
+results/camera_ready/smoke_logs/verify_acc_hsfp.log
+results/camera_ready/smoke_logs/smoke_hierfl.log
+results/camera_ready/logs/partial_hsfl_frac0.5_dir0.1_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.5_dir0.05_s0.log
+results/camera_ready/logs/hetero_hierfl_ae1.0_ac1.0_s0.log
+results/camera_ready/smoke_logs/reverify_hsfl.log
+results/camera_ready/logs/partial_hsfl_frac0.5_dir0.05_s0.log
+results/camera_ready/smoke_logs/smoke_federated.log
+results/camera_ready/smoke_logs/reverify_hierfl.log
+results/camera_ready/smoke_logs/smoke_splitfl.log
+results/camera_ready/logs/partial_federated_frac1.0_iid_s0.log
+results/camera_ready/logs/hetero_hierfl_ae1.0_ac0.1_s0.log
+results/camera_ready/logs/profiling_splitfl_s0.log
+results/camera_ready/logs/partial_hsfl_frac1.0_iid_s0.log
+results/camera_ready/logs/hetero_hsfl_ae1.0_ac0.1_s0.log
+results/camera_ready/logs/hetero_hierfl_ae0.1_ac1.0_s0.log
+results/camera_ready/logs/partial_federated_frac0.5_dir0.1_s0.log
+results/camera_ready/logs/hetero_splitfl_ae0.1_ac1.0_s0.log
+results/camera_ready/logs/hetero_h-sfp_ae1.0_ac1.0_s0.log
+results/camera_ready/logs/partial_hsfl_frac0.1_dir0.1_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.5_dir0.05_s0.log
+results/camera_ready/logs/partial_splitfl_frac1.0_iid_s0.log
+results/camera_ready/logs/partial_h-sfp_frac0.5_iid_s0.log
+results/camera_ready/logs/partial_federated_frac0.5_iid_s0.log
+results/camera_ready/logs/hetero_h-sfp_ae1.0_ac0.1_s0.log
+results/camera_ready/logs/partial_splitfl_frac0.1_dir0.05_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.1_dir0.05_s0.log
+results/camera_ready/logs/partial_splitfl_frac0.1_iid_s0.log
+results/camera_ready/logs/partial_hierfl_frac0.1_dir0.1_s0.log
+results/camera_ready/logs/standalone_full.log
+results/camera_ready/logs/partial_federated_frac1.0_dir0.1_s0.log
+results/camera_ready/logs/partial_hsfl_frac0.5_iid_s0.log
+results/camera_ready/logs/partial_splitfl_frac0.5_iid_s0.log
+results/camera_ready/logs/hetero_h-sfp_ae0.1_ac1.0_s0.log
+results/camera_ready/logs/hetero_hsfl_ae0.1_ac1.0_s0.log
+results/camera_ready/logs/partial_hsfl_frac0.1_iid_s0.log
+results/camera_ready/logs/partial_federated_frac0.5_dir0.05_s0.log
+results/camera_ready/logs/hetero_hsfl_ae0.1_ac0.1_s0.log
+results/camera_ready/logs/hetero_splitfl_ae0.1_ac0.1_s0.log
+results/camera_ready/logs/partial_hsfl_frac1.0_dir0.05_s0.log
+results/camera_ready/logs/partial_hsfl_frac1.0_dir0.1_s0.log
+results/camera_ready/logs/partial_federated_frac1.0_dir0.05_s0.log
+segmentation/HSFL/data/utils/ISIC.py
+segmentation/HeteroSFL/models/ISIC_ResNet50.py
+segmentation/HeteroSFL/data/utils/ISIC.py
+segmentation/HeteroSFL/clients/test.py
+segmentation/SplitFL/data/utils/ISIC.py
+segmentation/H-SFP/models/ISIC_ResNet50.py
+classification/Federated/clients/test.py
+segmentation/H-SFP/data/utils/ISIC.py
+segmentation/H-SFP/clients/test.py
+segmentation/Federated/models/CNN_ISIC.py
+segmentation/Federated/clients/test.py
+classification/HierFL/clients/test.py
+segmentation/HierFL/models/CNN_ISIC.py
+segmentation/Federated/data/utils/ISIC.py
+segmentation/HierFL/clients/test.py
+segmentation/HierFL/data/utils/ISIC.py
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+
+exec
+/bin/bash -lc "find .. -name AGENTS.md -o -name CODEX_REPORT_ISIC_DEBUG.md; find docs/optimization_loop/logs -path '*plan26_isicfix_*' -type f \\( -name 'isic_heterosfl_*.log' -o -name 'isic_h-sfp_*.log' \\) -print; sed -n '1,260p' CODEX_REPORT_ISIC_DEBUG.md 2>/dev/null || true; rg -n -C 4 'Traceback|Error|Exception|code=1|FileNotFound|KeyError|ValueError|TypeError' docs/optimization_loop/logs/plan26_isicfix_*/isic_heterosfl_*.log docs/optimization_loop/logs/plan26_isicfix_*/isic_h-sfp_*.log" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 171ms:
+../Split-Federated-Merging-Learning/docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log-1-START isic_h-sfp_20260716 2026-07-17T09:29:37+07:00
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log:2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log-3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log:4:EXIT isic_h-sfp_20260716 code=1 runtime_s=1
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log-1-START isic_h-sfp_20260714 2026-07-17T09:29:35+07:00
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log:2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log-3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log:4:EXIT isic_h-sfp_20260714 code=1 runtime_s=1
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log-1-START isic_h-sfp_20260715 2026-07-17T09:29:36+07:00
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log:2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log-3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log:4:EXIT isic_h-sfp_20260715 code=1 runtime_s=1
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260716'}
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-4-[Runner] task=segmentation  method=hetero-sfl
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-5-[Runner] cfg=configs/proxy/exp_y0hnr8qx.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-6-
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log:7:Traceback (most recent call last):
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-9-    main()
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-11-    run(args.task, args.method, args.cfg,
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log-20-    from config import ConfigLoader
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log:21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log:22:EXIT isic_heterosfl_20260716 code=1 runtime_s=1
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260714'}
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-4-[Runner] task=segmentation  method=hetero-sfl
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-5-[Runner] cfg=configs/proxy/exp_j3l7ivp6.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-6-
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log:7:Traceback (most recent call last):
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-9-    main()
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-11-    run(args.task, args.method, args.cfg,
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log-20-    from config import ConfigLoader
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log:21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log:22:EXIT isic_heterosfl_20260714 code=1 runtime_s=1
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260715'}
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-4-[Runner] task=segmentation  method=hetero-sfl
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-5-[Runner] cfg=configs/proxy/exp_g0zghuyc.yaml
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-6-
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log:7:Traceback (most recent call last):
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-9-    main()
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-11-    run(args.task, args.method, args.cfg,
+--
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log-20-    from config import ConfigLoader
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log:21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log:22:EXIT isic_heterosfl_20260715 code=1 runtime_s=2
+
+codex
+The crashes are distinct and both occur before model execution: HeteroSFL imports an ambiguous top-level `config` module, while H-SFP is launched with a nonexistent proxy config name. I’m tracing the repository’s intended import/config conventions now, then I’ll patch those alongside the evaluation and pairing changes.
+exec
+/bin/bash -lc "sed -n '1,300p' docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md; for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/clients/test.py; do echo \""'$f"; nl -ba "$f" | sed -n '"'1,150p'; done; for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/data/utils/ISIC.py; do echo \""'$f"; nl -ba "$f" | sed -n '"'1,240p'; done; nl -ba segmentation/HeteroSFL/runner.py | sed -n '1,100p'; rg -n 'ConfigLoader|plan_isic2018_h-sfp|isic2018.*h-sfp|exp_.*yaml' main.py segmentation configs docs/optimization_loop -g '*.py' -g '*.sh' -g '*.yaml' -g '*.md'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+The runs expose two independent failures: the reported IoU is invalid due to double sigmoid, while the code=1 failures occur before any model executes.
+
+## (a) Why IoU reaches 0
+
+The segmentation models already return one-channel probabilities:
+
+- [CNN_ISIC.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/models/CNN_ISIC.py:63) applies `torch.sigmoid(out)`.
+- HierFL uses the same architecture.
+- HeteroSFL and H-SFP models also end in sigmoid.
+
+But federated/HierFL evaluation applies sigmoid again in [test.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py:59), then thresholds at `> 0.5`.
+
+For a model probability `p ∈ (0,1)`, `sigmoid(p) ∈ (0.5,0.731)`. Thus almost every finite pixel becomes foreground. The early reported IoUs around 23–28% are therefore approximately lesion-area prevalence, not learned segmentation quality.
+
+Once model probabilities saturate to exactly zero—or invalid values are converted to zero—the second sigmoid produces exactly `0.5`, and strict `> 0.5` produces all-background. That explains the abrupt transition to IoU 0. It is a metric/prediction-path bug, not a class-dimension or `argmax` issue.
+
+There is also a training-stability problem currently hidden by uncommitted loss changes. [DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py:28) converts NaN predictions to zero with `nan_to_num`. That silently turns numerical failure into all-background and supplies no useful gradient at invalid elements. A loss around 1.25 is consistent with near-zero predictions: Dice loss near 1 plus foreground focal penalty.
+
+Additional loss concerns:
+
+- The focal implementation multiplies every pixel by the same `alpha=0.25`; it does not use separate foreground/background weights. Therefore it does not actually correct lesion/background imbalance.
+- Dice and focal weights are fixed 1:1 and cannot be configured.
+- Independent unsorted image/mask `glob()` lists in the ISIC datasets are unsafe. They should be paired by ISIC identifier, although the repeatable collapse does not prove that mismatching occurred in these runs.
+
+## Configuration assessment
+
+The proxy YAMLs contain only `base` plus `output_dir`; the effective settings come from `configs/segmentation/*`.
+
+For federated and HierFL:
+
+- Adam, LR `1e-4`, local epochs 5 and batch size 16 match the repository’s existing segmentation defaults and are reasonable starting values.
+- 60 global epochs is not intrinsically unreasonable.
+- Binary segmentation correctly uses a one-channel sigmoid output. A `num_classes` value is unnecessary for these models.
+
+For HeteroSFL:
+
+- `num_classes: 2` is conceptually inconsistent with its one-channel sigmoid/BCE-Dice decoder, although it appears unused in the segmentation output path. Prefer `num_classes: 1` or remove it.
+- More importantly, [runner.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:135) ignores `optimizer: adam` and hard-codes SGD at `1e-4` for both client and server. That LR is extremely conservative for SGD and is not comparable to the working Adam defaults.
+
+## (b) code=1 crashes
+
+### HeteroSFL
+
+All three logs fail while importing the runner:
+
+```text
+main.py:314  main()
+main.py:304  run(...)
+main.py:244  runner = _load_runner(method_dir)
+main.py:106  spec.loader.exec_module(module)
+segmentation/HeteroSFL/runner.py:10
+    from config import ConfigLoader
+ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+```
+
+Root cause: `segmentation/HeteroSFL/config/` has `config_loader.py` but no `__init__.py`, so `from config import ConfigLoader` cannot work. Other runners either export `ConfigLoader` from `config/__init__.py` or import it explicitly.
+
+This is an import/package bug, not an ISIC tensor-shape or model bug. Training never began, so the suspected HeteroSFL model shape path was not exercised.
+
+### H-SFP
+
+There is no traceback because runner loading never starts:
+
+```text
+Error: config not found:
+.../configs/proxy/plan_isic2018_h-sfp.yaml
+Tip: python main.py --list-configs --task segmentation --method h-sfp
+EXIT ... code=1
+```
+
+The actual file is [plan_isic2018_hsfp.yaml](/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_hsfp.yaml:1), without the hyphen between `h` and `sfp`. The checked-in fair-comparison script already references the correct filename, so the plan-26 launcher/invocation used an incorrect method-to-config filename. No H-SFP shape/model code ran.
+
+## Minimal proposed fixes
+
+1. Establish one consistent output contract:
+
+   - Minimal: keep model sigmoid outputs and remove sigmoid from every segmentation evaluation path; threshold probabilities directly with `outputs >= 0.5`.
+   - Cleaner: return logits, use `BCEWithLogitsLoss` plus a logits-compatible soft-Dice loss, and apply sigmoid exactly once for metrics.
+
+2. Replace `nan_to_num` on predictions with an explicit finite-value assertion/failure. Numerical corruption should stop the run rather than be reported as all-background.
+
+3. Correct focal class weighting, e.g. foreground `alpha` and background `1-alpha`, or use configurable `pos_weight` with BCE. Make Dice/BCE weights configurable.
+
+4. Fix HeteroSFL import with:
+
+   ```python
+   from config.config_loader import ConfigLoader
+   ```
+
+   or add `config/__init__.py` exporting `ConfigLoader`.
+
+5. Make HeteroSFL honor `config["optimizer"]`; for the existing fair settings, use Adam at `1e-4`. If retaining SGD, give it a separately tuned LR.
+
+6. Change/remove HeteroSFL and H-SFP `num_classes: 2` for the one-channel binary decoder.
+
+7. Fix the plan-26 H-SFP config mapping to `plan_isic2018_hsfp.yaml`.
+
+8. Pair ISIC images and masks by filename stem and use nearest-neighbor mask resizing.
+
+No files were modified and no GPU/training commands were run. Existing uncommitted changes were preserved.segmentation/Federated/clients/test.py
+     1	import torch
+     2	from sklearn.metrics import f1_score
+     3	from torch.utils.data import DataLoader
+     4	import numpy as np
+     5	from .DiceFocalLoss import DiceFocalLoss
+     6	
+     7	
+     8	def compute_iou_and_dice(preds, labels):
+     9	    # Convert tensors to numpy arrays
+    10	    preds = preds.cpu().numpy()
+    11	    labels = labels.cpu().numpy()
+    12	
+    13	    # Flatten arrays
+    14	    preds = preds.flatten()
+    15	    labels = labels.flatten()
+    16	
+    17	    # Convert to binary predictions (if needed)
+    18	    preds_binary = (preds > 0.5).astype(np.int32)
+    19	
+    20	    # Compute Intersection and Union for IoU
+    21	    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    22	    union = np.sum((preds_binary == 1) | (labels == 1))
+    23	    iou = intersection / union if union != 0 else 0
+    24	
+    25	    # Compute Dice Coefficient
+    26	    dice = (
+    27	        2 * intersection / (np.sum(preds_binary == 1) + np.sum(labels == 1))
+    28	        if (np.sum(preds_binary == 1) + np.sum(labels == 1)) != 0
+    29	        else 0
+    30	    )
+    31	
+    32	    return iou, dice
+    33	
+    34	
+    35	def test_inference(args, model, test_dataset):
+    36	    """Returns the test F1 score (macro) and loss."""
+    37	    model.eval()
+    38	    loss = 0.0
+    39	
+    40	    device = "cuda" if args["gpu"] else "cpu"
+    41	    criterion = DiceFocalLoss().to(device)
+    42	    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    43	    model = model.to(device)
+    44	    test_iou = 0.0
+    45	    test_dice = 0.0
+    46	    total_samples = 0
+    47	    torch.cuda.empty_cache()  # Clear GPU memory
+    48	    for batch_idx, (inputs, masks) in enumerate(testloader):
+    49	        torch.cuda.empty_cache()
+    50	        inputs, masks = inputs.to(device), masks.to(device)
+    51	
+    52	        outputs = model(inputs)
+    53	        size = inputs.size(0)
+    54	        del inputs
+    55	
+    56	        batch_loss = criterion(outputs, masks)
+    57	        loss += batch_loss.item()
+    58	        del batch_loss
+    59	        outputs = torch.sigmoid(
+    60	            outputs
+    61	        )  # Apply sigmoid if the output is logits
+    62	        outputs = (outputs > 0.5).float()
+    63	        iou, dice = compute_iou_and_dice(outputs, masks)
+    64	        del outputs, masks
+    65	        test_iou += iou * size  # Multiply by batch size
+    66	        test_dice += dice * size
+    67	        total_samples += (
+    68	            size  # Update total_samples to use size instead of inputs.size(0)
+    69	        )
+    70	    test_iou /= total_samples
+    71	    test_dice /= total_samples
+    72	    return test_iou, test_dice, loss / len(testloader)
+segmentation/HierFL/clients/test.py
+     1	import torch
+     2	from sklearn.metrics import f1_score
+     3	from torch.utils.data import DataLoader
+     4	import numpy as np
+     5	from .DiceFocalLoss import DiceFocalLoss
+     6	
+     7	
+     8	def compute_iou_and_dice(preds, labels):
+     9	    # Convert tensors to numpy arrays
+    10	    preds = preds.cpu().numpy()
+    11	    labels = labels.cpu().numpy()
+    12	
+    13	    # Flatten arrays
+    14	    preds = preds.flatten()
+    15	    labels = labels.flatten()
+    16	
+    17	    # Convert to binary predictions (if needed)
+    18	    preds_binary = (preds > 0.5).astype(np.int32)
+    19	
+    20	    # Compute Intersection and Union for IoU
+    21	    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    22	    union = np.sum((preds_binary == 1) | (labels == 1))
+    23	    iou = intersection / union if union != 0 else 0
+    24	
+    25	    # Compute Dice Coefficient
+    26	    dice = (
+    27	        2 * intersection / (np.sum(preds_binary == 1) + np.sum(labels == 1))
+    28	        if (np.sum(preds_binary == 1) + np.sum(labels == 1)) != 0
+    29	        else 0
+    30	    )
+    31	
+    32	    return iou, dice
+    33	
+    34	
+    35	def test_inference(args, model, test_dataset):
+    36	    """Returns the test F1 score (macro) and loss."""
+    37	    model.eval()
+    38	    loss = 0.0
+    39	
+    40	    device = "cuda" if args["gpu"] else "cpu"
+    41	    criterion = DiceFocalLoss().to(device)
+    42	    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    43	    model = model.to(device)
+    44	    test_iou = 0.0
+    45	    test_dice = 0.0
+    46	    total_samples = 0
+    47	    torch.cuda.empty_cache()  # Clear GPU memory
+    48	    for batch_idx, (inputs, masks) in enumerate(testloader):
+    49	        torch.cuda.empty_cache()
+    50	        inputs, masks = inputs.to(device), masks.to(device)
+    51	
+    52	        outputs = model(inputs)
+    53	        size = inputs.size(0)
+    54	        del inputs
+    55	
+    56	        batch_loss = criterion(outputs, masks)
+    57	        loss += batch_loss.item()
+    58	        del batch_loss
+    59	        outputs = torch.sigmoid(
+    60	            outputs
+    61	        )  # Apply sigmoid if the output is logits
+    62	        outputs = (outputs > 0.5).float()
+    63	        iou, dice = compute_iou_and_dice(outputs, masks)
+    64	        del outputs, masks
+    65	        test_iou += iou * size  # Multiply by batch size
+    66	        test_dice += dice * size
+    67	        total_samples += (
+    68	            size  # Update total_samples to use size instead of inputs.size(0)
+    69	        )
+    70	    test_iou /= total_samples
+    71	    test_dice /= total_samples
+    72	    return test_iou, test_dice, loss / len(testloader)
+segmentation/HeteroSFL/clients/test.py
+     1	import numpy as np
+     2	import torch
+     3	from torch.utils.data import DataLoader
+     4	
+     5	from .DiceFocalLoss import DiceFocalLoss
+     6	
+     7	
+     8	def compute_iou_and_dice(preds, labels):
+     9	    preds = preds.cpu().numpy().flatten()
+    10	    labels = labels.cpu().numpy().flatten()
+    11	    preds_binary = (preds > 0.5).astype(np.int32)
+    12	
+    13	    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    14	    union = np.sum((preds_binary == 1) | (labels == 1))
+    15	    iou = intersection / union if union != 0 else 0
+    16	
+    17	    denom = np.sum(preds_binary == 1) + np.sum(labels == 1)
+    18	    dice = 2 * intersection / denom if denom != 0 else 0
+    19	
+    20	    return iou, dice
+    21	
+    22	
+    23	def test_inference(args, model, test_dataset):
+    24	    """Returns test IoU, Dice, and loss."""
+    25	    model.eval()
+    26	    device = "cuda" if args["is_gpu"] else "cpu"
+    27	    criterion = DiceFocalLoss().to(device)
+    28	    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    29	    model = model.to(device)
+    30	
+    31	    total_loss, test_iou, test_dice, total_samples = 0.0, 0.0, 0.0, 0
+    32	    torch.cuda.empty_cache()
+    33	
+    34	    with torch.no_grad():
+    35	        for inputs, masks in testloader:
+    36	            inputs, masks = inputs.to(device), masks.to(device)
+    37	            outputs = model(inputs)
+    38	            size = inputs.size(0)
+    39	
+    40	            total_loss += criterion(outputs, masks).item()
+    41	            outputs = (outputs > 0.5).float()
+    42	            iou, dice = compute_iou_and_dice(outputs, masks)
+    43	            test_iou += iou * size
+    44	            test_dice += dice * size
+    45	            total_samples += size
+    46	
+    47	    test_iou /= total_samples
+    48	    test_dice /= total_samples
+    49	    return test_iou, test_dice, total_loss / len(testloader)
+segmentation/H-SFP/clients/test.py
+     1	import numpy as np
+     2	import torch
+     3	from torch.utils.data import DataLoader
+     4	
+     5	from .DiceFocalLoss import DiceFocalLoss
+     6	
+     7	
+     8	def compute_iou_and_dice(preds, labels):
+     9	    preds = preds.cpu().numpy().flatten()
+    10	    labels = labels.cpu().numpy().flatten()
+    11	    preds_binary = (preds > 0.5).astype(np.int32)
+    12	
+    13	    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    14	    union = np.sum((preds_binary == 1) | (labels == 1))
+    15	    iou = intersection / union if union != 0 else 0
+    16	
+    17	    denom = np.sum(preds_binary == 1) + np.sum(labels == 1)
+    18	    dice = 2 * intersection / denom if denom != 0 else 0
+    19	
+    20	    return iou, dice
+    21	
+    22	
+    23	def test_inference(args, model, test_dataset):
+    24	    """Returns test IoU, Dice, and loss."""
+    25	    model.eval()
+    26	    device = "cuda" if args["is_gpu"] else "cpu"
+    27	    criterion = DiceFocalLoss().to(device)
+    28	    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    29	    model = model.to(device)
+    30	
+    31	    total_loss, test_iou, test_dice, total_samples = 0.0, 0.0, 0.0, 0
+    32	    torch.cuda.empty_cache()
+    33	
+    34	    with torch.no_grad():
+    35	        for inputs, masks in testloader:
+    36	            inputs, masks = inputs.to(device), masks.to(device)
+    37	            outputs = model(inputs)
+    38	            size = inputs.size(0)
+    39	            total_loss += criterion(outputs, masks).item()
+    40	            outputs = (outputs > 0.5).float()
+    41	            iou, dice = compute_iou_and_dice(outputs, masks)
+    42	            test_iou += iou * size
+    43	            test_dice += dice * size
+    44	            total_samples += size
+    45	
+    46	    test_iou /= total_samples
+    47	    test_dice /= total_samples
+    48	    return test_iou, test_dice, total_loss / len(testloader)
+segmentation/Federated/data/utils/ISIC.py
+     1	mean = [0.7084, 0.5821, 0.5361]
+     2	std = [0.0967, 0.1118, 0.1261]
+     3	from torchvision import transforms
+     4	
+     5	data_transforms = {
+     6	    "train": transforms.Compose(
+     7	        [
+     8	            transforms.Resize((+224, 224)),
+     9	            transforms.ToTensor(),
+    10	            transforms.Normalize(mean, std),
+    11	        ]
+    12	    ),
+    13	    "val": transforms.Compose(
+    14	        [
+    15	            transforms.Resize((+224, 224)),
+    16	            transforms.ToTensor(),
+    17	            transforms.Normalize(mean, std),
+    18	        ]
+    19	    ),
+    20	    "test": transforms.Compose(
+    21	        [
+    22	            transforms.Resize((+224, 224)),
+    23	            transforms.ToTensor(),
+    24	            transforms.Normalize(mean, std),
+    25	        ]
+    26	    ),
+    27	}
+    28	
+    29	mask_transforms = transforms.Compose(
+    30	    [transforms.Resize((+224, 224)), transforms.ToTensor()]
+    31	)
+    32	
+    33	
+    34	import glob
+    35	
+    36	from PIL import Image
+    37	from torch.utils.data import Dataset
+    38	
+    39	
+    40	class ISICSegmentationDataset(Dataset):
+    41	    def __init__(
+    42	        self,
+    43	        image_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1-2_Training_Input",
+    44	        mask_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1_Training_GroundTruth",
+    45	        phase="train",
+    46	    ):
+    47	        self.image_data_folder_path = image_data_folder_path
+    48	        self.mask_data_folder_path = mask_data_folder_path
+    49	        self.phase = phase
+    50	        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    51	        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
+    52	        self.data_transforms = data_transforms[phase]
+    53	        self.mask_transforms = mask_transforms
+    54	        self.datalen = len(self.img_files)
+    55	
+    56	    def __getitem__(self, index):
+    57	        img = self.img_files[index]
+    58	        mask = self.mask_imgs[index]
+    59	        img = self.data_transforms(Image.open(img))
+    60	        mask = self.mask_transforms(Image.open(mask))
+    61	
+    62	        return img, mask
+    63	
+    64	    def __len__(self):
+    65	        assert self.datalen == len(self.mask_imgs)
+    66	        return self.datalen
+segmentation/HierFL/data/utils/ISIC.py
+     1	mean = [0.7084, 0.5821, 0.5361]
+     2	std = [0.0967, 0.1118, 0.1261]
+     3	from torchvision import transforms
+     4	
+     5	data_transforms = {
+     6	    "train": transforms.Compose(
+     7	        [
+     8	            transforms.Resize((+224, 224)),
+     9	            transforms.ToTensor(),
+    10	            transforms.Normalize(mean, std),
+    11	        ]
+    12	    ),
+    13	    "val": transforms.Compose(
+    14	        [
+    15	            transforms.Resize((+224, 224)),
+    16	            transforms.ToTensor(),
+    17	            transforms.Normalize(mean, std),
+    18	        ]
+    19	    ),
+    20	    "test": transforms.Compose(
+    21	        [
+    22	            transforms.Resize((+224, 224)),
+    23	            transforms.ToTensor(),
+    24	            transforms.Normalize(mean, std),
+    25	        ]
+    26	    ),
+    27	}
+    28	
+    29	mask_transforms = transforms.Compose(
+    30	    [transforms.Resize((+224, 224)), transforms.ToTensor()]
+    31	)
+    32	
+    33	
+    34	import glob
+    35	
+    36	from PIL import Image
+    37	from torch.utils.data import Dataset
+    38	
+    39	
+    40	class ISICSegmentationDataset(Dataset):
+    41	    def __init__(
+    42	        self,
+    43	        image_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1-2_Training_Input",
+    44	        mask_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1_Training_GroundTruth",
+    45	        phase="train",
+    46	    ):
+    47	        self.image_data_folder_path = image_data_folder_path
+    48	        self.mask_data_folder_path = mask_data_folder_path
+    49	        self.phase = phase
+    50	        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    51	        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
+    52	        self.data_transforms = data_transforms[phase]
+    53	        self.mask_transforms = mask_transforms
+    54	        self.datalen = len(self.img_files)
+    55	
+    56	    def __getitem__(self, index):
+    57	        img = self.img_files[index]
+    58	        mask = self.mask_imgs[index]
+    59	        img = self.data_transforms(Image.open(img))
+    60	        mask = self.mask_transforms(Image.open(mask))
+    61	
+    62	        return img, mask
+    63	
+    64	    def __len__(self):
+    65	        assert self.datalen == len(self.mask_imgs)
+    66	        return self.datalen
+segmentation/HeteroSFL/data/utils/ISIC.py
+     1	mean = [0.7084, 0.5821, 0.5361]
+     2	std = [0.0967, 0.1118, 0.1261]
+     3	from torchvision import transforms
+     4	
+     5	data_transforms = {
+     6	    "train": transforms.Compose(
+     7	        [
+     8	            transforms.Resize((224, 224)),
+     9	            transforms.ToTensor(),
+    10	            transforms.Normalize(mean, std),
+    11	        ]
+    12	    ),
+    13	    "val": transforms.Compose(
+    14	        [
+    15	            transforms.Resize((224, 224)),
+    16	            transforms.ToTensor(),
+    17	            transforms.Normalize(mean, std),
+    18	        ]
+    19	    ),
+    20	    "test": transforms.Compose(
+    21	        [
+    22	            transforms.Resize((224, 224)),
+    23	            transforms.ToTensor(),
+    24	            transforms.Normalize(mean, std),
+    25	        ]
+    26	    ),
+    27	}
+    28	
+    29	mask_transforms = transforms.Compose(
+    30	    [transforms.Resize((224, 224)), transforms.ToTensor()]
+    31	)
+    32	
+    33	
+    34	import glob
+    35	
+    36	from PIL import Image
+    37	from torch.utils.data import Dataset
+    38	
+    39	
+    40	class ISICSegmentationDataset(Dataset):
+    41	    def __init__(
+    42	        self,
+    43	        image_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1-2_Training_Input",
+    44	        mask_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1_Training_GroundTruth",
+    45	        phase="train",
+    46	    ):
+    47	        self.image_data_folder_path = image_data_folder_path
+    48	        self.mask_data_folder_path = mask_data_folder_path
+    49	        self.phase = phase
+    50	        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+    51	        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
+    52	        self.data_transforms = data_transforms[phase]
+    53	        self.mask_transforms = mask_transforms
+    54	        self.datalen = len(self.img_files)
+    55	
+    56	    def __getitem__(self, index):
+    57	        img = self.data_transforms(Image.open(self.img_files[index]))
+    58	        mask = self.mask_transforms(Image.open(self.mask_imgs[index]))
+    59	        return img, mask
+    60	
+    61	    def __len__(self):
+    62	        assert self.datalen == len(self.mask_imgs)
+    63	        return self.datalen
+segmentation/H-SFP/data/utils/ISIC.py
+     1	import os
+     2	
+     3	mean = [0.7084, 0.5821, 0.5361]
+     4	std = [0.0967, 0.1118, 0.1261]
+     5	from torchvision import transforms
+     6	
+     7	data_transforms = {
+     8	    "train": transforms.Compose(
+     9	        [
+    10	            transforms.Resize((224, 224)),
+    11	            transforms.ToTensor(),
+    12	            transforms.Normalize(mean, std),
+    13	        ]
+    14	    ),
+    15	    "val": transforms.Compose(
+    16	        [
+    17	            transforms.Resize((224, 224)),
+    18	            transforms.ToTensor(),
+    19	            transforms.Normalize(mean, std),
+    20	        ]
+    21	    ),
+    22	    "test": transforms.Compose(
+    23	        [
+    24	            transforms.Resize((224, 224)),
+    25	            transforms.ToTensor(),
+    26	            transforms.Normalize(mean, std),
+    27	        ]
+    28	    ),
+    29	}
+    30	
+    31	mask_transforms = transforms.Compose(
+    32	    [transforms.Resize((224, 224)), transforms.ToTensor()]
+    33	)
+    34	
+    35	
+    36	import glob
+    37	
+    38	from PIL import Image
+    39	from torch.utils.data import Dataset
+    40	
+    41	
+    42	class ISICSegmentationDataset(Dataset):
+    43	    def __init__(
+    44	        self,
+    45	        image_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1-2_Training_Input",
+    46	        mask_data_folder_path="/media/jackson/Data/ISIC2018/ISIC2018_Task1_Training_GroundTruth",
+    47	        phase="train",
+    48	    ):
+    49	        self.image_data_folder_path = image_data_folder_path
+    50	        self.mask_data_folder_path = mask_data_folder_path
+    51	        self.phase = phase
+    52	        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+    53	        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
+    54	        self.data_transforms = data_transforms[phase]
+    55	        self.mask_transforms = mask_transforms
+    56	        self.datalen = len(self.img_files)
+    57	
+    58	        if self.datalen == 0:
+    59	            raise FileNotFoundError(
+    60	                f"ISICSegmentationDataset ({phase}): found 0 images.\n"
+    61	                f"  images: {self.image_data_folder_path} "
+    62	                f"({'missing' if not os.path.isdir(self.image_data_folder_path) else 'no *.jpg'})\n"
+    63	                f"  masks:  {self.mask_data_folder_path} "
+    64	                f"({'missing' if not os.path.isdir(self.mask_data_folder_path) else 'no *.png'})\n"
+    65	                f"Download the ISIC-2018 Task 1 segmentation data and set the "
+    66	                f"train/test image & mask folder paths in your config to point at it."
+    67	            )
+    68	        if self.datalen != len(self.mask_imgs):
+    69	            raise ValueError(
+    70	                f"ISICSegmentationDataset ({phase}): image/mask count mismatch "
+    71	                f"({self.datalen} images vs {len(self.mask_imgs)} masks)."
+    72	            )
+    73	
+    74	    def __getitem__(self, index):
+    75	        img = self.data_transforms(Image.open(self.img_files[index]))
+    76	        mask = self.mask_transforms(Image.open(self.mask_imgs[index]))
+    77	        return img, mask
+    78	
+    79	    def __len__(self):
+    80	        assert self.datalen == len(self.mask_imgs)
+    81	        return self.datalen
+     1	import copy
+     2	import json
+     3	import os
+     4	import time
+     5	
+     6	import numpy as np
+     7	import torch
+     8	import torch.nn as nn
+     9	import torch.nn.functional as F
+    10	from config import ConfigLoader
+    11	from data import get_dataset
+    12	from models import get_model
+    13	from clients import test_inference, DiceFocalLoss
+    14	from torch.optim import SGD
+    15	from torch.utils.data import DataLoader, Dataset
+    16	from tqdm import tqdm
+    17	
+    18	try:
+    19	    import wandb
+    20	except ImportError:
+    21	    wandb = None
+    22	
+    23	
+    24	class DatasetSplit(Dataset):
+    25	    def __init__(self, dataset, idxs):
+    26	        self.dataset = dataset
+    27	        self.idxs = [int(i) for i in idxs]
+    28	
+    29	    def __len__(self):
+    30	        return len(self.idxs)
+    31	
+    32	    def __getitem__(self, item):
+    33	        image, mask = self.dataset[self.idxs[item]]
+    34	        return image.clone(), mask.clone()
+    35	
+    36	
+    37	class HeteroServerAdapter(nn.Module):
+    38	    """Wraps server model with a decoder that maps wide channels -> expected channels."""
+    39	
+    40	    def __init__(self, server_model, wide_channels, server_expected_channels=512):
+    41	        super().__init__()
+    42	        self.decoder = nn.Conv2d(wide_channels, server_expected_channels, kernel_size=3, padding=1)
+    43	        self.server_model = server_model
+    44	
+    45	    def forward(self, x):
+    46	        return self.server_model(self.decoder(x))
+    47	
+    48	
+    49	def extract_narrow_model(wide_model, narrow_channels):
+    50	    narrow_state = copy.deepcopy(wide_model.state_dict())
+    51	    keys = list(narrow_state.keys())
+    52	    # bl_encoder weight and bias are the last two keys of the client model
+    53	    narrow_state[keys[-2]] = narrow_state[keys[-2]][:narrow_channels]
+    54	    narrow_state[keys[-1]] = narrow_state[keys[-1]][:narrow_channels]
+    55	    return narrow_state
+    56	
+    57	
+    58	def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+    59	    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    60	    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    61	    keys = list(global_wide_weights.keys())
+    62	    weight_key, bias_key = keys[-2], keys[-1]
+    63	
+    64	    for local_w in local_updates:
+    65	        is_narrow = local_w[weight_key].shape[0] == narrow_channels
+    66	        for k in local_w:
+    67	            if k in [weight_key, bias_key] and is_narrow:
+    68	                update_acc[k][:narrow_channels] += local_w[k]
+    69	                count_acc[k][:narrow_channels] += 1
+    70	            else:
+    71	                update_acc[k] += local_w[k]
+    72	                count_acc[k] += 1
+    73	
+    74	    avg_weights = copy.deepcopy(global_wide_weights)
+    75	    for k in avg_weights:
+    76	        mask = count_acc[k] > 0
+    77	        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    78	    return avg_weights
+    79	
+    80	
+    81	def run(cfg_path: str):
+    82	    start_time = time.time()
+    83	    config_loader = ConfigLoader(cfg_path)
+    84	    config = config_loader.get_config()
+    85	
+    86	    WIDE_CHANNELS = config.get("wide_channels", 76)
+    87	    NARROW_CHANNELS = config.get("narrow_channels", 4)
+    88	    SERVER_EXPECTED_CHANNELS = config.get("server_in_channels", 512)
+    89	    HIGH_END_RATIO = config.get("high_end_ratio", 0.3)
+    90	
+    91	    print(f"HeteroSFL (Seg): Wide={WIDE_CHANNELS}, Narrow={NARROW_CHANNELS}, Ratio={HIGH_END_RATIO}")
+    92	    config["client_out_channels"] = WIDE_CHANNELS
+    93	
+    94	    device = torch.device("cuda" if config["is_gpu"] else "cpu")
+    95	    train_dataset, test_dataset, user_groups = get_dataset(config)
+    96	    model_tuple = get_model(config["model"], config["dataset"])
+    97	
+    98	    client_model_wide = model_tuple[0](config).to(device)
+    99	    server_model_raw = model_tuple[1](config).to(device)
+   100	    main_server_model = HeteroServerAdapter(
+main.py:131:        exp_config = yaml.safe_load(f) or {}
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:52:    from config import ConfigLoader
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:53:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:56:Root cause: `segmentation/HeteroSFL/config/` has `config_loader.py` but no `__init__.py`, so `from config import ConfigLoader` cannot work. Other runners either export `ConfigLoader` from `config/__init__.py` or import it explicitly.
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:66:.../configs/proxy/plan_isic2018_h-sfp.yaml
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:87:   from config.config_loader import ConfigLoader
+docs/optimization_loop/CODEX_REPORT_ISIC_DEBUG.md:90:   or add `config/__init__.py` exporting `ConfigLoader`.
+segmentation/HSFL/config/config_loader.py:6:class ConfigLoader:
+segmentation/HSFL/config/__init__.py:1:from .config_loader import ConfigLoader
+segmentation/H-SFP/config/config_loader.py:6:class ConfigLoader:
+segmentation/H-SFP/runner.py:8:from config.config_loader import ConfigLoader
+segmentation/H-SFP/runner.py:18:    config_loader = ConfigLoader(cfg_path)
+segmentation/HSFL/runner.py:6:from config import ConfigLoader
+segmentation/HSFL/runner.py:17:    config_loader = ConfigLoader(cfg_path)
+segmentation/Federated/config/config_loader.py:6:class ConfigLoader:
+segmentation/Federated/config/__init__.py:1:from .config_loader import ConfigLoader
+segmentation/Federated/runner.py:11:from config import ConfigLoader
+segmentation/Federated/runner.py:32:    config_loader = ConfigLoader(cfg_path)
+docs/optimization_loop/PROJECT_STATE.md:13:`main.py` is the unified entry point. Its registry dynamically loads `classification/H-SFP/runner.py` or `segmentation/H-SFP/runner.py`. Each runner calls its task-specific `ConfigLoader`, dataset loader, model registry, and `HierarchicalFL.train_end_to_end`; evaluation is performed in the same hierarchy class and a final task-specific test is performed by the runner.
+segmentation/HierFL/config/config_loader.py:6:class ConfigLoader:
+segmentation/HierFL/config/__init__.py:1:from .config_loader import ConfigLoader
+segmentation/HierFL/runner.py:11:from config import ConfigLoader
+segmentation/HierFL/runner.py:28:    config_loader = ConfigLoader(cfg_path)
+segmentation/HeteroSFL/config/config_loader.py:6:class ConfigLoader:
+segmentation/HeteroSFL/runner.py:10:from config import ConfigLoader
+segmentation/HeteroSFL/runner.py:83:    config_loader = ConfigLoader(cfg_path)
+segmentation/SplitFL/config/config_loader.py:6:class ConfigLoader:
+segmentation/SplitFL/config/__init__.py:1:from .config_loader import ConfigLoader
+segmentation/SplitFL/runner.py:11:from config import ConfigLoader
+segmentation/SplitFL/runner.py:53:    config_loader = ConfigLoader(cfg_path)
+
+exec
+/bin/bash -lc "rg -uuu -n 'plan_isic2018_h-sfp|plan26_isicfix|isic_h-sfp_' . --glob '"'!docs/optimization_loop/logs/**'"' --glob '"'!*'"\\.git/**'; ls -l configs/proxy/*isic*; find segmentation -path '*/data/utils/ISIC.py' -print; rg -n 'torch\\.sigmoid\\s*\\(|sigmoid\\(' segmentation/{Federated,HierFL,HeteroSFL,H-SFP} -g '*.py'; sed -n '80,135p' main.py; find segmentation/HeteroSFL/config -maxdepth 2 -type f -print" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 901ms:
+-rw-r--r-- 1 jackson jackson  98 Jul 16 15:56 configs/proxy/plan_isic2018_federated.yaml
+-rw-r--r-- 1 jackson jackson 102 Jul 16 15:56 configs/proxy/plan_isic2018_heterosfl.yaml
+-rw-r--r-- 1 jackson jackson  92 Jul 16 15:56 configs/proxy/plan_isic2018_hierfl.yaml
+-rw-r--r-- 1 jackson jackson  91 Jul 16 15:56 configs/proxy/plan_isic2018_hsfp.yaml
+segmentation/HierFL/data/utils/ISIC.py
+segmentation/Federated/data/utils/ISIC.py
+segmentation/H-SFP/data/utils/ISIC.py
+segmentation/SplitFL/data/utils/ISIC.py
+segmentation/HeteroSFL/data/utils/ISIC.py
+segmentation/HSFL/data/utils/ISIC.py
+segmentation/H-SFP/models/ISIC_ResNet50.py:101:        out = torch.sigmoid(out)
+segmentation/H-SFP/hierarchy.py:777:                # sigmoid(NaN)=NaN -> BCE CUDA assert (input_val in [0,1] fails).
+segmentation/HeteroSFL/models/ISIC_ResNet50.py:62:        out = torch.sigmoid(out)
+segmentation/Federated/models/CNN_ISIC.py:63:        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+segmentation/HierFL/models/CNN_ISIC.py:63:        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+segmentation/HierFL/clients/test.py:59:        outputs = torch.sigmoid(
+segmentation/Federated/clients/Client.py:111:            outputs = torch.sigmoid(
+segmentation/Federated/clients/test.py:59:        outputs = torch.sigmoid(
+            if method and m != method:
+                continue
+            cfg_dir = os.path.join(ROOT_DIR, "configs", t, m)
+            if not os.path.isdir(cfg_dir):
+                continue
+            yamls = sorted(
+                y for y in _glob.glob(os.path.join(cfg_dir, "*.yaml"))
+                if "default" not in os.path.basename(y)
+            )
+            if yamls:
+                tag = "[PRIMARY]" if m == "h-sfp" else "[baseline]"
+                print(f"  [{t}] {m} {tag}:")
+                for y in yamls:
+                    print(f"    {os.path.relpath(y, ROOT_DIR)}")
+                print()
+
+
+def _load_runner(method_dir: str):
+    """Import runner.py from a method directory, adding it to sys.path."""
+    runner_path = os.path.join(method_dir, "runner.py")
+    if not os.path.isfile(runner_path):
+        raise FileNotFoundError(f"runner.py not found in {method_dir}")
+
+    sys.path.insert(0, method_dir)
+    spec = importlib.util.spec_from_file_location("_runner", runner_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _cleanup_runner(method_dir: str):
+    """Remove method dir from sys.path and clear cached modules."""
+    if method_dir in sys.path:
+        sys.path.remove(method_dir)
+    stale = [k for k in list(sys.modules) if k in {
+        "_runner", "config", "data", "models", "hierarchy",
+        "clients", "server", "servers", "FedServer", "strategies",
+    }]
+    for k in stale:
+        del sys.modules[k]
+
+
+def _init_wandb(task, method, cfg_path, wandb_project, wandb_entity):
+    """Initialize a wandb run. Returns True if wandb was initialized."""
+    if wandb is None:
+        print("Warning: wandb not installed. Run: pip install wandb")
+        return False
+
+    # Parse YAML config to log as wandb config
+    import yaml
+    with open(cfg_path, "r") as f:
+        exp_config = yaml.safe_load(f) or {}
+
+    run_name = f"{task}/{method}/{os.path.basename(cfg_path).replace('.yaml', '')}"
+    wandb.init(
+        project=wandb_project,
+segmentation/HeteroSFL/config/config_loader.py
+
+exec
+/bin/bash -lc 'for f in configs/proxy/plan_isic2018_{hsfp,heterosfl}.yaml; do echo "$f"; cat "$f"; done; for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/data/utils/ISIC.py; do sha256sum "$f"; done; nl -ba segmentation/Federated/clients/Client.py | sed -n '"'90,125p'; git diff -- segmentation/Federated/clients/DiceFocalLoss.py | sed -n '1,100p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+configs/proxy/plan_isic2018_hsfp.yaml
+base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+
+output_dir: outputs/isic2018/hsfp
+configs/proxy/plan_isic2018_heterosfl.yaml
+base: ../segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml
+
+output_dir: outputs/isic2018/heterosfl
+74adc28e36b907421e56ee7e87ecaae0c31df4932a4abd7d84408135a02ad2f7  segmentation/Federated/data/utils/ISIC.py
+74adc28e36b907421e56ee7e87ecaae0c31df4932a4abd7d84408135a02ad2f7  segmentation/HierFL/data/utils/ISIC.py
+e9d81d2a92837115fb38c05b8f22f85b5a9e9ab69a9075a4caa7e87f0065272b  segmentation/HeteroSFL/data/utils/ISIC.py
+f1ac68fafb28435153b5821e096c388aff221835ef488ce00fcc4b7d1be7c5c1  segmentation/H-SFP/data/utils/ISIC.py
+    90	        )
+    91	        return trainloader, validloader, testloader
+    92	
+    93	    @abstractmethod
+    94	    def update_weights(self, model, global_round):
+    95	        pass
+    96	
+    97	    def inference(self, model):
+    98	        model.eval()
+    99	        model = model.to(self.device)
+   100	        criterion = DiceFocalLoss().to(self.device)
+   101	        loss = 0.0
+   102	        test_iou = 0.0
+   103	        test_dice = 0.0
+   104	        total_samples = 0
+   105	
+   106	        for inputs, masks in self.testloader:
+   107	            inputs, masks = inputs.to(self.device), masks.to(self.device)
+   108	            outputs = model(inputs)
+   109	            batch_loss = criterion(outputs, masks)
+   110	            loss += batch_loss.item()
+   111	            outputs = torch.sigmoid(
+   112	                outputs
+   113	            )  # Apply sigmoid if the output is logits
+   114	            outputs = (outputs > 0.5).float()
+   115	            iou, dice = compute_iou_and_dice(outputs, masks)
+   116	            test_iou += iou * inputs.size(0)  # Multiply by batch size
+   117	            test_dice += dice * inputs.size(0)
+   118	            total_samples += inputs.size(0)
+   119	        test_iou /= total_samples
+   120	        test_dice /= total_samples
+   121	        return test_iou, test_dice, loss / len(self.testloader)
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b24..bdeb92d 100644
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@ class DiceFocalLoss(nn.Module):
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@ class DiceFocalLoss(nn.Module):
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,30 +39,36 @@ class DiceFocalLoss(nn.Module):
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+ 
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+-
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+codex
+One additional redundant sigmoid exists in Federated’s client-level inference path, so I’m removing it too; otherwise per-client validation would remain corrupted even if final `test.py` were fixed. HeteroSFL and H-SFP already threshold probabilities directly, so those paths need verification rather than a code removal. For pairing, I’ll enforce exact identifier-set equality instead of merely sorting two independent lists.
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/Client.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/test.py
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/data/utils/ISIC.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/data/utils/ISIC.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/data/utils/ISIC.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/data/utils/ISIC.py
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+exec
+/bin/bash -lc "git diff --check; python -m compileall -q segmentation/Federated/clients/test.py segmentation/Federated/clients/Client.py segmentation/HierFL/clients/test.py segmentation/HeteroSFL/clients/test.py segmentation/H-SFP/clients/test.py segmentation/HeteroSFL/runner.py segmentation/Federated/data/utils/ISIC.py segmentation/HierFL/data/utils/ISIC.py segmentation/HeteroSFL/data/utils/ISIC.py segmentation/H-SFP/data/utils/ISIC.py; rg -n -C 2 'outputs = torch\\.sigmoid|outputs = \\(outputs > 0\\.5\\)' segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/clients; git status --short; git diff --stat; git diff -- segmentation/Federated/clients/test.py segmentation/HierFL/clients/test.py segmentation/Federated/clients/Client.py segmentation/HeteroSFL/runner.py configs/proxy/plan_isic2018_h-sfp.yaml segmentation/Federated/data/utils/ISIC.py segmentation/HierFL/data/utils/ISIC.py segmentation/HeteroSFL/data/utils/ISIC.py segmentation/H-SFP/data/utils/ISIC.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/H-SFP/clients/test.py-38-            size = inputs.size(0)
+segmentation/H-SFP/clients/test.py-39-            total_loss += criterion(outputs, masks).item()
+segmentation/H-SFP/clients/test.py:40:            outputs = (outputs > 0.5).float()
+segmentation/H-SFP/clients/test.py-41-            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/H-SFP/clients/test.py-42-            test_iou += iou * size
+--
+segmentation/Federated/clients/test.py-57-        loss += batch_loss.item()
+segmentation/Federated/clients/test.py-58-        del batch_loss
+segmentation/Federated/clients/test.py:59:        outputs = (outputs > 0.5).float()
+segmentation/Federated/clients/test.py-60-        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/test.py-61-        del outputs, masks
+--
+segmentation/HeteroSFL/clients/test.py-39-
+segmentation/HeteroSFL/clients/test.py-40-            total_loss += criterion(outputs, masks).item()
+segmentation/HeteroSFL/clients/test.py:41:            outputs = (outputs > 0.5).float()
+segmentation/HeteroSFL/clients/test.py-42-            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/HeteroSFL/clients/test.py-43-            test_iou += iou * size
+--
+segmentation/Federated/clients/Client.py-109-            batch_loss = criterion(outputs, masks)
+segmentation/Federated/clients/Client.py-110-            loss += batch_loss.item()
+segmentation/Federated/clients/Client.py:111:            outputs = (outputs > 0.5).float()
+segmentation/Federated/clients/Client.py-112-            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/Client.py-113-            test_iou += iou * inputs.size(0)  # Multiply by batch size
+--
+segmentation/HierFL/clients/test.py-57-        loss += batch_loss.item()
+segmentation/HierFL/clients/test.py-58-        del batch_loss
+segmentation/HierFL/clients/test.py:59:        outputs = (outputs > 0.5).float()
+segmentation/HierFL/clients/test.py-60-        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/HierFL/clients/test.py-61-        del outputs, masks
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/Client.py
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/Federated/clients/test.py
+ M segmentation/Federated/data/utils/ISIC.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/data/utils/ISIC.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/data/utils/ISIC.py
+ M segmentation/HeteroSFL/runner.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/test.py
+ M segmentation/HierFL/data/utils/ISIC.py
+?? configs/proxy/plan_isic2018_h-sfp.yaml
+ docs/optimization_loop/DECISIONS.md             | 11 +++++++
+ docs/optimization_loop/RESULTS_SUMMARY.md       | 11 +++++++
+ segmentation/Federated/clients/Client.py        |  3 --
+ segmentation/Federated/clients/DiceFocalLoss.py | 42 +++++++++++++------------
+ segmentation/Federated/clients/test.py          |  3 --
+ segmentation/Federated/data/utils/ISIC.py       | 22 +++++++++++--
+ segmentation/H-SFP/clients/DiceFocalLoss.py     | 26 ++++++++-------
+ segmentation/H-SFP/data/utils/ISIC.py           | 21 +++++++++++--
+ segmentation/HeteroSFL/clients/DiceFocalLoss.py | 31 ++++++++++++------
+ segmentation/HeteroSFL/data/utils/ISIC.py       | 22 +++++++++++--
+ segmentation/HeteroSFL/runner.py                |  2 +-
+ segmentation/HierFL/clients/DiceFocalLoss.py    | 42 +++++++++++++------------
+ segmentation/HierFL/clients/test.py             |  3 --
+ segmentation/HierFL/data/utils/ISIC.py          | 22 +++++++++++--
+ 14 files changed, 182 insertions(+), 79 deletions(-)
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b..1a57c7a 100644
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@ class Client(ABC):
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812d..e10c85b 100644
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@ def test_inference(args, model, test_dataset):
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e832..ea56abb 100644
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@ mask_transforms = transforms.Compose(
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@ class ISICSegmentationDataset(Dataset):
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0f..a05eb93 100644
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@ class ISICSegmentationDataset(Dataset):
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6..e656faa 100644
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@ mask_transforms = transforms.Compose(
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@ class ISICSegmentationDataset(Dataset):
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d8..62570f4 100644
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@ import numpy as np
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812d..e10c85b 100644
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@ def test_inference(args, model, test_dataset):
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e832..ea56abb 100644
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@ mask_transforms = transforms.Compose(
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@ class ISICSegmentationDataset(Dataset):
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+codex
+The narrow edits are in place and compile cleanly. I’m doing two CPU-only verification checks now: a synthetic probability/mask case with known IoU/Dice, and runner/config loading far enough to prove both pre-model crash causes are resolved without touching data or launching training.
+exec
+/bin/bash -lc "python - <<'PY'
+import importlib
+import os
+import sys
+
+import torch
+
+root = os.getcwd()
+expected = (0.5, 2.0 / 3.0)
+for method in (\"Federated\", \"HierFL\", \"HeteroSFL\", \"H-SFP\"):
+    method_dir = os.path.join(root, \"segmentation\", method)
+    sys.path.insert(0, method_dir)
+    module = importlib.import_module(\"clients.test\")
+    probabilities = torch.tensor([0.9, 0.6, 0.4, 0.1])
+    labels = torch.tensor([1.0, 0.0, 1.0, 0.0])
+    actual = module.compute_iou_and_dice(probabilities, labels)
+    assert all(abs(a - e) < 1e-8 for a, e in zip(actual, expected)), (method, actual)
+    print(f\"{method}: IoU={actual[0]:.6f}, Dice={actual[1]:.6f}\")
+    sys.path.pop(0)
+    for name in list(sys.modules):
+        if name == \"clients\" or name.startswith(\"clients.\"):
+            del sys.modules[name]
+
+import main
+method_dir = os.path.join(root, \"segmentation\", \"HeteroSFL\")
+runner = main._load_runner(method_dir)
+assert callable(runner.run)
+main._cleanup_runner(method_dir)
+print(\"HeteroSFL runner import: OK\")
+
+from pathlib import Path
+import yaml
+proxy = Path(\"configs/proxy/plan_isic2018_h-sfp.yaml\")
+config = yaml.safe_load(proxy.read_text())
+base = (proxy.parent / config[\"base\"]).resolve()
+assert base.is_file(), base
+print(f\"H-SFP proxy base: OK ({base.relative_to(Path.cwd())})\")
+PY
+nl -ba segmentation/Federated/clients/test.py | sed -n '52,64p'; nl -ba segmentation/HierFL/clients/test.py | sed -n '52,64p'; nl -ba segmentation/HeteroSFL/clients/test.py | sed -n '35,45p'; nl -ba segmentation/H-SFP/clients/test.py | sed -n '35,44p'; nl -ba segmentation/HeteroSFL/runner.py | sed -n '7,13p'; nl -ba configs/proxy/plan_isic2018_h-sfp.yaml; for f in segmentation/{Federated,HierFL,HeteroSFL,H-SFP}/data/utils/ISIC.py; do echo \""'$f"; nl -ba "$f" | sed -n '"'47,82p'; done" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+ succeeded in 1827ms:
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+Traceback (most recent call last):
+  File "<stdin>", line 16, in <module>
+AssertionError: ('Federated', (np.float64(0.3333333333333333), np.float64(0.5)))
+    52	        outputs = model(inputs)
+    53	        size = inputs.size(0)
+    54	        del inputs
+    55	
+    56	        batch_loss = criterion(outputs, masks)
+    57	        loss += batch_loss.item()
+    58	        del batch_loss
+    59	        outputs = (outputs > 0.5).float()
+    60	        iou, dice = compute_iou_and_dice(outputs, masks)
+    61	        del outputs, masks
+    62	        test_iou += iou * size  # Multiply by batch size
+    63	        test_dice += dice * size
+    64	        total_samples += (
+    52	        outputs = model(inputs)
+    53	        size = inputs.size(0)
+    54	        del inputs
+    55	
+    56	        batch_loss = criterion(outputs, masks)
+    57	        loss += batch_loss.item()
+    58	        del batch_loss
+    59	        outputs = (outputs > 0.5).float()
+    60	        iou, dice = compute_iou_and_dice(outputs, masks)
+    61	        del outputs, masks
+    62	        test_iou += iou * size  # Multiply by batch size
+    63	        test_dice += dice * size
+    64	        total_samples += (
+    35	        for inputs, masks in testloader:
+    36	            inputs, masks = inputs.to(device), masks.to(device)
+    37	            outputs = model(inputs)
+    38	            size = inputs.size(0)
+    39	
+    40	            total_loss += criterion(outputs, masks).item()
+    41	            outputs = (outputs > 0.5).float()
+    42	            iou, dice = compute_iou_and_dice(outputs, masks)
+    43	            test_iou += iou * size
+    44	            test_dice += dice * size
+    45	            total_samples += size
+    35	        for inputs, masks in testloader:
+    36	            inputs, masks = inputs.to(device), masks.to(device)
+    37	            outputs = model(inputs)
+    38	            size = inputs.size(0)
+    39	            total_loss += criterion(outputs, masks).item()
+    40	            outputs = (outputs > 0.5).float()
+    41	            iou, dice = compute_iou_and_dice(outputs, masks)
+    42	            test_iou += iou * size
+    43	            test_dice += dice * size
+    44	            total_samples += size
+     7	import torch
+     8	import torch.nn as nn
+     9	import torch.nn.functional as F
+    10	from config.config_loader import ConfigLoader
+    11	from data import get_dataset
+    12	from models import get_model
+    13	from clients import test_inference, DiceFocalLoss
+     1	base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+     2	
+     3	output_dir: outputs/isic2018/hsfp
+segmentation/Federated/data/utils/ISIC.py
+    47	    ):
+    48	        self.image_data_folder_path = image_data_folder_path
+    49	        self.mask_data_folder_path = mask_data_folder_path
+    50	        self.phase = phase
+    51	        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    52	        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
+    53	        images_by_id = {
+    54	            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
+    55	        }
+    56	        masks_by_id = {
+    57	            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
+    58	            for path in mask_files
+    59	        }
+    60	        if images_by_id.keys() != masks_by_id.keys():
+    61	            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
+    62	            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
+    63	            raise ValueError(
+    64	                "ISIC image/mask identifier mismatch: "
+    65	                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
+    66	            )
+    67	        identifiers = sorted(images_by_id)
+    68	        self.img_files = [images_by_id[identifier] for identifier in identifiers]
+    69	        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+    70	        self.data_transforms = data_transforms[phase]
+    71	        self.mask_transforms = mask_transforms
+    72	        self.datalen = len(self.img_files)
+    73	
+    74	    def __getitem__(self, index):
+    75	        img = self.img_files[index]
+    76	        mask = self.mask_imgs[index]
+    77	        img = self.data_transforms(Image.open(img))
+    78	        mask = self.mask_transforms(Image.open(mask))
+    79	
+    80	        return img, mask
+    81	
+    82	    def __len__(self):
+segmentation/HierFL/data/utils/ISIC.py
+    47	    ):
+    48	        self.image_data_folder_path = image_data_folder_path
+    49	        self.mask_data_folder_path = mask_data_folder_path
+    50	        self.phase = phase
+    51	        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    52	        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
+    53	        images_by_id = {
+    54	            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
+    55	        }
+    56	        masks_by_id = {
+    57	            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
+    58	            for path in mask_files
+    59	        }
+    60	        if images_by_id.keys() != masks_by_id.keys():
+    61	            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
+    62	            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
+    63	            raise ValueError(
+    64	                "ISIC image/mask identifier mismatch: "
+    65	                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
+    66	            )
+    67	        identifiers = sorted(images_by_id)
+    68	        self.img_files = [images_by_id[identifier] for identifier in identifiers]
+    69	        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+    70	        self.data_transforms = data_transforms[phase]
+    71	        self.mask_transforms = mask_transforms
+    72	        self.datalen = len(self.img_files)
+    73	
+    74	    def __getitem__(self, index):
+    75	        img = self.img_files[index]
+    76	        mask = self.mask_imgs[index]
+    77	        img = self.data_transforms(Image.open(img))
+    78	        mask = self.mask_transforms(Image.open(mask))
+    79	
+    80	        return img, mask
+    81	
+    82	    def __len__(self):
+segmentation/HeteroSFL/data/utils/ISIC.py
+    47	    ):
+    48	        self.image_data_folder_path = image_data_folder_path
+    49	        self.mask_data_folder_path = mask_data_folder_path
+    50	        self.phase = phase
+    51	        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    52	        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
+    53	        images_by_id = {
+    54	            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
+    55	        }
+    56	        masks_by_id = {
+    57	            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
+    58	            for path in mask_files
+    59	        }
+    60	        if images_by_id.keys() != masks_by_id.keys():
+    61	            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
+    62	            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
+    63	            raise ValueError(
+    64	                "ISIC image/mask identifier mismatch: "
+    65	                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
+    66	            )
+    67	        identifiers = sorted(images_by_id)
+    68	        self.img_files = [images_by_id[identifier] for identifier in identifiers]
+    69	        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+    70	        self.data_transforms = data_transforms[phase]
+    71	        self.mask_transforms = mask_transforms
+    72	        self.datalen = len(self.img_files)
+    73	
+    74	    def __getitem__(self, index):
+    75	        img = self.data_transforms(Image.open(self.img_files[index]))
+    76	        mask = self.mask_transforms(Image.open(self.mask_imgs[index]))
+    77	        return img, mask
+    78	
+    79	    def __len__(self):
+    80	        assert self.datalen == len(self.mask_imgs)
+    81	        return self.datalen
+segmentation/H-SFP/data/utils/ISIC.py
+    47	        phase="train",
+    48	    ):
+    49	        self.image_data_folder_path = image_data_folder_path
+    50	        self.mask_data_folder_path = mask_data_folder_path
+    51	        self.phase = phase
+    52	        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+    53	        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
+    54	        images_by_id = {
+    55	            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
+    56	        }
+    57	        masks_by_id = {
+    58	            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
+    59	            for path in mask_files
+    60	        }
+    61	        if images_by_id.keys() != masks_by_id.keys():
+    62	            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
+    63	            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
+    64	            raise ValueError(
+    65	                "ISIC image/mask identifier mismatch: "
+    66	                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
+    67	            )
+    68	        identifiers = sorted(images_by_id)
+    69	        self.img_files = [images_by_id[identifier] for identifier in identifiers]
+    70	        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+    71	        self.data_transforms = data_transforms[phase]
+    72	        self.mask_transforms = mask_transforms
+    73	        self.datalen = len(self.img_files)
+    74	
+    75	        if self.datalen == 0:
+    76	            raise FileNotFoundError(
+    77	                f"ISICSegmentationDataset ({phase}): found 0 images.\n"
+    78	                f"  images: {self.image_data_folder_path} "
+    79	                f"({'missing' if not os.path.isdir(self.image_data_folder_path) else 'no *.jpg'})\n"
+    80	                f"  masks:  {self.mask_data_folder_path} "
+    81	                f"({'missing' if not os.path.isdir(self.mask_data_folder_path) else 'no *.png'})\n"
+    82	                f"Download the ISIC-2018 Task 1 segmentation data and set the "
+
+exec
+/bin/bash -lc "python - <<'PY'
+import importlib
+import os
+import sys
+
+import torch
+
+root = os.getcwd()
+expected = (1.0 / 3.0, 0.5)
+for method in (\"Federated\", \"HierFL\", \"HeteroSFL\", \"H-SFP\"):
+    method_dir = os.path.join(root, \"segmentation\", method)
+    sys.path.insert(0, method_dir)
+    module = importlib.import_module(\"clients.test\")
+    probabilities = torch.tensor([0.9, 0.6, 0.4, 0.1])
+    labels = torch.tensor([1.0, 0.0, 1.0, 0.0])
+    actual = module.compute_iou_and_dice(probabilities, labels)
+    assert all(abs(a - e) < 1e-8 for a, e in zip(actual, expected)), (method, actual)
+    print(f\"{method}: IoU={actual[0]:.6f}, Dice={actual[1]:.6f}\")
+    sys.path.pop(0)
+    for name in list(sys.modules):
+        if name == \"clients\" or name.startswith(\"clients.\"):
+            del sys.modules[name]
+
+import main
+method_dir = os.path.join(root, \"segmentation\", \"HeteroSFL\")
+runner = main._load_runner(method_dir)
+assert callable(runner.run)
+main._cleanup_runner(method_dir)
+print(\"HeteroSFL runner import: OK\")
+
+from pathlib import Path
+import yaml
+proxy = Path(\"configs/proxy/plan_isic2018_h-sfp.yaml\")
+config = yaml.safe_load(proxy.read_text())
+base = (proxy.parent / config[\"base\"]).resolve()
+assert base.is_file(), base
+print(f\"H-SFP proxy base: OK ({base.relative_to(Path.cwd())})\")
+PY
+
+git diff --check
+python -m compileall -q segmentation/Federated segmentation/HierFL segmentation/HeteroSFL segmentation/H-SFP
+" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+ succeeded in 2871ms:
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+Federated: IoU=0.333333, Dice=0.500000
+HierFL: IoU=0.333333, Dice=0.500000
+HeteroSFL: IoU=0.333333, Dice=0.500000
+H-SFP: IoU=0.333333, Dice=0.500000
+HeteroSFL runner import: OK
+H-SFP proxy base: OK (configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml)
+
+codex
+Implemented the ISIC-2018 segmentation fixes locally without changing training hyperparameters or running GPU workloads.
+
+Double-sigmoid evaluation:
+
+- [Federated test.py:59](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py:59) — removed `torch.sigmoid`; directly thresholds model probabilities at `> 0.5`.
+- [Federated Client.py:111](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/Client.py:111) — fixed the additional client-validation path.
+- [HierFL test.py:59](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/test.py:59) — removed redundant sigmoid.
+- [HeteroSFL test.py:41](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/clients/test.py:41) — verified it already thresholds probabilities directly.
+- [H-SFP test.py:40](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/clients/test.py:40) — verified it already thresholds probabilities directly.
+
+Crash fixes:
+
+- HeteroSFL root cause: ambiguous `from config import ConfigLoader` failed because its `config/` lacks `__init__.py`.
+- [HeteroSFL runner.py:10](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:10) now imports `ConfigLoader` explicitly from `config.config_loader`.
+- H-SFP root cause: plan runs requested `plan_isic2018_h-sfp.yaml`, but only the unhyphenated `plan_isic2018_hsfp.yaml` existed.
+- Added [plan_isic2018_h-sfp.yaml:1](/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml:1) as a compatible proxy pointing to the existing H-SFP ISIC configuration.
+
+Identifier pairing:
+
+- [Federated ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/data/utils/ISIC.py:51)
+- [HierFL ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/data/utils/ISIC.py:51)
+- [HeteroSFL ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/data/utils/ISIC.py:51)
+- [H-SFP ISIC.py:52](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/data/utils/ISIC.py:52)
+
+Each loader now indexes images and masks by the ISIC identifier, strips the mask `_segmentation` suffix, validates exact identifier-set equality, and constructs both lists in sorted identifier order.
+
+Verification passed:
+
+- `git diff --check`
+- Full segmentation `compileall`
+- HeteroSFL runner import
+- H-SFP proxy/base resolution
+- Synthetic metric test across all four methods: expected meaningful `IoU=0.333333`, `Dice=0.500000`
+
+Existing unrelated uncommitted changes were preserved.
+diff --git a/configs/proxy/plan_isic2018_h-sfp.yaml b/configs/proxy/plan_isic2018_h-sfp.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..decacf62abc3b7ef51c50a5ec19f9c4980444836
+--- /dev/null
++++ b/configs/proxy/plan_isic2018_h-sfp.yaml
+@@ -0,0 +1,3 @@
++base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
++
++output_dir: outputs/isic2018/hsfp
+diff --git a/segmentation/Federated/clients/Client.py b/segmentation/Federated/clients/Client.py
+index 4ae8b9b3ebe6b483aa8a66eeefc69ea1634a5d04..1a57c7ab76d877395c5ccf344251043bb9da2ab0
+--- a/segmentation/Federated/clients/Client.py
++++ b/segmentation/Federated/clients/Client.py
+@@ -108,9 +108,6 @@
+             outputs = model(inputs)
+             batch_loss = criterion(outputs, masks)
+             loss += batch_loss.item()
+-            outputs = torch.sigmoid(
+-                outputs
+-            )  # Apply sigmoid if the output is logits
+             outputs = (outputs > 0.5).float()
+             iou, dice = compute_iou_and_dice(outputs, masks)
+             test_iou += iou * inputs.size(0)  # Multiply by batch size
+diff --git a/segmentation/Federated/clients/test.py b/segmentation/Federated/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/Federated/clients/test.py
++++ b/segmentation/Federated/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/Federated/data/utils/ISIC.py b/segmentation/Federated/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/Federated/data/utils/ISIC.py
++++ b/segmentation/Federated/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/H-SFP/data/utils/ISIC.py b/segmentation/H-SFP/data/utils/ISIC.py
+index d9e7f0fa2455a764619f3a695507f53ed8bf131f..a05eb937515d310068e63b3a6e5050f7b385c670
+--- a/segmentation/H-SFP/data/utils/ISIC.py
++++ b/segmentation/H-SFP/data/utils/ISIC.py
+@@ -49,8 +49,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/data/utils/ISIC.py b/segmentation/HeteroSFL/data/utils/ISIC.py
+index ad71cd6be44d85e3138f4e77e2bf82e062cf71e7..e656faa07c8be1c17bbd8bd2bd09d452463f5265
+--- a/segmentation/HeteroSFL/data/utils/ISIC.py
++++ b/segmentation/HeteroSFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = sorted(glob.glob(self.image_data_folder_path + "/*.jpg"))
+-        self.mask_imgs = sorted(glob.glob(self.mask_data_folder_path + "/*.png"))
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d82d12b6e580345ba6071bf8ce494c1ac87..62570f4d85c8046ec5ddb763b918bb1bf1ab1d23
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,7 +7,7 @@
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+diff --git a/segmentation/HierFL/clients/test.py b/segmentation/HierFL/clients/test.py
+index 035812dcd05ffd036d8ae28309b308d5935fc954..e10c85bb8d840f308dff9adcfde84ffd08b801e7
+--- a/segmentation/HierFL/clients/test.py
++++ b/segmentation/HierFL/clients/test.py
+@@ -56,9 +56,6 @@
+         batch_loss = criterion(outputs, masks)
+         loss += batch_loss.item()
+         del batch_loss
+-        outputs = torch.sigmoid(
+-            outputs
+-        )  # Apply sigmoid if the output is logits
+         outputs = (outputs > 0.5).float()
+         iou, dice = compute_iou_and_dice(outputs, masks)
+         del outputs, masks
+diff --git a/segmentation/HierFL/data/utils/ISIC.py b/segmentation/HierFL/data/utils/ISIC.py
+index b47e83262909c5b91202ee192d1d59f9a1933022..ea56abbdc62fd6914de476369997bcb62b492029
+--- a/segmentation/HierFL/data/utils/ISIC.py
++++ b/segmentation/HierFL/data/utils/ISIC.py
+@@ -32,6 +32,7 @@
+ 
+ 
+ import glob
++import os
+ 
+ from PIL import Image
+ from torch.utils.data import Dataset
+@@ -47,8 +48,25 @@
+         self.image_data_folder_path = image_data_folder_path
+         self.mask_data_folder_path = mask_data_folder_path
+         self.phase = phase
+-        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+-        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
++        image_files = glob.glob(self.image_data_folder_path + "/*.jpg")
++        mask_files = glob.glob(self.mask_data_folder_path + "/*.png")
++        images_by_id = {
++            os.path.splitext(os.path.basename(path))[0]: path for path in image_files
++        }
++        masks_by_id = {
++            os.path.splitext(os.path.basename(path))[0].removesuffix("_segmentation"): path
++            for path in mask_files
++        }
++        if images_by_id.keys() != masks_by_id.keys():
++            missing_masks = sorted(images_by_id.keys() - masks_by_id.keys())
++            missing_images = sorted(masks_by_id.keys() - images_by_id.keys())
++            raise ValueError(
++                "ISIC image/mask identifier mismatch: "
++                f"missing masks={missing_masks[:5]}, missing images={missing_images[:5]}"
++            )
++        identifiers = sorted(images_by_id)
++        self.img_files = [images_by_id[identifier] for identifier in identifiers]
++        self.mask_imgs = [masks_by_id[identifier] for identifier in identifiers]
+         self.data_transforms = data_transforms[phase]
+         self.mask_transforms = mask_transforms
+         self.datalen = len(self.img_files)
+
+tokens used
+68,726
+Implemented the ISIC-2018 segmentation fixes locally without changing training hyperparameters or running GPU workloads.
+
+Double-sigmoid evaluation:
+
+- [Federated test.py:59](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py:59) — removed `torch.sigmoid`; directly thresholds model probabilities at `> 0.5`.
+- [Federated Client.py:111](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/Client.py:111) — fixed the additional client-validation path.
+- [HierFL test.py:59](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/clients/test.py:59) — removed redundant sigmoid.
+- [HeteroSFL test.py:41](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/clients/test.py:41) — verified it already thresholds probabilities directly.
+- [H-SFP test.py:40](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/clients/test.py:40) — verified it already thresholds probabilities directly.
+
+Crash fixes:
+
+- HeteroSFL root cause: ambiguous `from config import ConfigLoader` failed because its `config/` lacks `__init__.py`.
+- [HeteroSFL runner.py:10](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:10) now imports `ConfigLoader` explicitly from `config.config_loader`.
+- H-SFP root cause: plan runs requested `plan_isic2018_h-sfp.yaml`, but only the unhyphenated `plan_isic2018_hsfp.yaml` existed.
+- Added [plan_isic2018_h-sfp.yaml:1](/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml:1) as a compatible proxy pointing to the existing H-SFP ISIC configuration.
+
+Identifier pairing:
+
+- [Federated ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/data/utils/ISIC.py:51)
+- [HierFL ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/data/utils/ISIC.py:51)
+- [HeteroSFL ISIC.py:51](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/data/utils/ISIC.py:51)
+- [H-SFP ISIC.py:52](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/data/utils/ISIC.py:52)
+
+Each loader now indexes images and masks by the ISIC identifier, strips the mask `_segmentation` suffix, validates exact identifier-set equality, and constructs both lists in sorted identifier order.
+
+Verification passed:
+
+- `git diff --check`
+- Full segmentation `compileall`
+- HeteroSFL runner import
+- H-SFP proxy/base resolution
+- Synthetic metric test across all four methods: expected meaningful `IoU=0.333333`, `Dice=0.500000`
+
+Existing unrelated uncommitted changes were preserved.

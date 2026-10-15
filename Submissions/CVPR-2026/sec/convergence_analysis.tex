@@ -1,0 +1,221 @@
+\section*{Appendix C: Convergence Analysis for H-SFP}
+\label{sec:appendix_convergence}
+\subsection*{Overview of the Proof Strategy}
+\label{sec:proof_overview}
+
+The convergence analysis for H-SFP is fundamentally different from traditional FL/SFL analyses (e.g., \cite{10980018}), which rely on end-to-end backpropagation. In H-SFP, the tiers are fully decoupled; training at an upper tier (e.g., Edge) depends on \textit{synthetic data} generated from the \textit{statistics} of a lower tier (e.g., Client).
+
+Therefore, our strategy must be to prove convergence hierarchically, from the bottom up:
+\begin{enumerate}
+    \item \textbf{Part 1 (Client-Tier):} Prove that the feature statistics $\mu_k$ and $\sigma_k$ computed by the client \textit{stabilize} as the $W_c$ training converges.
+    \item \textbf{Part 2 (Edge-Tier):} Prove that the $W_e$ training converges. This is the core of the proof, as $W_e$ is trained on a ``moving target", $D_{syn}^{edge, t}$. We will prove that this target itself converges, thanks to the hierarchical aggregation mechanism.
+    \item \textbf{Part 3 (Cloud-Tier):} Prove that the final classifier's loss $\mathcal{L}_g$ converges, as it is trained on a synthetic distribution $D_{syn}^{global, t}$ that has been stabilized.
+\end{enumerate}
+
+\subsection*{Preliminaries and Notation}
+\label{sec:preliminaries}
+
+\subsubsection*{Notation}
+\begin{itemize}
+    \item $t \in \{0, ..., T-1\}$: The communication round index.
+    \item $E_c, E_e, E_g$: The number of local training epochs at the Client, Edge Server, and Cloud, respectively.
+    \item $W_c^t, W_e^t, W_g^t$: The model parameters at each tier \textit{before} training begins in round $t$.
+    \item $\mathcal{L}_k \equiv \mathcal{L}_{con,k}$: The contrastive loss function at client $k$.
+    \item $(\mu_k^t, \sigma_k^t)$: The statistics (mean, std) computed by client $k$ \textit{after} completing its training in round $t$.
+    \item $(\mu_m^t, \sigma_m^t)$: The aggregated statistics at edge server $m$ \textit{before} training begins in round $t$. These are computed from $\{(\mu_k^{t-1}, \sigma_k^{t-1})\}_{k \in \mathcal{C}_m}$.
+    \item $D_{syn}^{edge, t}$: The synthetic data at edge $m$ in round $t$, generated from $(\mu_m^t, \sigma_m^t)$.
+    \item $\mathcal{L}_m^t(\cdot) \equiv \mathcal{L}_{con,m}(\cdot; D_{syn}^{edge, t})$: The loss function at edge $m$. Crucially, this loss function is indexed by $t$ because its input data changes.
+    \item $(\mu_g^t, \sigma_g^t)$: The aggregated statistics at the cloud $g$ \textit{before} training begins in round $t$, computed from $\{(\mu_m^{out, t-1}, \sigma_m^{out, t-1})\}_{m=1}^M$.
+    \item $\mathcal{L}_g^t(\cdot) \equiv \mathcal{L}_{CE}(\cdot; D_{syn}^{global, t})$: The global cross-entropy loss function at the cloud.
+\end{itemize}
+
+\subsubsection*{Standard Optimization Properties}
+We use standard assumptions from non-convex optimization analysis, similar to those in FedProto \cite{tan2022fedproto}.
+
+\noindent\textbf{$L$-Smoothness:}
+The loss functions $\mathcal{L}_k, \mathcal{L}_m^t, \mathcal{L}_g^t$ are $L$-smooth (with constants $L_c, L_e, L_g$). For an $L$-smooth function, we have:
+\begin{multline}
+    \mathcal{L}(W_1) \le \mathcal{L}(W_2) + \langle \nabla \mathcal{L}(W_2), W_1 - W_2 \rangle \\
+    + \frac{L}{2} ||W_1 - W_2||_2^2
+    \label{ass:smoothness}
+\end{multline}
+
+\noindent\textbf{Unbiased Gradient \& Bounded Variance:}
+The stochastic gradient $g(W)$ is an unbiased estimator of the true gradient $\nabla \mathcal{L}(W)$ and has a bounded variance $\sigma^2$.
+\begin{multline}
+    \label{ass:variance}
+    \mathbb{E}[g(W)] = \nabla \mathcal{L}(W) \quad \text{and} \quad \\
+    \mathbb{E}[||g(W) - \nabla \mathcal{L}(W)||_2^2] \le \sigma^2
+\end{multline}
+
+\noindent\textbf{Bounded Gradients:}
+The expected norm of the stochastic gradient is bounded by $G$.
+\begin{equation}
+    \mathbb{E}[||g(W)||_2] \le G
+    \label{ass:bounded_grad}
+\end{equation}
+
+\noindent\textbf{$L_f$-Lipschitz Embeddings:}
+The feature embedding functions $W_c$ and $W_e$ are $L_f$-Lipschitz continuous with respect to their parameters $\theta$. This is critical for connecting model convergence to statistical stability.
+\begin{equation}
+    \label{ass:lipschitz_embed}
+    ||W(x; \theta_1) - W(x; \theta_2)||_2 \le L_f ||\theta_1 - \theta_2||_2
+\end{equation}
+
+\noindent\textbf{$L_{stat}$-Lipschitz Loss}
+This is a novel assumption required for H-SFP. The loss functions $\mathcal{L}_m^t$ and $\mathcal{L}_g^t$ are $L_{stat}$-Lipschitz with respect to the parameters $(\mu, \sigma)$ of their synthetic data distributions.
+\begin{multline}
+    \label{ass:lipschitz_loss}
+    ||\mathcal{L}(W; \mu_1, \sigma_1) - \mathcal{L}(W; \mu_2, \sigma_2)|| \le \\
+    L_{stat} \cdot ||(\mu_1, \sigma_1) - (\mu_2, \sigma_2)||_2
+\end{multline}
+
+
+\subsection*{Client-Tier Convergence}
+\label{sec:part1}
+
+\noindent\textbf{Local Client Convergence.}
+Under Assumptions \cref{ass:smoothness} and \cref{ass:variance}, the local training of $W_c$ on client $k$ for $E_c$ epochs with learning rate $\eta_c \le 1/L_c$ converges to a neighborhood.
+
+From Assumption \cref{ass:smoothness} for $\mathcal{L}_k$ at step $e$ of round $t$:
+\begin{multline}
+    \mathbb{E}[\mathcal{L}_k(W_c^{t,e+1})] \le \mathbb{E}[\mathcal{L}_k(W_c^{t,e})] \\
+    + \mathbb{E}[\langle \nabla \mathcal{L}_k(W_c^{t,e}), W_c^{t,e+1} - W_c^{t,e} \rangle] \\
+    + \frac{L_c}{2} \mathbb{E}[||W_c^{t,e+1} - W_c^{t,e}||_2^2]
+\end{multline}
+    
+
+Substitute the update step $W_c^{t,e+1} = W_c^{t,e} - \eta_c g_c^{t,e}$:
+\begin{multline}
+    \mathbb{E}[\mathcal{L}_k(W_c^{t,e+1})]  \le \mathbb{E}[\mathcal{L}_k(W_c^{t,e})] - \eta_c \mathbb{E}[\langle \nabla \mathcal{L}_k(W_c^{t,e}), g_c^{t,e} \rangle] \\
+    + \frac{L_c \eta_c^2}{2} \mathbb{E}[||g_c^{t,e}||_2^2]
+\end{multline}
+Using Assumption \cref{ass:variance} (unbiased gradient and bounded variance $\mathbb{E}[||g||^2] \le \sigma^2 + ||\nabla \mathcal{L}||^2$):
+
+\begin{multline}
+    \mathbb{E}[\mathcal{L}_k(W_c^{t,e+1})] \le \mathbb{E}[\mathcal{L}_k(W_c^{t,e})] - \eta_c ||\nabla \mathcal{L}_k||_2^2 \\
+        + \frac{L_c \eta_c^2}{2} (\sigma_c^2 + ||\nabla \mathcal{L}_k||_2^2) \\
+    = \mathbb{E}[\mathcal{L}_k(W_c^{t,e})] - \eta_c\left(1 - \frac{L_c \eta_c}{2}\right) ||\nabla \mathcal{L}_k||_2^2 \\
+    + \frac{L_c \eta_c^2 \sigma_c^2}{2}
+\end{multline}
+
+Rearranging and taking the telescoping sum over $e \in \{0...E_c-1\}$:
+\begin{multline}
+    \sum_{e=0}^{E_c-1} \mathbb{E}[||\nabla \mathcal{L}_k||_2^2] \le \frac{\mathcal{L}_k(W_c^t) - \mathbb{E}[\mathcal{L}_k(W_c^{t, E_c})]}{\eta_c(1 - L_c\eta_c/2)} \\ 
+    + \frac{E_c L_c \eta_c \sigma_c^2}{2(1 - L_c\eta_c/2)}
+\end{multline}
+This shows the sum of squared gradients is bounded, proving $W_c$ converges to a neighborhood of a stationary point.
+
+
+\noindent\textbf{Stability of Client Statistics.}
+Under Assumptions \cref{ass:bounded_grad} and \cref{ass:lipschitz_embed}, as $W_c^t$ converges (per the analysis above), the expected change in its output statistics converges to zero:
+\begin{multline}
+    \lim_{t \to \infty} \mathbb{E}[||\mu_k^t - \mu_k^{t-1}||_2] = 0 \\ \text{and}  \lim_{t \to \infty} \mathbb{E}[||\sigma_k^t - \sigma_k^{t-1}||_2] = 0
+\end{multline}
+
+
+We analyze the change in the prototype $\mu_k$ (for a single class $j$):
+\begin{multline}
+    \mathbb{E}[||\mu_k^t - \mu_k^{t-1}||_2] \\
+    = \mathbb{E}\left[ \left|\left| \frac{1}{|\mathcal{D}_k|} \sum_{x \in \mathcal{D}_k} (W_c(x; \theta^t) - W_c(x; \theta^{t-1})) \right|\right|_2 \right]
+\end{multline}
+By the triangle inequality and Assumption \cref{ass:lipschitz_embed} ($L_f$-Lipschitz):
+\begin{multline}
+    \frac{1}{|\mathcal{D}_k|} \sum_{x \in \mathcal{D}_k} \mathbb{E}[||W_c(x; \theta^t) - W_c(x; \theta^{t-1})||_2] \\ \le L_f \cdot \mathbb{E}[||\theta^t - \theta^{t-1}||_2]
+\end{multline}
+$W_c^t$ (with parameters $\theta^t$) is the result of $E_c$ SGD steps from $W_c^{t-1}$ (with parameters $\theta^{t-1}$). From the local client convergence analysis above, as $t \to \infty$, $W_c$ converges, meaning $\mathbb{E}[||\nabla \mathcal{L}_k||_2^2] \to 0$, which implies the change in the model between rounds also approaches zero: $\mathbb{E}[||\theta^t - \theta^{t-1}||_2] \to 0$.
+Therefore, $\lim_{t \to \infty} \mathbb{E}[||\mu_k^t - \mu_k^{t-1}||_2] = 0$. A similar argument holds for $\sigma_k$.
+
+
+\subsection*{Edge-Tier Convergence}
+\label{sec:part2}
+This is the core proof, addressing the ``moving target" $D_{syn}^{edge, t}$.
+
+\noindent\textbf{Stability of Aggregated Statistics.}
+The hierarchical aggregation at the edge server $m$ stabilizes the input distribution. The expected change in the parameters $(\mu_m^t, \sigma_m^t)$ of $D_{syn}^{edge, t}$ converges to zero.
+
+The input distribution at round $t$, $(\mu_m^t, \sigma_m^t)$, is aggregated from the client statistics of round $t-1$, $(\mu_k^{t-1}, \sigma_k^{t-1})$.
+\begin{multline}
+    \mathbb{E}[||\mu_m^t - \mu_m^{t-1}||_2]  \\ 
+    = \mathbb{E}\left[ \left|\left| \sum_{k \in \mathcal{C}_m} p_k (\mu_k^{t-1} - \mu_k^{t-2}) \right|\right|_2 \right]
+\end{multline}
+(Where $p_k$ is the aggregation weight)
+\begin{multline}
+     \mathbb{E}[||\mu_m^t - \mu_m^{t-1}||_2] \le \sum_{k \in \mathcal{C}_m} p_k \cdot \mathbb{E}[||\mu_k^{t-1} - \mu_k^{t-2}||_2]
+\end{multline}
+As shown by the client statistics stability analysis above, we proved $\mathbb{E}[||\mu_k^{t-1} - \mu_k^{t-2}||_2] \to 0$ as $t \to \infty$. Therefore, $\lim_{t \to \infty} \mathbb{E}[||\mu_m^t - \mu_m^{t-1}||_2] = 0$.
+This proves that the ``moving target" $D_{syn}^{edge, t}$ converges.
+
+
+\noindent\textbf{One-Round Progress Analysis at the Edge.}
+Under Assumptions \cref{ass:smoothness}-\cref{ass:lipschitz_loss}, the progress of the loss $\mathcal{L}_m$ in one round is bounded.
+
+We analyze the change from $\mathbb{E}[\mathcal{L}_m^t(W_e^t)]$ to $\mathbb{E}[\mathcal{L}_m^{t+1}(W_e^{t+1})]$.
+\begin{multline}
+    \mathbb{E}[\mathcal{L}_m^{t+1}(W_e^{t+1})] \\
+    = \mathbb{E}[\mathcal{L}_m^t(W_e^t) + \underbrace{(\mathcal{L}_m^t(W_e^{t+1}) - \mathcal{L}_m^t(W_e^t))}_{\text{A: Local Progress}}  \\ 
+    + \underbrace{(\mathcal{L}_m^{t+1}(W_e^{t+1}) - \mathcal{L}_m^t(W_e^{t+1}))}_{\text{B: Distribution Shock}}] 
+\end{multline} 
+\begin{enumerate}
+    \item \textbf{Term A (Local Progress):} $W_e^{t+1}$ is the result of $E_e$ SGD steps on $\mathcal{L}_m^t$. From the same logic as the local client convergence:
+    $$ \mathbb{E}[\text{Term A}] \le -C_e \sum_{e=0}^{E_e-1} \mathbb{E}[||\nabla \mathcal{L}_m^t(W_e^{t,e})||_2^2] + C_{var} $$
+    where $C_e = \eta_e(1 - L_e\eta_e/2)$ and $C_{var} = \frac{E_e L_e \eta_e^2 \sigma_e^2}{2}$.
+    
+    \item \textbf{Term B (Distribution Shock):} This is the change in loss from $D_{syn}^{edge}$ updating from $t$ to $t+1$. Using Assumption \cref{ass:lipschitz_loss} ($L_{stat}$-Lipschitz):
+    \begin{multline}
+        |\mathcal{L}_m^{t+1}(W_e^{t+1}) - \mathcal{L}_m^t(W_e^{t+1})| \\
+        \le L_{stat} \cdot ||(\mu_m^{t+1}, \sigma_m^{t+1}) - (\mu_m^t, \sigma_m^t)||_2
+    \end{multline}
+    Let this shock term be $\delta_m^t = L_{stat} \cdot \mathbb{E}[||(\Delta\mu_m^t, \Delta\sigma_m^t)||_2]$.
+\end{enumerate}
+\noindent Combining the terms:
+\begin{multline}
+    \mathbb{E}[\mathcal{L}_m^{t+1}] \\
+    \le \mathbb{E}[\mathcal{L}_m^t] - C_e \sum_{e=0}^{E_e-1} \mathbb{E}[||\nabla \mathcal{L}_m^t||_2^2] + C_{var} + \delta_m^t 
+\end{multline}
+From the aggregated statistics stability analysis above, we know $\lim_{t \to \infty} \delta_m^t = 0$.
+
+
+\noindent\textbf{Convergence of Edge-Tier $W_e$.}
+The $W_e$ training converges to a neighborhood of a stationary point.
+
+Rearranging the one-round progress analysis and taking the telescoping sum from $t=0$ to $T-1$:
+\begin{multline}
+    C_e \sum_{t=0}^{T-1} \sum_{e=0}^{E_e-1} \mathbb{E}[||\nabla \mathcal{L}_m^t||_2^2] \\
+    \le \mathbb{E}[\mathcal{L}_m^0(W_e^0)] - \mathbb{E}[\mathcal{L}_m^T(W_e^T)] \\
+    + T \cdot C_{var} + \sum_{t=0}^{T-1} \delta_m^t
+\end{multline}
+Divide by $T E_e C_e$:
+\begin{multline}
+    \frac{1}{T E_e} \sum_{t,e} \mathbb{E}[||\nabla \mathcal{L}_m^t||_2^2] \\
+    \le \frac{\mathcal{L}_m^0 - \mathcal{L}^*}{C_e T E_e} + \frac{C_{var}}{C_e} + \frac{1}{C_e T E_e} \sum_{t=0}^{T-1} \delta_m^t 
+\end{multline}
+As $T \to \infty$:
+\begin{itemize}
+    \item Term 1 $\to 0$.
+    \item Term 2 is a constant convergence error: $\frac{L_e \eta_e \sigma_e^2}{2(1 - L_e\eta_e/2)}$, the standard SGD neighborhood.
+    \item Term 3 $\to 0$ because $\delta_m^t \to 0$ (by Cesàro mean theorem).
+\end{itemize}
+Therefore:
+\begin{multline}
+    \lim_{T \to \infty} \frac{1}{T E_e} \sum_{t,e} \mathbb{E}[||\nabla \mathcal{L}_m^t||_2^2] \le \frac{L_e \eta_e \sigma_e^2}{2 - L_e \eta_e}
+\end{multline}
+This proves $W_e$ convergence to a bounded neighborhood of a stationary point.
+
+\noindent\textbf{Stability of Edge Output Statistics.}
+By the same logic as the client statistics stability, since $W_e$ converges (as shown above), its output statistics $(\mu_m^{out, t}, \sigma_m^{out, t})$ also converge.
+
+
+\subsection*{Cloud-Tier Convergence}
+\label{sec:part3}
+
+\noindent\textbf{Convergence of Global Classifier $W_g$.}
+The global cloud-tier training on $\mathcal{L}_g$ converges to a neighborhood of a stationary point.
+
+The proof structure is identical to that of \cref{sec:part2}.
+\begin{enumerate}
+    \item $W_g$ is trained on $D_{syn}^{global, t}$, which is parameterized by $(\mu_g^t, \sigma_g^t)$.
+    \item \textbf{Stability of Global Statistics:} The aggregated statistics $(\mu_g^t, \sigma_g^t)$ are an aggregation of the \textit{converging} edge output statistics $(\mu_m^{out, t-1}, \sigma_m^{out, t-1})$ from the edge output stability shown above. Therefore, by the same logic as the edge-tier aggregated statistics, the global data distribution $D_{syn}^{global, t}$ converges. The shock term $\delta_g^t \to 0$.
+    \item \textbf{Convergence of $W_g$:} By the same one-round deviation analysis as in the edge-tier convergence analysis, the cloud-tier loss $\mathcal{L}_g$ converges to a bounded neighborhood:
+    $$ \lim_{T \to \infty} \frac{1}{T E_g} \sum_{t,e} \mathbb{E}[||\nabla \mathcal{L}_g^t||_2^2] \le \frac{L_g \eta_g \sigma_g^2}{2 - L_g \eta_g} $$
+\end{enumerate}

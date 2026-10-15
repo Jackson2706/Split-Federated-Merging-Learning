@@ -1,0 +1,32 @@
+[Runner] Seed: 0
+[Runner] Overrides: {'dataset': 'cifar100', 'frac': 1.0, 'iid': True, 'epochs': 30, 'ssl_epochs_client': 3, 'ssl_epochs_edge': 3, 'syn_epochs_cloud': 3, 't1': 3, 't2': 6, 'local_ep': 3}
+[Runner] task=classification  method=federated
+[Runner] cfg=configs/classification/federated/exp_81mjzecq.yaml
+
+Method: fedavg
+Train len: 50000
+  0%|          | 0/30 [00:00<?, ?it/s]  0%|          | 0/30 [01:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 315, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 305, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 247, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Federated/runner.py", line 72, in run
+    w, loss = local_update.update_weights(model=copy.deepcopy(global_model), global_round=epoch)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Federated/clients/FedAvgClient.py", line 26, in update_weights
+    optimizer.step()
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/optimizer.py", line 485, in wrapper
+    out = func(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/optimizer.py", line 79, in _use_grad
+    ret = func(self, *args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/adam.py", line 246, in step
+    adam(
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/optimizer.py", line 147, in maybe_fallback
+    return func(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/adam.py", line 933, in adam
+    func(
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/optim/adam.py", line 666, in _multi_tensor_adam
+    device_grads = torch._foreach_add(  # type: ignore[assignment]
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.00 MiB. GPU 0 has a total capacity of 11.64 GiB of which 2.12 MiB is free. Including non-PyTorch memory, this process has 11.61 GiB memory in use. Of the allocated memory 11.28 GiB is allocated by PyTorch, and 24.90 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

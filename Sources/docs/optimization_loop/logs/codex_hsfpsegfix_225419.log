@@ -1,0 +1,665 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f75ef-8a99-71c1-836e-ced2031fde62
+--------
+user
+You are Codex. ISIC-2018 H-SFP SEGMENTATION reports Best Validation IoU: 0.00% across all rounds (a genuine bug, not just a hard task) — this is the EXACT SAME bug already found and fixed in classification/H-SFP/hierarchy.py weeks ago, just never ported to the segmentation copy. Root cause: segmentation/H-SFP/hierarchy.py's _run_validation() (~line 701) and _train_decoder_phase() (~line 745) both do 'client_model = self.structure[-1][0]' — client 0's LOCAL model — instead of the FedAvg-aggregated GLOBAL client model. Under a fixed seed, client 0 may never be selected in self.client_cache (a deque(maxlen=20) populated at ~line 840), leaving its local model frozen at pretrained init; BOTH the decoder's training features (in _train_decoder_phase, which does 'with torch.no_grad(): feat = client_model(data); feat = edge_model(feat)') and validation forward pass then run through this untrained encoder, producing garbage/all-background predictions and 0% IoU forever. The FIX PATTERN already exists and works in classification/H-SFP/hierarchy.py's _run_validation (read it for the exact pattern): build client_layer = self.structure[-1]; trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]; if trained_cids: global_client_state = average_state_dicts([client_layer[c].state_dict() for c in trained_cids]); client_model = copy.deepcopy(self.client_model); client_model.load_state_dict(global_client_state); else: client_model = self.structure[-1][0] (fallback for round 0 before any client has trained). segmentation/H-SFP/hierarchy.py ALREADY has self.client_cache, self.client_model, average_state_dicts, and copy imported (used elsewhere in the file for edge_server_aggregation) — just apply the SAME pattern to _run_validation() and _train_decoder_phase(), replacing their 'client_model = self.structure[-1][0]' lines with the FedAvg-global-client construction (fall back to structure[-1][0] only if client_cache is empty, e.g. round 0). Do NOT change edge_model selection or any other logic — ONLY fix which client model is used for building features in these two functions. NO GPU/training (Claude re-runs). Preserve ALL uncommitted changes; local only. Run the existing test suite (python -m unittest discover -s tests) to make sure nothing breaks, and add/confirm a quick CPU check that the new client_model construction path is syntactically correct and matches the classification pattern. FINAL message: file:line diff for both functions, confirmation the pattern matches classification/H-SFP/hierarchy.py's proven fix, and test suite result.
+codex
+I’ll make only the two requested client-model substitutions, preserving the worktree, then run the unit suite and a lightweight CPU/static-path check against the classification implementation.
+exec
+/bin/bash -lc "git status --short && rg -n -C 10 \"client_model = self\\.structure\\[-1\\]\\[0\\]\" segmentation/H-SFP/hierarchy.py classification/H-SFP/hierarchy.py && rg -n \"def _run_validation|def _train_decoder_phase|client_cache\" segmentation/H-SFP/hierarchy.py classification/H-SFP/hierarchy.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+ M configs/proxy/plan_isic2018_federated.yaml
+ M configs/proxy/plan_isic2018_heterosfl.yaml
+ M configs/proxy/plan_isic2018_hierfl.yaml
+ M configs/proxy/plan_isic2018_hsfp.yaml
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/Client.py
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/Federated/clients/test.py
+ M segmentation/Federated/data/utils/ISIC.py
+ M segmentation/Federated/runner.py
+ M segmentation/Federated/server/FedAvgAggregator.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/data/utils/ISIC.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/clients/test.py
+ M segmentation/HeteroSFL/data/utils/ISIC.py
+ M segmentation/HeteroSFL/runner.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/test.py
+ M segmentation/HierFL/data/utils/ISIC.py
+ M segmentation/HierFL/runner.py
+ M segmentation/HierFL/servers/FedAvgAggregator.py
+ M tools/fair_compare/aggregate.py
+?? configs/proxy/plan_isic2018_h-sfp.yaml
+?? segmentation/training_metrics.py
+classification/H-SFP/hierarchy.py-1053-        """
+classification/H-SFP/hierarchy.py-1054-        client_layer = self.structure[-1]
+classification/H-SFP/hierarchy.py-1055-        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+classification/H-SFP/hierarchy.py-1056-        if trained_cids:
+classification/H-SFP/hierarchy.py-1057-            global_client_state = average_state_dicts(
+classification/H-SFP/hierarchy.py-1058-                [client_layer[c].state_dict() for c in trained_cids]
+classification/H-SFP/hierarchy.py-1059-            )
+classification/H-SFP/hierarchy.py-1060-            client_model = copy.deepcopy(self.client_model)
+classification/H-SFP/hierarchy.py-1061-            client_model.load_state_dict(global_client_state)
+classification/H-SFP/hierarchy.py-1062-        else:
+classification/H-SFP/hierarchy.py:1063:            client_model = self.structure[-1][0]
+classification/H-SFP/hierarchy.py-1064-        eid = self.connectivity[-1][0]
+classification/H-SFP/hierarchy.py-1065-        edge_model = self.structure[0][eid]
+classification/H-SFP/hierarchy.py-1066-        cloud_model = self.structure[len(self.args["mid_server"])][0]
+classification/H-SFP/hierarchy.py-1067-
+classification/H-SFP/hierarchy.py-1068-        client_model.to(self.device).eval()
+classification/H-SFP/hierarchy.py-1069-        edge_model.to(self.device).eval()
+classification/H-SFP/hierarchy.py-1070-        cloud_model.to(self.device).eval()
+classification/H-SFP/hierarchy.py-1071-        
+classification/H-SFP/hierarchy.py-1072-        loader = DataLoader(
+classification/H-SFP/hierarchy.py-1073-            valid_dataset,
+--
+segmentation/H-SFP/hierarchy.py-695-
+segmentation/H-SFP/hierarchy.py-696-        del syn_dataset_L2, syn_loader_L2
+segmentation/H-SFP/hierarchy.py-697-        return total_loss
+segmentation/H-SFP/hierarchy.py-698-
+segmentation/H-SFP/hierarchy.py-699-    # --- Phase 5: Validation ---
+segmentation/H-SFP/hierarchy.py-700-
+segmentation/H-SFP/hierarchy.py-701-    def _run_validation(self, test_dataset, best_iou, epoch):
+segmentation/H-SFP/hierarchy.py-702-        """Run validation using the full pipeline (client -> edge -> decoder)."""
+segmentation/H-SFP/hierarchy.py-703-        from clients import compute_iou_and_dice, DiceFocalLoss
+segmentation/H-SFP/hierarchy.py-704-
+segmentation/H-SFP/hierarchy.py:705:        client_model = self.structure[-1][0]
+segmentation/H-SFP/hierarchy.py-706-        eid = self.connectivity[-1][0]
+segmentation/H-SFP/hierarchy.py-707-        edge_model = self.structure[0][eid]
+segmentation/H-SFP/hierarchy.py-708-
+segmentation/H-SFP/hierarchy.py-709-        client_model.to(self.device).eval()
+segmentation/H-SFP/hierarchy.py-710-        edge_model.to(self.device).eval()
+segmentation/H-SFP/hierarchy.py-711-        self.cloud_decoder.to(self.device).eval()
+segmentation/H-SFP/hierarchy.py-712-
+segmentation/H-SFP/hierarchy.py-713-        loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+segmentation/H-SFP/hierarchy.py-714-        test_iou, test_dice, total_samples = 0.0, 0.0, 0
+segmentation/H-SFP/hierarchy.py-715-
+--
+segmentation/H-SFP/hierarchy.py-739-            )
+segmentation/H-SFP/hierarchy.py-740-
+segmentation/H-SFP/hierarchy.py-741-        return test_iou, test_dice, best_iou, pipeline_model
+segmentation/H-SFP/hierarchy.py-742-
+segmentation/H-SFP/hierarchy.py-743-    # --- Phase 3b: Train decoder on full pipeline ---
+segmentation/H-SFP/hierarchy.py-744-
+segmentation/H-SFP/hierarchy.py-745-    def _train_decoder_phase(self, train_dataset, user_groups, idxs_users, decoder_epochs):
+segmentation/H-SFP/hierarchy.py-746-        """Train the cloud decoder using full forward pass through frozen client+edge."""
+segmentation/H-SFP/hierarchy.py-747-        from clients import DiceFocalLoss
+segmentation/H-SFP/hierarchy.py-748-
+segmentation/H-SFP/hierarchy.py:749:        client_model = self.structure[-1][0]
+segmentation/H-SFP/hierarchy.py-750-        eid = self.connectivity[-1][0]
+segmentation/H-SFP/hierarchy.py-751-        edge_model = self.structure[0][eid]
+segmentation/H-SFP/hierarchy.py-752-
+segmentation/H-SFP/hierarchy.py-753-        client_model.to(self.device).eval()
+segmentation/H-SFP/hierarchy.py-754-        edge_model.to(self.device).eval()
+segmentation/H-SFP/hierarchy.py-755-        self.cloud_decoder.to(self.device).train()
+segmentation/H-SFP/hierarchy.py-756-
+segmentation/H-SFP/hierarchy.py-757-        seg_criterion = DiceFocalLoss().to(self.device)
+segmentation/H-SFP/hierarchy.py-758-
+segmentation/H-SFP/hierarchy.py-759-        # Use a subset of data for decoder training
+classification/H-SFP/hierarchy.py:401:        self.client_cache = deque(maxlen=20)
+classification/H-SFP/hierarchy.py:606:        for cid in self.client_cache:
+classification/H-SFP/hierarchy.py:1044:    def _run_validation(self, valid_dataset, best_f1, epoch):
+classification/H-SFP/hierarchy.py:1055:        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+classification/H-SFP/hierarchy.py:1242:                self.client_cache.append(cid)
+segmentation/H-SFP/hierarchy.py:279:        self.client_cache = deque(maxlen=20)
+segmentation/H-SFP/hierarchy.py:406:        for cid in self.client_cache:
+segmentation/H-SFP/hierarchy.py:701:    def _run_validation(self, test_dataset, best_iou, epoch):
+segmentation/H-SFP/hierarchy.py:745:    def _train_decoder_phase(self, train_dataset, user_groups, idxs_users, decoder_epochs):
+segmentation/H-SFP/hierarchy.py:840:                self.client_cache.append(cid)
+
+exec
+/bin/bash -lc "sed -n '1,45p' segmentation/H-SFP/hierarchy.py && sed -n '1038,1070p' classification/H-SFP/hierarchy.py && sed -n '695,765p' segmentation/H-SFP/hierarchy.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+import copy
+import gc
+import logging
+import os
+import time
+from collections import deque
+
+import numpy as np
+import psutil
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+import kornia.augmentation as K
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+# E-HSFP extensions
+from ehsfp import (
+    get_ehsfp_config,
+    EpisodicPrototypeMemory,
+    mix_current_and_memory,
+    PrototypeReliabilityNetwork,
+    reliability_weighted_aggregate,
+    train_reliability_bootstrap,
+    prototype_replay_consistency_loss,
+    dropout_consistency_loss,
+    PrototypeDropout,
+    ServerlessMetricsTracker,
+    ResidualPrototypeGenerator,
+    EHSFPMetricsLogger,
+    RuntimeCounters,
+    aggregate_proto_dicts,
+)
+
+
+# =============================================================================
+# SECTION 1: UTILS
+# =============================================================================
+
+@torch.no_grad()
+def generate_synthetic_data(prototypes, distributions_std, num_samples_per_class):
+            total_loss = epoch_loss / len(syn_loader_L2)
+
+        print(f"Cloud {cloud_id}: supervised done, final loss: {total_loss:.4f}")
+        del syn_dataset_L2, syn_loader_L2
+        return total_loss
+        
+    def _run_validation(self, valid_dataset, best_f1, epoch):
+        """(Phase 5) Run evaluation (optimized).
+
+        Evaluate on the FedAvg GLOBAL client model (average of the clients
+        actually trained this round), not an arbitrary ``structure[-1][0]``.
+        Under a fixed seed, client 0 may never be selected, leaving its local
+        model at the frozen pretrained init — which made every checkpoint grade
+        a never-trained encoder. Averaging the cached (trained) clients gives a
+        correct, seed-robust, baseline-fair evaluation of the trained encoder.
+        """
+        client_layer = self.structure[-1]
+        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+        if trained_cids:
+            global_client_state = average_state_dicts(
+                [client_layer[c].state_dict() for c in trained_cids]
+            )
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        else:
+            client_model = self.structure[-1][0]
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid]
+        cloud_model = self.structure[len(self.args["mid_server"])][0]
+
+        client_model.to(self.device).eval()
+        edge_model.to(self.device).eval()
+        cloud_model.to(self.device).eval()
+
+        del syn_dataset_L2, syn_loader_L2
+        return total_loss
+
+    # --- Phase 5: Validation ---
+
+    def _run_validation(self, test_dataset, best_iou, epoch):
+        """Run validation using the full pipeline (client -> edge -> decoder)."""
+        from clients import compute_iou_and_dice, DiceFocalLoss
+
+        client_model = self.structure[-1][0]
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid]
+
+        client_model.to(self.device).eval()
+        edge_model.to(self.device).eval()
+        self.cloud_decoder.to(self.device).eval()
+
+        loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+        test_iou, test_dice, total_samples = 0.0, 0.0, 0
+
+        with torch.no_grad():
+            for data, mask in loader:
+                data, mask = data.to(self.device), mask.to(self.device)
+                out = client_model(data)
+                out = edge_model(out)
+                out = self.cloud_decoder(out)
+                out = (out > 0.5).float()
+                iou, dice = compute_iou_and_dice(out, mask)
+                test_iou += iou
+                test_dice += dice
+                total_samples += 1
+
+        test_iou /= max(total_samples, 1)
+        test_dice /= max(total_samples, 1)
+
+        pipeline_model = None
+        if test_iou > best_iou:
+            best_iou = test_iou
+            print(f"New best IoU at epoch {epoch}: {best_iou * 100:.2f}%")
+            pipeline_model = FullPipelineModel(
+                client_model=copy.deepcopy(client_model),
+                edge_model=copy.deepcopy(edge_model),
+                cloud_decoder=copy.deepcopy(self.cloud_decoder),
+            )
+
+        return test_iou, test_dice, best_iou, pipeline_model
+
+    # --- Phase 3b: Train decoder on full pipeline ---
+
+    def _train_decoder_phase(self, train_dataset, user_groups, idxs_users, decoder_epochs):
+        """Train the cloud decoder using full forward pass through frozen client+edge."""
+        from clients import DiceFocalLoss
+
+        client_model = self.structure[-1][0]
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid]
+
+        client_model.to(self.device).eval()
+        edge_model.to(self.device).eval()
+        self.cloud_decoder.to(self.device).train()
+
+        seg_criterion = DiceFocalLoss().to(self.device)
+
+        # Use a subset of data for decoder training
+        all_idxs = []
+        for cid in idxs_users:
+            all_idxs.extend(list(user_groups[cid]))
+        subset = DatasetSplit(train_dataset, all_idxs)
+        loader = DataLoader(subset, batch_size=self.args["local_bs"], shuffle=True, drop_last=True)
+
+
+codex
+The target file already imports every dependency needed. I also confirmed the classification fix’s exact ordering and fallback; I’m inserting that same block immediately before the unchanged edge selection in both segmentation functions.
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/hierarchy.py
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+exec
+/bin/bash -lc 'git diff -- segmentation/H-SFP/hierarchy.py && python -m py_compile segmentation/H-SFP/hierarchy.py && python -m unittest discover -s tests' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+ succeeded in 3507ms:
+............../home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+.............
+----------------------------------------------------------------------
+Ran 27 tests in 1.852s
+
+OK
+
+codex
+The edit is limited to the intended two blocks, and Python compilation has passed. The unit suite is running now; its first 13 tests have passed.
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+exec
+/bin/bash -lc "python - <<'PY'
+import ast
+from pathlib import Path
+
+def client_block(path, function):
+    tree = ast.parse(Path(path).read_text())
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'HierarchicalFL')
+    fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == function)
+    start = next(i for i, n in enumerate(fn.body) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'client_layer' for t in n.targets))
+    return [ast.dump(n, include_attributes=False) for n in fn.body[start:start + 3]]
+
+proven = client_block('classification/H-SFP/hierarchy.py', '_run_validation')
+for name in ('_run_validation', '_train_decoder_phase'):
+    candidate = client_block('segmentation/H-SFP/hierarchy.py', name)
+    assert candidate == proven, f'{name} differs from classification pattern'
+    print(f'{name}: exact AST match; FedAvg branch and empty-cache fallback verified')
+PY
+nl -ba segmentation/H-SFP/hierarchy.py | sed -n '701,775p'
+git status --short segmentation/H-SFP/hierarchy.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+_run_validation: exact AST match; FedAvg branch and empty-cache fallback verified
+_train_decoder_phase: exact AST match; FedAvg branch and empty-cache fallback verified
+   701	    def _run_validation(self, test_dataset, best_iou, epoch):
+   702	        """Run validation using the full pipeline (client -> edge -> decoder)."""
+   703	        from clients import compute_iou_and_dice, DiceFocalLoss
+   704	
+   705	        client_layer = self.structure[-1]
+   706	        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+   707	        if trained_cids:
+   708	            global_client_state = average_state_dicts(
+   709	                [client_layer[c].state_dict() for c in trained_cids]
+   710	            )
+   711	            client_model = copy.deepcopy(self.client_model)
+   712	            client_model.load_state_dict(global_client_state)
+   713	        else:
+   714	            client_model = self.structure[-1][0]
+   715	        eid = self.connectivity[-1][0]
+   716	        edge_model = self.structure[0][eid]
+   717	
+   718	        client_model.to(self.device).eval()
+   719	        edge_model.to(self.device).eval()
+   720	        self.cloud_decoder.to(self.device).eval()
+   721	
+   722	        loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+   723	        test_iou, test_dice, total_samples = 0.0, 0.0, 0
+   724	
+   725	        with torch.no_grad():
+   726	            for data, mask in loader:
+   727	                data, mask = data.to(self.device), mask.to(self.device)
+   728	                out = client_model(data)
+   729	                out = edge_model(out)
+   730	                out = self.cloud_decoder(out)
+   731	                out = (out > 0.5).float()
+   732	                iou, dice = compute_iou_and_dice(out, mask)
+   733	                test_iou += iou
+   734	                test_dice += dice
+   735	                total_samples += 1
+   736	
+   737	        test_iou /= max(total_samples, 1)
+   738	        test_dice /= max(total_samples, 1)
+   739	
+   740	        pipeline_model = None
+   741	        if test_iou > best_iou:
+   742	            best_iou = test_iou
+   743	            print(f"New best IoU at epoch {epoch}: {best_iou * 100:.2f}%")
+   744	            pipeline_model = FullPipelineModel(
+   745	                client_model=copy.deepcopy(client_model),
+   746	                edge_model=copy.deepcopy(edge_model),
+   747	                cloud_decoder=copy.deepcopy(self.cloud_decoder),
+   748	            )
+   749	
+   750	        return test_iou, test_dice, best_iou, pipeline_model
+   751	
+   752	    # --- Phase 3b: Train decoder on full pipeline ---
+   753	
+   754	    def _train_decoder_phase(self, train_dataset, user_groups, idxs_users, decoder_epochs):
+   755	        """Train the cloud decoder using full forward pass through frozen client+edge."""
+   756	        from clients import DiceFocalLoss
+   757	
+   758	        client_layer = self.structure[-1]
+   759	        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+   760	        if trained_cids:
+   761	            global_client_state = average_state_dicts(
+   762	                [client_layer[c].state_dict() for c in trained_cids]
+   763	            )
+   764	            client_model = copy.deepcopy(self.client_model)
+   765	            client_model.load_state_dict(global_client_state)
+   766	        else:
+   767	            client_model = self.structure[-1][0]
+   768	        eid = self.connectivity[-1][0]
+   769	        edge_model = self.structure[0][eid]
+   770	
+   771	        client_model.to(self.device).eval()
+   772	        edge_model.to(self.device).eval()
+   773	        self.cloud_decoder.to(self.device).train()
+   774	
+   775	        seg_criterion = DiceFocalLoss().to(self.device)
+ M segmentation/H-SFP/hierarchy.py
+
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+codex
+Implemented the H-SFP segmentation fix locally, preserving all existing uncommitted changes.
+
+- [`_run_validation()` lines 705–714](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/hierarchy.py:705): now builds the FedAvg global client model from cached trained clients, with the client-0 fallback only when none are cached.
+- [`_train_decoder_phase()` lines 758–767](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/hierarchy.py:758): applies the identical construction for decoder training features.
+- Edge-model selection and all other logic remain unchanged.
+
+Verification:
+
+- Both inserted blocks are exact AST matches for the proven pattern in `classification/H-SFP/hierarchy.py`.
+- `python -m py_compile segmentation/H-SFP/hierarchy.py`: passed.
+- `python -m unittest discover -s tests`: **27 tests passed**.
+- No GPU or training run performed.
+diff --git a/segmentation/H-SFP/hierarchy.py b/segmentation/H-SFP/hierarchy.py
+index f31a91e546c3ee3096b8924c6a0049fd30771002..0468986d60d90a080bb432e09989974a9a05962b
+--- a/segmentation/H-SFP/hierarchy.py
++++ b/segmentation/H-SFP/hierarchy.py
+@@ -702,7 +702,16 @@
+         """Run validation using the full pipeline (client -> edge -> decoder)."""
+         from clients import compute_iou_and_dice, DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+@@ -746,7 +755,16 @@
+         """Train the cloud decoder using full forward pass through frozen client+edge."""
+         from clients import DiceFocalLoss
+ 
+-        client_model = self.structure[-1][0]
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+ 
+
+tokens used
+15,810
+Implemented the H-SFP segmentation fix locally, preserving all existing uncommitted changes.
+
+- [`_run_validation()` lines 705–714](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/hierarchy.py:705): now builds the FedAvg global client model from cached trained clients, with the client-0 fallback only when none are cached.
+- [`_train_decoder_phase()` lines 758–767](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/H-SFP/hierarchy.py:758): applies the identical construction for decoder training features.
+- Edge-model selection and all other logic remain unchanged.
+
+Verification:
+
+- Both inserted blocks are exact AST matches for the proven pattern in `classification/H-SFP/hierarchy.py`.
+- `python -m py_compile segmentation/H-SFP/hierarchy.py`: passed.
+- `python -m unittest discover -s tests`: **27 tests passed**.
+- No GPU or training run performed.

@@ -1,0 +1,225 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+
+% ---------------------------------------------------------------
+% Include basic CVPR package in rebuttal mode
+
+\usepackage[rebuttal]{cvpr}
+
+% ---------------------------------------------------------------
+% Other packages
+
+% Commonly used abbreviations (\eg, \ie, \etc, \cf, \etal, etc.)
+\usepackage{eccvabbrv}
+
+% Include other packages here, before hyperref.
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% The "axessiblity" package can be found at: https://ctan.org/pkg/axessibility?lang=en
+\usepackage[accsupp]{axessibility}  % Improves PDF readability for those with disabilities.
+
+
+% ---------------------------------------------------------------
+% Hyperref package
+% If you comment hyperref and then uncomment it, you should delete
+% egpaper.aux before re-running latex.  (Or just hit 'q' on the first latex
+% run, let it finish, and you should be clear).
+
+\definecolor{eccvblue}{rgb}{0.12,0.49,0.85}
+% \usepackage[pagebackref,breaklinks,colorlinks,citecolor=eccvblue]{hyperref}
+\usepackage[breaklinks,colorlinks,citecolor=eccvblue]{hyperref}
+
+% ---------------------------------------------------------------
+% If you wish to avoid re-using figure, table, and equation numbers from
+% the main paper, please uncomment the following and change the numbers
+% appropriately.
+%\setcounter{figure}{2}
+%\setcounter{table}{1}
+%\setcounter{equation}{2}
+
+% If you wish to avoid re-using reference numbers from the main paper,
+% please uncomment the following and change the counter for `enumiv' to
+% the number of references you have in the main paper (here, 6).
+%\let\oldthebibliography=\thebibliography
+%\let\oldendthebibliography=\endthebibliography
+%\renewenvironment{thebibliography}[1]{%
+%     \oldthebibliography{#1}%
+%     \setcounter{enumiv}{6}%
+%}{\oldendthebibliography}
+
+
+% ---------------------------------------------------------------
+% TODO REBUTTAL: Please enter paper ID
+\def\paperID{12703} % *** Enter the paper ID here
+\def\confName{ECCV}
+\def\confYear{2026}
+
+\begin{document}
+
+% ---------------------------------------------------------------
+% TODO REBUTTAL: Paper title is not required
+% \title{\LaTeX\ Guidelines for Author Response}  % **** Enter the paper title here
+
+% \maketitle
+% \thispagestyle{empty}
+% \appendix
+\textbf{=========Response to Reviewer ouVX=========}
+
+%\noindent\textbf{Q1: Limited Novelty Relative to Prior Work.}~H-SFP is distinct from PriSM \cite{niu2023overcoming} and Delta \cite{Niu_2024_CVPR} as it decouples learning at the feature level rather than through model weight decomposition or asymmetric data flows. While PriSM relies on low-rank sub-model sampling and Delta requires active gradient propagation for residuals, H-SFP eliminates cross-tier backpropagation by communicating compact, class-wise Gaussian statistics. This architecture shift allows clients to remain entirely agnostic of the server's global model, reducing communication costs by two orders of magnitude and training time by  $10\times$ while avoiding the privacy risks associated with synchronized gradient flows. We will discuss PriSM and Delta in the revised manuscript.
+
+\noindent\textbf{Q1: Limited Novelty Relative to Prior Work.}~H-SFP differs from PriSM \cite{niu2023overcoming} and Delta \cite{Niu_2024_CVPR} by \textcolor{black}{decoupling learning at the feature level.}
+% decoupling learning at the feature level instead of using model weight decomposition or asymmetric data flows. 
+Unlike PriSM’s low-rank sampling or Delta’s need for gradient propagation, H-SFP removes cross-tier backpropagation by exchanging compact, class-wise Gaussian statistics. \textcolor{black}{This model-agnostic exchange lets heterogeneous clients participate without aligning their architectures to the server. This cuts communication, reduces training time by $10\times$, and eliminates gradient-sharing privacy risks. We will clarify these differences in the revision.}
+% {\color{red}Dinh: Do we need to emphasize that H-SFP enables a model-agnostic hierarchy?}
+
+% H-SFP is fundamentally distinct from \cite{niu2023overcoming,Niu_2024_CVPR} in both its communication protocol and optimization paradigm. While \cite{niu2023overcoming} relies on sub-model sampling for standard federated aggregation and \cite{Niu_2024_CVPR} utilizes asymmetric decomposition with active gradient propagation, H-SFP eliminates cross-tier backpropagation. Each tier learns independently via local self-supervised objectives and communicates only compact class-wise feature statistics. This enables upper tiers to synthesize training data locally rather than relying on direct gradient flow or raw data residuals. We will discuss the connections with those works in our revised manuscript.
+
+% \noindent\textbf{Q2: Strong Statistical Assumptions.}~Gaussian class-conditionals are widely used prototype-based augmentations in recent literature \cite{9578909, 9578909_1}. Since our training objective encourages an isotropic feature space, inter-dimensional correlations are minimized, making a diagonal Gaussian a sufficient and efficient model for synthesis. We acknowledge that high intra-class multimodality is a potential limitation and address this explicitly in the revised manuscript.
+\noindent\textbf{Q2: Strong Statistical Assumptions.}~Gaussian class-conditionals are widely used in recent literature \cite{9578909, 9578909_1}, empirically and theoretically proved in \cite{betser2026infonce}. 
+% Our training objective explicitly enforces an isotropic feature space, minimizing inter-dimensional correlations and making a diagonal Gaussian highly efficient for synthesis.
+\textcolor{black}{The contrastive training objective actively shapes the latent space to be unimodal and isotropic, minimizing interdimensional correlations and making an efficient synthesis}.
+% We acknowledge high intra-class multimodality as a limitation in the revision.
+% {\color{red}Dinh: To make this more convincing, emphasize that your contrastive training objective doesn't just assume a Gaussian distribution but actively shapes the latent space to be unimodal and isotropic, turning a potential statistical weakness into a deliberate architectural strength.}
+
+% ~We empirically verified the Lipschitz continuity of client statistics on CIFAR‑100 (Table~\ref{tab:lipschitz}). The bound $L_{\text{stat}} \approx 2.3$ directly implies that the MMD between the true feature distribution and the synthesized distribution scales linearly with the input shift (Eqs.~5–6 of the main paper). This explains why H‑SFP remains stable under non‑IID data.
+\noindent\textbf{Q3: Weak Theoretical Justification.}~ The Lipschitz continuity of the client statistics governs the stability. We define $L_{\text{stat}}$ as the Lipschitz constant mapping the input distribution to the class-wise statistics $(\mu, \sigma)$. The Maximum Mean Discrepancy (MMD) between the true feature distribution $P_f$ and the synthesized Gaussian distribution $Q_f$ is bounded by
+$
+\mathrm{MMD}(P_f, Q_f) \leq L_{\text{stat}} \cdot \mathrm{dist}(P_{\text{in}}, \hat{P}_{\text{in}}),
+$
+where $\mathrm{dist}(P_{\text{in}}, \hat{P}_{\text{in}})$ represents the input data shift. 
+New CIFAR-100 experiments (Tab.~\ref{tab:lipschitz}) obtains $L_{\text{stat}} \approx 2.3\pm 0.3$, proving synthesized features scale linearly with input shifts. This stability reduces the catastrophic drift in non-IID setups. 
+% \textcolor{black}{Local contrastive loss deliberately enforces a unimodal latent space, making the diagonal Gaussian synthesis both a mathematically sound approximation and a highly communication-efficient representation.}
+\begin{table}[ht]
+\vspace{-20pt}
+\centering
+\caption{Empirical Lipschitz continuity of client statistics.}
+\label{tab:lipschitz}
+\small
+\begin{tabular}{cccc}
+\toprule
+\textbf{Pert. $\sigma$} & $\|\Delta\mu\|_2$ & $\|\Delta\sigma\|_2$ & $L_{\text{stat}}$ \\
+\midrule
+0.01 & 0.013 & 0.009 & 2.14 \\
+0.10 & 0.125 & 0.112 & 2.36 \\
+0.20 & 0.242 & 0.241 & 2.41 \\
+\bottomrule
+\end{tabular}
+\vspace{-10pt}
+\end{table}
+% {\color{red}Dinh: Also mention that your local contrastive loss is a deliberate design choice that enforces a unimodal latent space, making the diagonal Gaussian both a mathematically sound and communication-efficient representation.}
+% \textcolor{black}{Jackson: The purpose of the theoretical analysis is not to provide a tight generalization bound but to justify the stability of decoupled hierarchical optimization after removing cross-tier backpropagation. Unlike prior split FL methods that optimize over shared activations and gradients, H-SFP operates over synthesized feature distributions, making distributional stability the key quantity to analyze.
+% The Lipschitz assumptions are standard regularity conditions in non-convex FL and are directly tied to the contrastive representation learning objective, which promotes locally smooth feature statistics. Importantly, the theory yields testable predictions consistent with the experiments: preserving both mean and variance statistics significantly outperforms the $\mu$-only variant, and shorter aggregation intervals improve stability and accuracy.
+% }
+
+% \noindent\textbf{Q4: Insufficient Heterogeneity \& Robustness Evaluation.}~Per your suggestion, we evaluated extreme non-IID and partial participation settings (Tab.~\ref{tab:combined}). Under Dir(0.05), H-SFP maintains accuracy while baselines collapse; at Dir(0.1), it doubles the best baseline's performance. With 10\% client participation, H-SFP achieves 48.20\% (+3.5\% over the next best) and nearly matches full-participation performance at 50\%. This demonstrates that hierarchical prototyping effectively mitigates the catastrophic drift seen in full-model baselines under sparse regimes. We will include these results in the revised manuscript. 
+\noindent\textbf{Q4: Insufficient Heterogeneity \& Robustness Evaluation.}~As suggested, we conducted a new experiment on the extreme non-IID and partial participation settings (Tab.~\ref{tab:combined}). Under non-IID settings, H-SFP maintains accuracy while baselines collapse. With only 10\% participation, H-SFP achieves 48.20\%, and nearly matches full-participation performance at 50\%. This confirms that hierarchical prototyping effectively mitigates the catastrophic drift seen in full-model baselines under sparse regimes. 
+We will incorporate new results into the final manuscript.
+% We will add these results to the revision. 
+% {\color{red}Dinh:  Replace ``We will add these results'' with ``We provide these results in Tab. 1 of this rebuttal and will incorporate them into the final manuscript,'' to ensure the reviewer knows the evidence is ready for the final publication.}
+% Thanks to suggestions, we conducted additional experiments in extremely non-IID scenarios and partial participation (Table~\ref{tab:combined}). Under Dir(0.05) H‑SFP retains a usable accuracy while all baselines collapse to near‑random levels; under Dir(0.1) it already doubles the best baseline. With only 10\% of clients active, H‑SFP reaches 48.20\%, outperforming the next best by 3.5\%, and at 50\% nearly matches full‑participation performance. The hierarchical prototyping effectively aggregates sparse information in both heterogeneous and low‑participation regimes, while full‑model baselines suffer catastrophic drift. All new results will be incorporated into the revised manuscript.
+\begin{table}[t]
+\vspace{-10pt}
+\centering
+\caption{Accuracy on CIFAR‑100 under partial participation (IID) and extreme non‑IID splits. 200 clients. Averaged over 5 runs.}
+\label{tab:combined}
+\tiny
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+& \multicolumn{2}{c}{\textbf{IID}} & \multicolumn{2}{c}{\textbf{Non‑IID}} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+\textbf{Method} & \textbf{10\% active} & \textbf{50\% active} & \textbf{Dir(0.05)} & \textbf{Dir(0.1)} \\
+\midrule
+FedAvg  & 34.80 $\pm$ 1.60 & 45.20 $\pm$ 1.35 & 1.80 $\pm$ 0.45 & 3.50 $\pm$ 0.70 \\
+HierFL  & 35.50 $\pm$ 1.55 & 46.10 $\pm$ 1.30 & 1.55 $\pm$ 0.50 & 3.10 $\pm$ 0.75 \\
+SplitFed & 42.40 $\pm$ 1.20 & 50.60 $\pm$ 1.10 & 2.40 $\pm$ 0.60 & 4.60 $\pm$ 0.85 \\
+% FedGen  & 43.10 $\pm$ 1.15 & 51.80 $\pm$ 1.05 & 2.80 $\pm$ 0.55 & 5.20 $\pm$ 0.80 \\
+HSFL (A)& 41.20 $\pm$ 1.25 & 53.10 $\pm$ 1.00 & 3.10 $\pm$ 0.60 & 4.90 $\pm$ 0.70 \\
+Ours (A)& \textbf{48.20 $\pm$ 0.95} & \textbf{55.40 $\pm$ 0.80} & \textbf{5.85 $\pm$ 0.70} & \textbf{9.45 $\pm$ 0.80} \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+% \noindent\textbf{Q5: Baseline Fairness.}~All were re‑tuned with a uniform 50‑trial grid search; split methods use identical split points. We will clarify the experimental setup in the revision.
+\noindent\textbf{Q5: Baseline Fairness.}~Baselines were optimized in 50 rounds, and identical split points were enforced across split methods. We will explicitly detail this setup in the revision.
+
+\textbf{=========Response to Reviewer uEjt==========}
+
+% \noindent\textbf{Q1: Missing Appendix.}~We apologize for the administrative oversight regarding the missing appendix. We will include the full appendix in the final version.
+% Our revision will include it, containing all algorithms, proofs, and additional experiments.
+\noindent\textbf{Q1: Missing Appendix.}~We apologize for the administrative oversight regarding the missing appendix and will include the appendix \textcolor{black}{containing setup details, additional results, and t-SNE visualizations} in the revision. 
+% {\color{red}Dinh: I suggest this response: We have a complete 5-page appendix prepared—containing hyperparameter tables, ImageNet-1K details, and t-SNE visualizations, which we will incorporate into the final manuscript.}
+
+% \noindent\textbf{Q2: Gaussian assumption and diagonal covariance.}~Contrastive loss shapes features into tight, spherical clusters, allowing our diagonal covariance approximation to effectively capture the semantic manifold while maintaining $\mathcal{O}(C \cdot d)$ communication efficiency, avoiding the $\mathcal{O}(d^2)$ bottleneck of full covariance matrices. This regularization guarantees robust feature regeneration, validated visually with t-SNE plots (Fig.~\ref{fig:tsne_tier1}, ~\ref{fig:tsne_tier2}).
+\noindent\textbf{Q2: Synthetic Quality.}~Contrastive loss shapes features into tight, spherical clusters, enabling our diagonal covariance approximation to capture the semantic manifold while maintaining $\mathcal{O}(C \cdot d)$ communication efficiency (bypassing the $\mathcal{O}(d^2)$ bottleneck of full matrices). This ensures robust feature regeneration, as validated by t-SNE plots (Fig.~\ref{fig:combined_tsne}).
+% \begin{figure}
+%     \vspace{-10pt}
+%     \centering
+%     \begin{minipage}[c]{\linewidth}
+%         \centering
+%         % --- Hình T-SNE 1 (Bên trên) ---
+%         \includegraphics[width=0.8\linewidth]{CVPR-2026/Figures/tsne_tier1_synthetic.pdf}
+%         \caption{Raw client features. Unaligned local training causes heavily overlapped representations before edge aggregation.}
+%         \label{fig:tsne_tier1}        
+%         % --- Hình T-SNE 2 (Bên dưới) ---
+%         \includegraphics[width=0.8\linewidth]{CVPR-2026/Figures/tsne_tier2_synthetic.pdf}
+%         \caption{Refined edge features. Generative aggregation stabilizes distributions, yielding well-separated class clusters.}
+%         \label{fig:tsne_tier2}
+%     \end{minipage}
+%     \vspace{-20pt}
+% \end{figure}
+\begin{figure}[t]
+\vspace{-5pt}
+\centering
+\begin{subfigure}[b]{0.49\linewidth}
+\centering
+\includegraphics[width=\linewidth]{ECCV-2026/Figures/tsne_tier1_synthetic_new.pdf}
+\caption{Client features
+% : unaligned local training causes heavily overlapped representations.
+}
+\label{fig:tsne_tier1}
+\end{subfigure}
+\begin{subfigure}[b]{0.49\linewidth}
+\centering
+\includegraphics[width=\linewidth]{ECCV-2026/Figures/tsne_tier2_synthetic_new.pdf}
+\caption{Edge features
+% : generative aggregation stabilizes distributions, yielding well-separated clusters.
+}
+\label{fig:tsne_tier2}
+\end{subfigure}
+\vspace{-5pt}
+\caption{Comparative t-SNE analysis across tiers.}
+\label{fig:combined_tsne}
+\vspace{-20pt}
+\end{figure}
+
+\textbf{==========Response to Reviewer SAVv========}
+
+\noindent\textbf{Q1: Gaussian Drift.}~Refer to Q2 of Reviewer uEjt. 
+
+\noindent\textbf{Q2: Architectural Generalization.}~Our framework is architecturally agnostic. The validity of the Gaussian assumption is not constrained by the backbone; rather, it is induced primarily by the representation quality and the contrastive learning objectives (e.g., InfoNCE) utilized during training.
+
+\noindent\textbf{Q3: Extra computation overhead for packing/unpacking.}~Packing ($\mu, \sigma$) occurs just \textit{once per round}, not per batch, costing a negligible $\mathcal{O}(d_c\cdot J)$. \textcolor{black}{This one-time operation per round intentionally trades a negligible local computation for a massive reduction in the communication and synchronization bottlenecks traditionally caused by cross-tier backpropagation.}
+% This is outweighed by eliminating cross-tier backpropagation. {\color{red}Dinh: Highlight that the $\mathcal{O}(d_c\cdot J)$ packing cost is a one-time operation per round, trading a negligible local computation for a massive reduction in the communication and synchronization bottlenecks of cross-tier backpropagation.}
+% Packing consists of computing per‑class $\mu$ and $\sigma$ once per round; its cost is $\mathcal{O}(d_c\cdot J)$, which is negligible compared to several epochs of local training.
+% Unpacking only requires sampling from a diagonal Gaussian, which is extremely fast.
+% In practice, H‑SFP reduces total training time by $10\times$ compared to SplitFed (Figure~3 in the main paper), confirming that the communication savings far outweigh the extra computation.
+
+\noindent\textbf{Q4: Sensitivity to successful feature regeneration.}~Refer to Q2 of Reviewer ouVX and Q2 of Reviewer uEjt. 
+
+\noindent\textbf{Q5: Data statistics can still cause privacy issues.}~We will leave this as a limitation and future work. \textcolor{black}{However, exchanging aggregated, class-wise statistics is fundamentally more private and reduces susceptibility to inversion attacks.}
+% \textcolor{black}{However, it is crucial to highlight that exchanging aggregated, class-wise statistics ($\mu, \sigma$) is fundamentally more privacy-preserving than standard split learning. Traditional methods transmit raw "smashed activations" and gradients for every sample, which are highly susceptible to feature-space inversion and property inference attacks. In contrast, our approach inherently obfuscates individual sample features through statistical aggregation.}
+% {\color{red}Dinh: highlighting that class-wise statistics are significantly more privacy-preserving than raw 'smashed activations' or gradients, which are far more susceptible to inversion and property inference attacks.}
+
+\noindent\textbf{Q6: All clients are assumed to participate in every FL round.}~Refer to Q4 of Reviewer ouVX. 
+% {\color{red}Dinh: Explaining that H-SFP’s decoupled architecture is inherently robust to stragglers, as the server can optimize using any available statistics asynchronously without the blocking synchronization required by traditional split learning backpropagation.}
+
+% References
+{
+    \small
+    \bibliographystyle{unsrt}
+    \bibliography{main}
+}
+
+\end{document}

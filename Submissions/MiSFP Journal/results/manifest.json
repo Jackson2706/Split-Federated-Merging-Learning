@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "seeds": [1, 2, 3],
+  "methods": ["fedavg", "splitfed", "fedproto", "hsfp", "misfp_k1", "misfp_edge", "misfp_k2", "misfp_k4", "misfp_adaptive"],
+  "datasets": ["cifar100", "cifar10", "ham10000"],
+  "partitions": ["iid", "dirichlet"],
+  "metrics": {"accuracy": "%", "macro_f1": "%", "ce_bytes": "byte", "ec_bytes": "byte", "total_bytes": "byte", "runtime": "s", "peak_memory": "MiB", "nll": "nat/dim", "swd": "feature_unit", "mmd": "unitless", "mode_coverage": "%", "minority_recall": "%", "between_source_ratio": "ratio"},
+  "tables": {"tab:main": ["accuracy", "macro_f1"], "tab:resources": ["ce_bytes", "ec_bytes", "total_bytes", "runtime", "peak_memory"], "tab:ablation": ["accuracy", "macro_f1", "components_per_class"], "tab:sensitivity": ["accuracy", "macro_f1", "total_bytes", "runtime"], "tab:fidelity": ["nll", "swd", "mmd", "mode_coverage", "minority_recall", "between_source_ratio"]},
+  "figures": {"fig:empirical": ["accuracy", "macro_f1", "total_bytes", "swd", "components_per_class"], "fig:diagnostics": ["accuracy", "swd", "mode_coverage", "runtime", "between_source_ratio"]},
+  "measurement_columns": ["method", "dataset", "partition", "seed", "round", "checkpoint", "encoder_extraction_mode", "client_budget_bytes", "edge_budget_bytes", "metric", "value", "unit", "source_run_id", "config_hash", "status"],
+  "unique_key": ["source_run_id", "round", "checkpoint", "metric"],
+  "aggregate_key": ["method", "dataset", "partition", "round", "checkpoint", "encoder_extraction_mode", "client_budget_bytes", "edge_budget_bytes", "metric"]
+}

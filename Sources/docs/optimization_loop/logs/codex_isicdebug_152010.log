@@ -1,0 +1,3007 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f6f29-6926-7413-9707-e25d21c2027f
+--------
+user
+You are Codex. ISIC-2018 segmentation fair-comparison runs (task=segmentation) produce DEGENERATE results, NOT the Dice-NaN (that is fixed). Symptoms from docs/optimization_loop/logs/plan26_isicfix_*/isic_*.log: federated + hierfl reach 'Avg Stats after 50 rounds: Loss=1.25 IoU=0' (IoU stuck at 0 => model predicts all-background / never learns), and heterosfl + h-sfp crash with code=1. Investigate WHY seg IoU=0 and why heterosfl/h-sfp seg crash. Check: the ISIC proxy configs (configs/proxy/plan_isic2018_*.yaml) - are LR/epochs/num_classes/loss weights sane for binary skin-lesion seg? Is the Dice/IoU METRIC computed correctly (threshold, class dim)? Do the heterosfl/h-sfp seg runners have a shape/model bug on ISIC (grep the crash traceback in isic_heterosfl_*.log / isic_h-sfp_*.log)? Compare to the working segmentation defaults in configs/segmentation/*/default.yaml (the repo already trained seg per git history). Report ROOT CAUSE for (a) IoU=0 and (b) the code=1 crashes, and propose minimal fixes. NO GPU/training (Claude verifies). Preserve uncommitted changes; local only. FINAL: root-cause for IoU=0 + crash, the crash traceback frames, and proposed config/code fixes.
+codex
+I’ll trace the proxy configs, metric/loss implementation, runner paths, and the recorded crashbacks, then compare them with the repository’s known segmentation defaults. I’ll keep this read-only and won’t run training.
+exec
+/bin/bash -lc "rg --files -g 'AGENTS.md' -g 'configs/proxy/plan_isic2018_*.yaml' -g 'configs/segmentation/**/default.yaml' -g 'docs/optimization_loop/logs/plan26_isicfix_*/*isic*.log' -g '*.py' | sed -n '1,240p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+main.py
+ehsfp/metrics_logger.py
+ehsfp/memory.py
+ehsfp/dropout.py
+ehsfp/losses.py
+ehsfp/reliability.py
+ehsfp/generator.py
+ehsfp/config.py
+ehsfp/client_objective.py
+ehsfp/integrity.py
+ehsfp/__init__.py
+ehsfp/serverless_sim.py
+ehsfp/prototype_space.py
+ehsfp/aggregation.py
+scripts/journal_experiments/collect_results.py
+scripts/camera_ready/run_lstat.py
+scripts/camera_ready/_hsfp_common.py
+scripts/camera_ready/run_covariance.py
+scripts/camera_ready/make_tables.py
+scripts/camera_ready/run_partition_diagnostics.py
+scripts/camera_ready/run_inversion.py
+scripts/camera_ready/gen_fairness.py
+scripts/camera_ready/collect_camera_ready.py
+camera_ready/inversion.py
+camera_ready/profiling.py
+camera_ready/partition.py
+camera_ready/latex.py
+camera_ready/io_utils.py
+camera_ready/__init__.py
+camera_ready/synthesis.py
+camera_ready/lstat.py
+camera_ready/feature_distance.py
+configs/proxy/plan_isic2018_heterosfl.yaml
+configs/proxy/plan_isic2018_hsfp.yaml
+serverless/__init__.py
+configs/proxy/plan_isic2018_hierfl.yaml
+serverless/adapters/local.py
+serverless/adapters/__init__.py
+configs/proxy/plan_isic2018_federated.yaml
+serverless/interfaces/__init__.py
+serverless/interfaces/aggregator.py
+serverless/interfaces/communication.py
+configs/segmentation/hierfl/default.yaml
+tools/fair_compare/aggregate.py
+tools/plot_communication.py
+tools/diag/oracle_probe.py
+tools/diag/normalize_probe.py
+tools/diag/encoder_linear_probe.py
+configs/segmentation/hsfl/default.yaml
+configs/segmentation/h-sfp/default.yaml
+configs/segmentation/federated/default.yaml
+configs/segmentation/hetero-sfl/default.yaml
+configs/segmentation/splitfl/default.yaml
+classification/HSFL/models/VGG_HAM10000.py
+classification/HSFL/models/constant.py
+classification/HSFL/models/CNN_ham10000_ResNet50.py
+classification/HSFL/models/Alexnet_cifar.py
+classification/HSFL/models/__init__.py
+classification/HSFL/models/CNN_Cifar.py
+classification/HSFL/hierarchy.py
+segmentation/HSFL/models/VGG_HAM10000.py
+segmentation/HSFL/models/constant.py
+segmentation/HSFL/models/CNN_ham10000_ResNet50.py
+segmentation/HSFL/models/Alexnet_cifar.py
+segmentation/HSFL/models/__init__.py
+segmentation/HSFL/models/CNN_Cifar.py
+segmentation/HSFL/hierarchy.py
+classification/HSFL/data/utils/ham10000.py
+classification/HSFL/data/utils/__init__.py
+classification/HSFL/data/sampling.py
+segmentation/HSFL/data/get_data.py
+classification/HSFL/data/__init__.py
+classification/HSFL/data/get_data.py
+segmentation/HSFL/config/config_loader.py
+segmentation/HSFL/config/__init__.py
+segmentation/HSFL/runner.py
+classification/HSFL/config/config_loader.py
+classification/HSFL/config/__init__.py
+classification/HSFL/runner.py
+segmentation/HSFL/data/utils/__init__.py
+segmentation/HSFL/data/utils/ISIC.py
+segmentation/HSFL/data/sampling.py
+segmentation/HSFL/data/__init__.py
+classification/__init__.py
+segmentation/HeteroSFL/models/ISIC_ResNet50.py
+segmentation/HeteroSFL/models/constant.py
+segmentation/HeteroSFL/models/__init__.py
+segmentation/Figure/draw_iid_cifar100.py
+segmentation/Figure/draw_ram.py
+segmentation/Figure/draw_iid_cifar10.py
+segmentation/Figure/draw_iid_ham10000.py
+segmentation/Figure/draw_noniid_ham10000.py
+segmentation/Figure/draw_ours.py
+segmentation/Figure/draw_noniid_cifar10.py
+segmentation/Figure/draw_noniid_cifar100.py
+classification/Figure/draw_iid_cifar100.py
+classification/Figure/draw_ram.py
+classification/Figure/draw_iid_cifar10.py
+classification/Figure/draw_iid_ham10000.py
+classification/Figure/draw_noniid_ham10000.py
+classification/Figure/draw_ours.py
+classification/Figure/draw_noniid_cifar10.py
+classification/Figure/draw_noniid_cifar100.py
+segmentation/HeteroSFL/data/utils/__init__.py
+segmentation/HeteroSFL/data/utils/ISIC.py
+segmentation/HeteroSFL/data/sampling.py
+segmentation/HeteroSFL/data/__init__.py
+segmentation/HeteroSFL/data/get_data.py
+classification/HeteroSFL/models/VGG_HAM10000.py
+classification/HeteroSFL/models/constant.py
+classification/HeteroSFL/models/CNN_HAM10000_ResNet50.py
+classification/HeteroSFL/models/Alexnet_Cifar.py
+segmentation/HeteroSFL/clients/test.py
+classification/HeteroSFL/models/__init__.py
+classification/HeteroSFL/models/CNN_Cifar.py
+segmentation/HeteroSFL/clients/DiceFocalLoss.py
+segmentation/HeteroSFL/clients/__init__.py
+classification/HierFL/models/VGG_HAM10000.py
+classification/HierFL/models/CNN_HAM10000.py
+classification/HierFL/models/constant.py
+classification/HierFL/models/Alexnet_Cifar.py
+classification/HierFL/models/CNNCifar.py
+classification/HierFL/models/__init__.py
+classification/HierFL/hierarchy.py
+classification/Federated/models/VGG_HAM10000.py
+classification/Federated/models/CNN_HAM10000.py
+classification/Federated/models/constant.py
+classification/Federated/models/Alexnet_Cifar.py
+classification/Federated/models/CNNCifar.py
+classification/Federated/models/__init__.py
+segmentation/HeteroSFL/config/config_loader.py
+segmentation/HeteroSFL/runner.py
+classification/SplitFL/models/VGG_HAM10000.py
+classification/SplitFL/models/constant.py
+classification/SplitFL/models/CNN_HAM10000_ResNet50.py
+classification/SplitFL/models/Alexnet_Cifar.py
+classification/SplitFL/models/__init__.py
+classification/SplitFL/models/CNN_Cifar.py
+classification/HeteroSFL/data/utils/ham10000.py
+classification/HeteroSFL/data/utils/__init__.py
+classification/HeteroSFL/data/sampling.py
+classification/HeteroSFL/data/__init__.py
+classification/HeteroSFL/data/get_data.py
+segmentation/SplitFL/models/VGG_HAM10000.py
+segmentation/SplitFL/models/constant.py
+segmentation/SplitFL/models/CNN_HAM10000_ResNet50.py
+segmentation/SplitFL/models/Alexnet_Cifar.py
+segmentation/SplitFL/models/__init__.py
+segmentation/SplitFL/models/CNN_Cifar.py
+classification/HeteroSFL/config/config_loader.py
+classification/HeteroSFL/config/__init__.py
+classification/HeteroSFL/runner.py
+classification/HierFL/data/utils/ham10000.py
+classification/HierFL/data/utils/__init__.py
+classification/HierFL/data/sampling.py
+classification/HierFL/data/__init__.py
+classification/HierFL/data/get_data.py
+classification/Federated/data/utils/ham10000.py
+classification/Federated/data/utils/__init__.py
+classification/Federated/data/sampling.py
+classification/Federated/data/__init__.py
+classification/Federated/data/get_data.py
+segmentation/SplitFL/data/utils/__init__.py
+segmentation/SplitFL/data/utils/ISIC.py
+segmentation/SplitFL/data/sampling.py
+segmentation/SplitFL/data/__init__.py
+segmentation/SplitFL/data/get_data.py
+classification/SplitFL/data/utils/ham10000.py
+classification/SplitFL/data/utils/__init__.py
+classification/SplitFL/data/sampling.py
+classification/SplitFL/data/__init__.py
+classification/SplitFL/data/get_data.py
+classification/HierFL/clients/test.py
+classification/HierFL/clients/Client.py
+classification/HierFL/clients/FedAvgClient.py
+classification/HierFL/clients/__init__.py
+segmentation/SplitFL/config/config_loader.py
+segmentation/SplitFL/config/__init__.py
+classification/Federated/clients/FedNovaClient.py
+classification/Federated/clients/test.py
+classification/Federated/clients/FedSGDClient.py
+classification/Federated/clients/constant.py
+classification/Federated/clients/Client.py
+classification/Federated/clients/FedAvgClient.py
+classification/Federated/clients/__init__.py
+classification/Federated/clients/FedProxClient.py
+classification/SplitFL/config/config_loader.py
+segmentation/SplitFL/FedServer/constant.py
+classification/SplitFL/config/__init__.py
+segmentation/SplitFL/FedServer/FedAvgAggregator.py
+segmentation/SplitFL/FedServer/__init__.py
+segmentation/SplitFL/FedServer/Aggregator.py
+segmentation/SplitFL/runner.py
+classification/HierFL/servers/Aggregator.py
+classification/HierFL/servers/FedAvgAggregator.py
+classification/HierFL/servers/__init__.py
+segmentation/H-SFP/models/ISIC_ResNet50.py
+segmentation/H-SFP/models/constant.py
+segmentation/H-SFP/models/__init__.py
+segmentation/H-SFP/hierarchy.py
+classification/Federated/config/config_loader.py
+classification/Federated/config/__init__.py
+classification/Federated/runner.py
+classification/SplitFL/FedServer/constant.py
+classification/SplitFL/FedServer/FedAvgAggregator.py
+classification/SplitFL/FedServer/__init__.py
+classification/SplitFL/FedServer/Aggregator.py
+classification/SplitFL/runner.py
+classification/HierFL/config/config_loader.py
+classification/HierFL/config/__init__.py
+segmentation/H-SFP/runner.py
+classification/HierFL/runner.py
+classification/Federated/server/FedProxAggregator.py
+classification/Federated/server/FedSGDAggregator.py
+classification/Federated/server/FedNovaAggregator.py
+classification/Federated/server/constant.py
+classification/Federated/server/FedAvgAggregator.py
+classification/Federated/server/__init__.py
+classification/Federated/server/Aggregator.py
+segmentation/H-SFP/data/get_data.py
+classification/H-SFP/models/vgg_ham10000.py
+classification/H-SFP/models/alexnet_cifar.py
+classification/H-SFP/models/pipeline.py
+classification/H-SFP/models/constant.py
+classification/H-SFP/models/model.py
+classification/H-SFP/models/__init__.py
+classification/H-SFP/models/resnet50_ham10000.py
+classification/H-SFP/models/cnn_cifar.py
+classification/H-SFP/hierarchy.py
+segmentation/H-SFP/clients/test.py
+segmentation/HierFL/models/CNN_ISIC.py
+segmentation/H-SFP/clients/DiceFocalLoss.py
+segmentation/HierFL/models/constant.py
+segmentation/H-SFP/clients/__init__.py
+segmentation/HierFL/models/__init__.py
+segmentation/HierFL/hierarchy.py
+segmentation/H-SFP/data/utils/__init__.py
+segmentation/H-SFP/data/utils/ISIC.py
+segmentation/H-SFP/data/sampling.py
+segmentation/H-SFP/data/__init__.py
+
+exec
+/bin/bash -lc "find docs/optimization_loop/logs -maxdepth 3 -type f -path '*plan26_isicfix*' -name 'isic_*.log' -print 2>/dev/null
+find .. -name AGENTS.md -print
+for f in configs/proxy/plan_isic2018_*.yaml configs/segmentation/*/default.yaml; do echo \"FILE "'$f"; sed -n '"'1,240p' \""'$f"; done' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 896ms:
+FILE configs/proxy/plan_isic2018_federated.yaml
+base: ../segmentation/federated/isic_fedavg_resnet50.yaml
+
+output_dir: outputs/isic2018/federated
+FILE configs/proxy/plan_isic2018_heterosfl.yaml
+base: ../segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml
+
+output_dir: outputs/isic2018/heterosfl
+FILE configs/proxy/plan_isic2018_hierfl.yaml
+base: ../segmentation/hierfl/isic_hierfl_resnet50.yaml
+
+output_dir: outputs/isic2018/hierfl
+FILE configs/proxy/plan_isic2018_hsfp.yaml
+base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+
+output_dir: outputs/isic2018/hsfp
+FILE configs/segmentation/federated/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+FILE configs/segmentation/h-sfp/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+input_size: 224
+
+mid_server: [5]
+
+ssl_epochs_client: 10
+ssl_epochs_edge: 10
+syn_epochs_cloud: 10
+syn_samples_per_class: 50
+decoder_epochs: 5
+
+# SupCon temperature for the client/edge contrastive tiers (Khosla et al. 2020
+# optimum ~0.1). Lower -> tighter, more separable clusters. Applied identically
+# to H-SFP and E-HSFP, so the comparison stays fair.
+supcon_temperature: !!float 0.1
+
+# --- E-HSFP extensions (all disabled by default = baseline H-SFP) ---
+# Episodic Prototype Memory
+use_episodic_memory: false
+memory_size: 500
+memory_replay_ratio: 0.3
+memory_top_k: 5
+max_prototype_age: 20
+
+# Learnable Reliability-Aware Aggregation
+aggregation_mode: "average"           # "average" | "learnable_reliability"
+reliability_hidden_dim: 32
+reliability_lr: !!float 1e-3
+reliability_weight_decay: !!float 1e-4
+
+# Prototype Replay Consistency Loss
+use_prc_loss: false
+lambda_prc: 0.1
+prc_num_samples: 16
+
+# Serverless Prototype Dropout
+use_prototype_dropout: false
+prototype_dropout_rate: 0.2
+dropout_mode: "client_prototype"      # "client_prototype" | "edge_prototype" | "both"
+use_dropout_consistency: false
+lambda_dropout: 0.1
+
+# Serverless Episode Simulator
+use_serverless_simulation: false
+cold_start_probability: 0.15
+function_timeout_probability: 0.05
+max_episode_duration: 30.0
+latency_mean: 0.5
+latency_std: 0.2
+
+# Residual Prototype Generator
+use_residual_generator: false
+generator_hidden_dim: 64
+generator_scale: 0.1
+
+# Ablation mode (overrides individual flags when set)
+# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+FILE configs/segmentation/hetero-sfl/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+FILE configs/segmentation/hierfl/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+management: true
+print_every: 1
+input_shape: [3,224,224]
+mid_server: [5]
+FILE configs/segmentation/hsfl/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+management: true
+print_every: 1
+
+mid_server: [5]
+FILE configs/segmentation/splitfl/default.yaml
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+
+codex
+The proxy files are only indirections; the effective settings live in their referenced ISIC YAMLs. I’m now resolving those merged values and matching each failure to the exact runner/model frame.
+exec
+/bin/bash -lc 'for f in configs/segmentation/federated/isic_fedavg_resnet50.yaml configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml configs/segmentation/hierfl/isic_hierfl_resnet50.yaml configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml; do echo "FILE $f"; sed -n '"'1,260p' \""'$f"; done
+for f in docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_*.log docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_*.log; do echo "LOG $f"; rg -n -C 8 '"'Traceback|Error|Exception|RuntimeError|code=1|FAILED|ValueError|IndexError|TypeError' \""'$f"; done' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+FILE configs/segmentation/federated/isic_fedavg_resnet50.yaml
+base: default.yaml
+
+strategy: "fedavg"
+dataset: "isic-2018"
+train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+model: "resnet50"
+FILE configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml
+base: default.yaml
+
+strategy: "HeteroSFL"
+dataset: "isic-2018"
+train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+
+model: "resnet50"
+num_classes: 2
+server_in_channels: 512
+wide_channels: 76
+narrow_channels: 4
+high_end_ratio: 0.3
+FILE configs/segmentation/hierfl/isic_hierfl_resnet50.yaml
+base: default.yaml
+
+strategy: "hier_fedavg"
+dataset: "isic-2018"
+train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+model: "resnet50"
+FILE configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+base: default.yaml
+
+strategy: "H-SFP"
+dataset: "isic-2018"
+train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+
+model: "resnet50"
+num_classes: 2
+t1: 5
+t2: 10
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260714.log
+1-START isic_heterosfl_20260714 2026-07-17T09:29:31+07:00
+2-[Runner] Seed: 20260714
+3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260714'}
+4-[Runner] task=segmentation  method=hetero-sfl
+5-[Runner] cfg=configs/proxy/exp_j3l7ivp6.yaml
+6-
+7:Traceback (most recent call last):
+8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+9-    main()
+10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+11-    run(args.task, args.method, args.cfg,
+12-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 244, in run
+13-    runner = _load_runner(method_dir)
+14-             ^^^^^^^^^^^^^^^^^^^^^^^^
+15-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 106, in _load_runner
+16-    spec.loader.exec_module(module)
+17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+20-    from config import ConfigLoader
+21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+22:EXIT isic_heterosfl_20260714 code=1 runtime_s=1
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260715.log
+1-START isic_heterosfl_20260715 2026-07-17T09:29:32+07:00
+2-[Runner] Seed: 20260715
+3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260715'}
+4-[Runner] task=segmentation  method=hetero-sfl
+5-[Runner] cfg=configs/proxy/exp_g0zghuyc.yaml
+6-
+7:Traceback (most recent call last):
+8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+9-    main()
+10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+11-    run(args.task, args.method, args.cfg,
+12-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 244, in run
+13-    runner = _load_runner(method_dir)
+14-             ^^^^^^^^^^^^^^^^^^^^^^^^
+15-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 106, in _load_runner
+16-    spec.loader.exec_module(module)
+17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+20-    from config import ConfigLoader
+21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+22:EXIT isic_heterosfl_20260715 code=1 runtime_s=2
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_heterosfl_20260716.log
+1-START isic_heterosfl_20260716 2026-07-17T09:29:34+07:00
+2-[Runner] Seed: 20260716
+3-[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260716'}
+4-[Runner] task=segmentation  method=hetero-sfl
+5-[Runner] cfg=configs/proxy/exp_y0hnr8qx.yaml
+6-
+7:Traceback (most recent call last):
+8-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+9-    main()
+10-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+11-    run(args.task, args.method, args.cfg,
+12-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 244, in run
+13-    runner = _load_runner(method_dir)
+14-             ^^^^^^^^^^^^^^^^^^^^^^^^
+15-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 106, in _load_runner
+16-    spec.loader.exec_module(module)
+17-  File "<frozen importlib._bootstrap_external>", line 999, in exec_module
+18-  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+19-  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 10, in <module>
+20-    from config import ConfigLoader
+21:ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+22:EXIT isic_heterosfl_20260716 code=1 runtime_s=1
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260714.log
+1-START isic_h-sfp_20260714 2026-07-17T09:29:35+07:00
+2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+4:EXIT isic_h-sfp_20260714 code=1 runtime_s=1
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260715.log
+1-START isic_h-sfp_20260715 2026-07-17T09:29:36+07:00
+2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+4:EXIT isic_h-sfp_20260715 code=1 runtime_s=1
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_h-sfp_20260716.log
+1-START isic_h-sfp_20260716 2026-07-17T09:29:37+07:00
+2:Error: config not found: /home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_h-sfp.yaml
+3-Tip: python main.py --list-configs --task segmentation --method h-sfp
+4:EXIT isic_h-sfp_20260716 code=1 runtime_s=1
+
+exec
+/bin/bash -lc "rg -n \"IoU|iou|Dice|dice|CrossEntropy|BCE|Focal|criterion|num_classes|threshold|argmax|sigmoid|softmax\" segmentation/Federated segmentation/HierFL segmentation/HeteroSFL segmentation/H-SFP | sed -n '1,320p'
+for f in docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_20260716.log docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_20260716.log; do echo \"LOG "'$f"; rg -n '"'Avg Stats|Round|Loss|IoU|Dice' \""'$f" | tail -80; done
+sed -n '"'1,180p' segmentation/HeteroSFL/runner.py
+sed -n '1,180p' segmentation/H-SFP/runner.py
+sed -n '70,130p' main.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/H-SFP/models/ISIC_ResNet50.py:101:        out = torch.sigmoid(out)
+segmentation/HeteroSFL/models/ISIC_ResNet50.py:62:        out = torch.sigmoid(out)
+segmentation/HeteroSFL/clients/test.py:5:from .DiceFocalLoss import DiceFocalLoss
+segmentation/HeteroSFL/clients/test.py:8:def compute_iou_and_dice(preds, labels):
+segmentation/HeteroSFL/clients/test.py:15:    iou = intersection / union if union != 0 else 0
+segmentation/HeteroSFL/clients/test.py:18:    dice = 2 * intersection / denom if denom != 0 else 0
+segmentation/HeteroSFL/clients/test.py:20:    return iou, dice
+segmentation/HeteroSFL/clients/test.py:24:    """Returns test IoU, Dice, and loss."""
+segmentation/HeteroSFL/clients/test.py:27:    criterion = DiceFocalLoss().to(device)
+segmentation/HeteroSFL/clients/test.py:31:    total_loss, test_iou, test_dice, total_samples = 0.0, 0.0, 0.0, 0
+segmentation/HeteroSFL/clients/test.py:40:            total_loss += criterion(outputs, masks).item()
+segmentation/HeteroSFL/clients/test.py:42:            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/HeteroSFL/clients/test.py:43:            test_iou += iou * size
+segmentation/HeteroSFL/clients/test.py:44:            test_dice += dice * size
+segmentation/HeteroSFL/clients/test.py:47:    test_iou /= total_samples
+segmentation/HeteroSFL/clients/test.py:48:    test_dice /= total_samples
+segmentation/HeteroSFL/clients/test.py:49:    return test_iou, test_dice, total_loss / len(testloader)
+segmentation/Federated/models/CNN_ISIC.py:63:        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+segmentation/HierFL/models/CNN_ISIC.py:63:        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+segmentation/H-SFP/clients/test.py:5:from .DiceFocalLoss import DiceFocalLoss
+segmentation/H-SFP/clients/test.py:8:def compute_iou_and_dice(preds, labels):
+segmentation/H-SFP/clients/test.py:15:    iou = intersection / union if union != 0 else 0
+segmentation/H-SFP/clients/test.py:18:    dice = 2 * intersection / denom if denom != 0 else 0
+segmentation/H-SFP/clients/test.py:20:    return iou, dice
+segmentation/H-SFP/clients/test.py:24:    """Returns test IoU, Dice, and loss."""
+segmentation/H-SFP/clients/test.py:27:    criterion = DiceFocalLoss().to(device)
+segmentation/H-SFP/clients/test.py:31:    total_loss, test_iou, test_dice, total_samples = 0.0, 0.0, 0.0, 0
+segmentation/H-SFP/clients/test.py:39:            total_loss += criterion(outputs, masks).item()
+segmentation/H-SFP/clients/test.py:41:            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/H-SFP/clients/test.py:42:            test_iou += iou * size
+segmentation/H-SFP/clients/test.py:43:            test_dice += dice * size
+segmentation/H-SFP/clients/test.py:46:    test_iou /= total_samples
+segmentation/H-SFP/clients/test.py:47:    test_dice /= total_samples
+segmentation/H-SFP/clients/test.py:48:    return test_iou, test_dice, total_loss / len(testloader)
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:24:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:34:    def dice_loss(self, preds, targets):
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:39:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:42:        return 1 - dice
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:58:        # Keep reductions and BCE in float32 even when the caller uses autocast.
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:63:            loss_dice = self.dice_loss(preds, targets)
+segmentation/HeteroSFL/clients/DiceFocalLoss.py:65:            return loss_dice + loss_focal
+segmentation/HeteroSFL/clients/__init__.py:1:from .test import test_inference, compute_iou_and_dice
+segmentation/HeteroSFL/clients/__init__.py:2:from .DiceFocalLoss import DiceFocalLoss
+segmentation/HierFL/clients/test.py:5:from .DiceFocalLoss import DiceFocalLoss
+segmentation/HierFL/clients/test.py:8:def compute_iou_and_dice(preds, labels):
+segmentation/HierFL/clients/test.py:20:    # Compute Intersection and Union for IoU
+segmentation/HierFL/clients/test.py:23:    iou = intersection / union if union != 0 else 0
+segmentation/HierFL/clients/test.py:25:    # Compute Dice Coefficient
+segmentation/HierFL/clients/test.py:26:    dice = (
+segmentation/HierFL/clients/test.py:32:    return iou, dice
+segmentation/HierFL/clients/test.py:41:    criterion = DiceFocalLoss().to(device)
+segmentation/HierFL/clients/test.py:44:    test_iou = 0.0
+segmentation/HierFL/clients/test.py:45:    test_dice = 0.0
+segmentation/HierFL/clients/test.py:56:        batch_loss = criterion(outputs, masks)
+segmentation/HierFL/clients/test.py:59:        outputs = torch.sigmoid(
+segmentation/HierFL/clients/test.py:61:        )  # Apply sigmoid if the output is logits
+segmentation/HierFL/clients/test.py:63:        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/HierFL/clients/test.py:65:        test_iou += iou * size  # Multiply by batch size
+segmentation/HierFL/clients/test.py:66:        test_dice += dice * size
+segmentation/HierFL/clients/test.py:70:    test_iou /= total_samples
+segmentation/HierFL/clients/test.py:71:    test_dice /= total_samples
+segmentation/HierFL/clients/test.py:72:    return test_iou, test_dice, loss / len(testloader)
+segmentation/H-SFP/clients/__init__.py:1:from .test import test_inference, compute_iou_and_dice
+segmentation/H-SFP/clients/__init__.py:2:from .DiceFocalLoss import DiceFocalLoss
+segmentation/H-SFP/hierarchy.py:46:    num_classes = prototypes.shape[0]
+segmentation/H-SFP/hierarchy.py:52:        num_classes, num_samples_per_class, *shape,
+segmentation/H-SFP/hierarchy.py:115:def _mask_to_label(mask, threshold=0.5):
+segmentation/H-SFP/hierarchy.py:118:    Returns 1 (foreground) if foreground ratio > threshold fraction of pixels,
+segmentation/H-SFP/hierarchy.py:121:    # Use fraction of foreground pixels > a small threshold to determine class
+segmentation/H-SFP/hierarchy.py:264:        self.criterion = nn.CrossEntropyLoss().to(self.device)
+segmentation/H-SFP/hierarchy.py:675:                    loss = self.criterion(logits, labels)
+segmentation/H-SFP/hierarchy.py:701:    def _run_validation(self, test_dataset, best_iou, epoch):
+segmentation/H-SFP/hierarchy.py:703:        from clients import compute_iou_and_dice, DiceFocalLoss
+segmentation/H-SFP/hierarchy.py:714:        test_iou, test_dice, total_samples = 0.0, 0.0, 0
+segmentation/H-SFP/hierarchy.py:723:                iou, dice = compute_iou_and_dice(out, mask)
+segmentation/H-SFP/hierarchy.py:724:                test_iou += iou
+segmentation/H-SFP/hierarchy.py:725:                test_dice += dice
+segmentation/H-SFP/hierarchy.py:728:        test_iou /= max(total_samples, 1)
+segmentation/H-SFP/hierarchy.py:729:        test_dice /= max(total_samples, 1)
+segmentation/H-SFP/hierarchy.py:732:        if test_iou > best_iou:
+segmentation/H-SFP/hierarchy.py:733:            best_iou = test_iou
+segmentation/H-SFP/hierarchy.py:734:            print(f"New best IoU at epoch {epoch}: {best_iou * 100:.2f}%")
+segmentation/H-SFP/hierarchy.py:741:        return test_iou, test_dice, best_iou, pipeline_model
+segmentation/H-SFP/hierarchy.py:747:        from clients import DiceFocalLoss
+segmentation/H-SFP/hierarchy.py:757:        seg_criterion = DiceFocalLoss().to(self.device)
+segmentation/H-SFP/hierarchy.py:775:                # The decoder head ends in sigmoid and feeds Dice/BCE. Under fp16
+segmentation/H-SFP/hierarchy.py:776:                # autocast the conv stack can overflow -> pre-sigmoid inf/NaN ->
+segmentation/H-SFP/hierarchy.py:777:                # sigmoid(NaN)=NaN -> BCE CUDA assert (input_val in [0,1] fails).
+segmentation/H-SFP/hierarchy.py:781:                loss = seg_criterion(pred, mask)
+segmentation/H-SFP/hierarchy.py:809:        validation_iou_list, validation_dice_list, cloud_loss_list = [], [], []
+segmentation/H-SFP/hierarchy.py:810:        best_iou = 0
+segmentation/H-SFP/hierarchy.py:989:                iou, dice, current_best_iou, model_snapshot = self._run_validation(
+segmentation/H-SFP/hierarchy.py:990:                    test_dataset, best_iou, epoch,
+segmentation/H-SFP/hierarchy.py:992:                validation_iou_list.append(iou)
+segmentation/H-SFP/hierarchy.py:993:                validation_dice_list.append(dice)
+segmentation/H-SFP/hierarchy.py:996:                    best_iou = current_best_iou
+segmentation/H-SFP/hierarchy.py:1001:                        "best_iou": best_iou,
+segmentation/H-SFP/hierarchy.py:1005:                    print(f"*** Checkpoint saved: {checkpoint_path} (IoU: {best_iou*100:.2f}%)")
+segmentation/H-SFP/hierarchy.py:1048:            if validation_iou_list:
+segmentation/H-SFP/hierarchy.py:1049:                log_data["validation_iou"] = validation_iou_list[-1]
+segmentation/H-SFP/hierarchy.py:1050:                log_data["validation_dice"] = validation_dice_list[-1]
+segmentation/H-SFP/hierarchy.py:1051:                log_data["best_iou"] = best_iou
+segmentation/H-SFP/hierarchy.py:1068:            "validation_iou": validation_iou_list,
+segmentation/H-SFP/hierarchy.py:1069:            "validation_dice": validation_dice_list,
+segmentation/H-SFP/hierarchy.py:1071:            "best_iou": best_iou,
+segmentation/H-SFP/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/H-SFP/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/H-SFP/clients/DiceFocalLoss.py:24:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/H-SFP/clients/DiceFocalLoss.py:34:    def dice_loss(self, preds, targets):
+segmentation/H-SFP/clients/DiceFocalLoss.py:39:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+segmentation/H-SFP/clients/DiceFocalLoss.py:42:        return 1 - dice
+segmentation/H-SFP/clients/DiceFocalLoss.py:58:        # Keep reductions and BCE in float32 even when the caller uses autocast.
+segmentation/H-SFP/clients/DiceFocalLoss.py:63:            loss_dice = self.dice_loss(preds, targets)
+segmentation/H-SFP/clients/DiceFocalLoss.py:65:            return loss_dice + loss_focal
+segmentation/HierFL/hierarchy.py:79:                # Cloud layer connected to all edge servers from the previous layer
+segmentation/HierFL/hierarchy.py:111:                    # Middle servers connected to previous layer's servers
+segmentation/HierFL/hierarchy.py:230:            iou, dice, _ = test_inference(self.args, model, self.test_dataset)
+segmentation/HierFL/hierarchy.py:232:            iou2, dice2, _ = test_inference(self.args, model, self.test_dataset)
+segmentation/HierFL/hierarchy.py:233:            return iou >= iou2
+segmentation/HierFL/clients/Client.py:50:        criterion = nn.CrossEntropyLoss().to(self.device)
+segmentation/HierFL/clients/Client.py:59:            batch_loss = criterion(outputs, labels)
+segmentation/HeteroSFL/runner.py:13:from clients import test_inference, DiceFocalLoss
+segmentation/HeteroSFL/runner.py:109:    criterion = DiceFocalLoss().to(device)
+segmentation/HeteroSFL/runner.py:111:    best_iou = 0.0
+segmentation/HeteroSFL/runner.py:158:                        # Segmentation: use DiceFocalLoss for both, average
+segmentation/HeteroSFL/runner.py:159:                        loss_wide = criterion(pred_wide, mask)
+segmentation/HeteroSFL/runner.py:160:                        loss_narrow = criterion(pred_narrow, mask)
+segmentation/HeteroSFL/runner.py:174:                        loss = criterion(pred, mask)
+segmentation/HeteroSFL/runner.py:208:            eval_iou, eval_dice, eval_loss = test_inference(config, eval_wrapper, test_dataset)
+segmentation/HeteroSFL/runner.py:209:            print(f"Epoch {epoch+1}: IoU={eval_iou:.4f}  Dice={eval_dice:.4f}")
+segmentation/HeteroSFL/runner.py:211:            if eval_iou > best_iou:
+segmentation/HeteroSFL/runner.py:212:                best_iou = eval_iou
+segmentation/HeteroSFL/runner.py:213:                print(f" -> New Best IoU: {best_iou:.4f}")
+segmentation/HeteroSFL/runner.py:218:                    "iou": eval_iou,
+segmentation/HeteroSFL/runner.py:219:                    "dice": eval_dice,
+segmentation/HeteroSFL/runner.py:220:                    "best_iou": best_iou,
+segmentation/HeteroSFL/runner.py:238:    final_iou, final_dice, final_loss = test_inference(config, final_model, test_dataset)
+segmentation/HeteroSFL/runner.py:241:    print(f"\nFinal Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
+segmentation/HeteroSFL/runner.py:246:        wandb.summary["test_iou"] = final_iou
+segmentation/HeteroSFL/runner.py:247:        wandb.summary["test_dice"] = final_dice
+segmentation/HeteroSFL/runner.py:248:        wandb.summary["best_iou"] = best_iou
+segmentation/HeteroSFL/runner.py:256:            "test_iou": final_iou, "test_dice": final_dice,
+segmentation/HeteroSFL/runner.py:257:            "best_iou": best_iou, "total_time": total_time,
+segmentation/HierFL/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/HierFL/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/HierFL/clients/DiceFocalLoss.py:25:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/HierFL/clients/DiceFocalLoss.py:37:    def dice_loss(self, preds, targets):
+segmentation/HierFL/clients/DiceFocalLoss.py:43:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+segmentation/HierFL/clients/DiceFocalLoss.py:47:        return 1 - dice
+segmentation/HierFL/clients/DiceFocalLoss.py:63:        # Keep reductions and BCE in float32 even when the caller uses autocast.
+segmentation/HierFL/clients/DiceFocalLoss.py:69:            loss_dice = self.dice_loss(preds, targets)
+segmentation/HierFL/clients/DiceFocalLoss.py:71:            total_loss = loss_dice + loss_focal
+segmentation/HierFL/clients/DiceFocalLoss.py:75:                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+segmentation/H-SFP/runner.py:90:        test_iou, test_dice, test_loss = test_inference(config, best_model, test_dataset)
+segmentation/H-SFP/runner.py:92:        print(f"|---- Best Validation IoU: {output['best_iou']*100:.2f}%")
+segmentation/H-SFP/runner.py:93:        print(f"|---- Test IoU: {test_iou*100:.2f}%  Dice: {test_dice*100:.2f}%")
+segmentation/H-SFP/runner.py:96:        print(f"|---- Best Validation IoU: {output['best_iou']*100:.2f}%")
+segmentation/HierFL/clients/FedAvgClient.py:6:from .DiceFocalLoss import DiceFocalLoss
+segmentation/HierFL/clients/FedAvgClient.py:12:        criterion = DiceFocalLoss().to(self.device)
+segmentation/HierFL/clients/FedAvgClient.py:35:                loss = criterion(outputs, masks)
+segmentation/HierFL/runner.py:96:        test_iou, test_dice, test_loss = test_inference(config, global_model, test_dataset)
+segmentation/HierFL/runner.py:97:        train_accuracy.append(test_iou)
+segmentation/HierFL/runner.py:103:                "iou": test_iou,
+segmentation/HierFL/runner.py:104:                "dice": test_dice,
+segmentation/HierFL/runner.py:114:            print(f"Avg Stats after {epoch+1} rounds: IoU={test_iou:.2f}%  Dice={test_dice:.2f}%")
+segmentation/HierFL/runner.py:118:    test_iou, test_dice, test_loss = test_inference(config, global_model, test_dataset)
+segmentation/HierFL/runner.py:121:    print("|---- Test IoU: {:.2f}%  Dice: {:.2f}%".format(test_iou, test_dice))
+segmentation/HierFL/runner.py:125:        wandb.summary["test_iou"] = test_iou
+segmentation/HierFL/runner.py:126:        wandb.summary["test_dice"] = test_dice
+segmentation/HierFL/runner.py:136:            "test_iou": test_iou, "test_dice": test_dice,
+segmentation/Federated/clients/FedNovaClient.py:7:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/FedNovaClient.py:12:        criterion = DiceFocalLoss().to(self.device)
+segmentation/Federated/clients/FedNovaClient.py:39:                loss = criterion(log_probs, labels)
+segmentation/Federated/runner.py:108:        test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
+segmentation/Federated/runner.py:109:        train_accuracy.append(test_iou)
+segmentation/Federated/runner.py:115:                "iou": test_iou,
+segmentation/Federated/runner.py:116:                "dice": test_dice,
+segmentation/Federated/runner.py:125:            print(f"Avg Stats after {epoch+1} rounds: Loss={np.mean(np.array(training_loss)):.4f}  IoU={100*train_accuracy[-1]:.2f}%")
+segmentation/Federated/runner.py:129:    test_iou, test_dice, test_loss = test_inference(args=config, model=global_model, test_dataset=test_dataset)
+segmentation/Federated/runner.py:132:    print("|---- Avg Train IoU: {:.2f}%".format(100 * train_accuracy[-1]))
+segmentation/Federated/runner.py:133:    print("|---- Test IoU: {:.2f}%  Test Dice: {:.2f}%".format(100 * test_iou, 100 * test_dice))
+segmentation/Federated/runner.py:137:        wandb.summary["test_iou"] = test_iou
+segmentation/Federated/runner.py:138:        wandb.summary["test_dice"] = test_dice
+segmentation/Federated/clients/DiceFocalLoss.py:6:class DiceFocalLoss(nn.Module):
+segmentation/Federated/clients/DiceFocalLoss.py:10:        super(DiceFocalLoss, self).__init__()
+segmentation/Federated/clients/DiceFocalLoss.py:25:                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+segmentation/Federated/clients/DiceFocalLoss.py:37:    def dice_loss(self, preds, targets):
+segmentation/Federated/clients/DiceFocalLoss.py:43:        dice = (2.0 * intersection + self.smooth + self.eps) / (
+segmentation/Federated/clients/DiceFocalLoss.py:47:        return 1 - dice
+segmentation/Federated/clients/DiceFocalLoss.py:63:        # Keep reductions and BCE in float32 even when the caller uses autocast.
+segmentation/Federated/clients/DiceFocalLoss.py:69:            loss_dice = self.dice_loss(preds, targets)
+segmentation/Federated/clients/DiceFocalLoss.py:71:            total_loss = loss_dice + loss_focal
+segmentation/Federated/clients/DiceFocalLoss.py:75:                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+segmentation/Federated/clients/test.py:5:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/test.py:8:def compute_iou_and_dice(preds, labels):
+segmentation/Federated/clients/test.py:20:    # Compute Intersection and Union for IoU
+segmentation/Federated/clients/test.py:23:    iou = intersection / union if union != 0 else 0
+segmentation/Federated/clients/test.py:25:    # Compute Dice Coefficient
+segmentation/Federated/clients/test.py:26:    dice = (
+segmentation/Federated/clients/test.py:32:    return iou, dice
+segmentation/Federated/clients/test.py:41:    criterion = DiceFocalLoss().to(device)
+segmentation/Federated/clients/test.py:44:    test_iou = 0.0
+segmentation/Federated/clients/test.py:45:    test_dice = 0.0
+segmentation/Federated/clients/test.py:56:        batch_loss = criterion(outputs, masks)
+segmentation/Federated/clients/test.py:59:        outputs = torch.sigmoid(
+segmentation/Federated/clients/test.py:61:        )  # Apply sigmoid if the output is logits
+segmentation/Federated/clients/test.py:63:        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/test.py:65:        test_iou += iou * size  # Multiply by batch size
+segmentation/Federated/clients/test.py:66:        test_dice += dice * size
+segmentation/Federated/clients/test.py:70:    test_iou /= total_samples
+segmentation/Federated/clients/test.py:71:    test_dice /= total_samples
+segmentation/Federated/clients/test.py:72:    return test_iou, test_dice, loss / len(testloader)
+segmentation/Federated/clients/FedProxClient.py:7:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/FedProxClient.py:14:        criterion = DiceFocalLoss().to(self.device)
+segmentation/Federated/clients/FedProxClient.py:39:                loss = criterion(log_probs, labels)
+segmentation/Federated/clients/Client.py:7:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/Client.py:11:def compute_iou_and_dice(preds, labels):
+segmentation/Federated/clients/Client.py:23:    # Compute Intersection and Union for IoU
+segmentation/Federated/clients/Client.py:26:    iou = intersection / union if union != 0 else 0
+segmentation/Federated/clients/Client.py:28:    # Compute Dice Coefficient
+segmentation/Federated/clients/Client.py:29:    dice = (
+segmentation/Federated/clients/Client.py:35:    return iou, dice
+segmentation/Federated/clients/Client.py:100:        criterion = DiceFocalLoss().to(self.device)
+segmentation/Federated/clients/Client.py:102:        test_iou = 0.0
+segmentation/Federated/clients/Client.py:103:        test_dice = 0.0
+segmentation/Federated/clients/Client.py:109:            batch_loss = criterion(outputs, masks)
+segmentation/Federated/clients/Client.py:111:            outputs = torch.sigmoid(
+segmentation/Federated/clients/Client.py:113:            )  # Apply sigmoid if the output is logits
+segmentation/Federated/clients/Client.py:115:            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/Client.py:116:            test_iou += iou * inputs.size(0)  # Multiply by batch size
+segmentation/Federated/clients/Client.py:117:            test_dice += dice * inputs.size(0)
+segmentation/Federated/clients/Client.py:119:        test_iou /= total_samples
+segmentation/Federated/clients/Client.py:120:        test_dice /= total_samples
+segmentation/Federated/clients/Client.py:121:        return test_iou, test_dice, loss / len(self.testloader)
+segmentation/Federated/clients/FedAvgClient.py:6:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/FedAvgClient.py:12:        criterion = DiceFocalLoss().to(self.device)
+segmentation/Federated/clients/FedAvgClient.py:35:                loss = criterion(outputs, masks)
+segmentation/Federated/clients/FedSGDClient.py:5:from .DiceFocalLoss import DiceFocalLoss
+segmentation/Federated/clients/FedSGDClient.py:12:        criterion = DiceFocalLoss().to(self.device)
+segmentation/Federated/clients/FedSGDClient.py:34:        loss = criterion(log_probs, labels)
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_20260716.log
+11:  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [02:06<2:04:25, 126.54s/it]  3%|▎         | 2/60 [03:59<1:54:19, 118.26s/it]  5%|▌         | 3/60 [06:07<1:56:55, 123.08s/it]  7%|▋         | 4/60 [08:17<1:57:29, 125.88s/it]  8%|▊         | 5/60 [10:29<1:57:07, 127.77s/it] 10%|█         | 6/60 [12:19<1:49:44, 121.93s/it] 12%|█▏        | 7/60 [14:11<1:44:42, 118.54s/it] 13%|█▎        | 8/60 [16:28<1:47:49, 124.42s/it] 15%|█▌        | 9/60 [18:29<1:44:53, 123.40s/it] 17%|█▋        | 10/60 [20:24<1:40:36, 120.74s/it] 18%|█▊        | 11/60 [22:24<1:38:29, 120.59s/it] 20%|██        | 12/60 [24:36<1:39:08, 123.93s/it] 22%|██▏       | 13/60 [26:36<1:36:08, 122.73s/it] 23%|██▎       | 14/60 [28:32<1:32:32, 120.71s/it] 25%|██▌       | 15/60 [30:31<1:30:15, 120.35s/it] 27%|██▋       | 16/60 [32:36<1:29:09, 121.58s/it] 28%|██▊       | 17/60 [34:40<1:27:41, 122.35s/it] 30%|███       | 18/60 [36:45<1:26:17, 123.26s/it] 32%|███▏      | 19/60 [38:45<1:23:37, 122.37s/it] 33%|███▎      | 20/60 [40:43<1:20:35, 120.88s/it] 35%|███▌      | 21/60 [42:47<1:19:13, 121.89s/it] 37%|███▋      | 22/60 [45:02<1:19:41, 125.83s/it] 38%|███▊      | 23/60 [47:16<1:19:04, 128.22s/it] 40%|████      | 24/60 [49:16<1:15:32, 125.89s/it] 42%|████▏     | 25/60 [51:22<1:13:26, 125.90s/it] 43%|████▎     | 26/60 [53:31<1:11:50, 126.79s/it] 45%|████▌     | 27/60 [55:46<1:11:05, 129.25s/it] 47%|████▋     | 28/60 [57:50<1:08:06, 127.69s/it] 48%|████▊     | 29/60 [59:51<1:04:56, 125.71s/it] 50%|█████     | 30/60 [1:01:50<1:01:48, 123.63s/it] 52%|█████▏    | 31/60 [1:03:56<1:00:09, 124.46s/it] 53%|█████▎    | 32/60 [1:05:56<57:20, 122.88s/it]   55%|█████▌    | 33/60 [1:07:57<55:03, 122.36s/it] 57%|█████▋    | 34/60 [1:10:08<54:09, 124.96s/it] 58%|█████▊    | 35/60 [1:12:24<53:27, 128.32s/it] 60%|██████    | 36/60 [1:14:35<51:42, 129.29s/it] 62%|██████▏   | 37/60 [1:16:22<46:55, 122.41s/it] 63%|██████▎   | 38/60 [1:18:12<43:34, 118.85s/it] 65%|██████▌   | 39/60 [1:20:19<42:27, 121.29s/it] 67%|██████▋   | 40/60 [1:22:22<40:32, 121.64s/it] 68%|██████▊   | 41/60 [1:24:19<38:08, 120.43s/it] 70%|███████   | 42/60 [1:26:30<37:04, 123.56s/it] 72%|███████▏  | 43/60 [1:28:25<34:13, 120.79s/it] 73%|███████▎  | 44/60 [1:30:19<31:40, 118.80s/it] 75%|███████▌  | 45/60 [1:32:10<29:07, 116.50s/it] 77%|███████▋  | 46/60 [1:34:20<28:06, 120.50s/it] 78%|███████▊  | 47/60 [1:36:34<26:58, 124.52s/it] 80%|████████  | 48/60 [1:38:32<24:32, 122.74s/it] 82%|████████▏ | 49/60 [1:40:37<22:36, 123.34s/it] 83%|████████▎ | 50/60 [1:42:48<20:56, 125.65s/it]Round 1: time=21.86s  cpu=18.6%  ram=169.2MB  gpu=2729.0MB
+14:Round 2: time=19.05s  cpu=21.1%  ram=0.0MB  gpu=2828.9MB
+15:Avg Stats after 2 rounds: Loss=0.7061  IoU=26.87%
+18:Round 3: time=22.45s  cpu=21.3%  ram=1.3MB  gpu=2823.6MB
+21:Round 4: time=23.44s  cpu=22.2%  ram=1.4MB  gpu=2821.2MB
+22:Avg Stats after 4 rounds: Loss=0.6855  IoU=22.82%
+25:Round 5: time=23.83s  cpu=14.1%  ram=0.1MB  gpu=2820.7MB
+28:Round 6: time=19.61s  cpu=12.2%  ram=9.3MB  gpu=2823.7MB
+29:Avg Stats after 6 rounds: Loss=0.6650  IoU=23.50%
+32:Round 7: time=19.37s  cpu=15.5%  ram=0.7MB  gpu=2823.6MB
+35:Round 8: time=24.06s  cpu=19.1%  ram=9.2MB  gpu=2822.4MB
+36:Avg Stats after 8 rounds: Loss=0.6540  IoU=27.43%
+39:Round 9: time=20.74s  cpu=21.7%  ram=4.0MB  gpu=2818.8MB
+42:Round 10: time=19.69s  cpu=20.2%  ram=1.1MB  gpu=2819.7MB
+43:Avg Stats after 10 rounds: Loss=0.6471  IoU=28.04%
+46:Round 11: time=21.29s  cpu=22.1%  ram=2.3MB  gpu=2822.5MB
+49:Round 12: time=23.03s  cpu=22.9%  ram=3.6MB  gpu=2823.4MB
+50:Avg Stats after 12 rounds: Loss=0.6449  IoU=26.47%
+53:Round 13: time=20.74s  cpu=21.0%  ram=3.6MB  gpu=2820.5MB
+56:Round 14: time=19.95s  cpu=22.4%  ram=3.6MB  gpu=2820.6MB
+57:Avg Stats after 14 rounds: Loss=0.6418  IoU=24.56%
+60:Round 15: time=20.99s  cpu=21.7%  ram=3.6MB  gpu=2821.6MB
+63:Round 16: time=21.56s  cpu=22.8%  ram=3.7MB  gpu=2823.3MB
+64:Avg Stats after 16 rounds: Loss=0.6450  IoU=27.15%
+67:Round 17: time=21.69s  cpu=22.1%  ram=0.0MB  gpu=2818.4MB
+70:Round 18: time=21.78s  cpu=20.4%  ram=0.0MB  gpu=2829.1MB
+71:Avg Stats after 18 rounds: Loss=0.6629  IoU=25.09%
+74:Round 19: time=20.88s  cpu=19.7%  ram=3.6MB  gpu=2824.8MB
+77:Round 20: time=20.71s  cpu=22.1%  ram=3.1MB  gpu=2822.9MB
+78:Avg Stats after 20 rounds: Loss=0.7002  IoU=16.01%
+81:Round 21: time=21.60s  cpu=23.0%  ram=0.0MB  gpu=2824.6MB
+84:Round 22: time=23.74s  cpu=20.1%  ram=0.0MB  gpu=2821.6MB
+85:Avg Stats after 22 rounds: Loss=0.7386  IoU=5.28%
+88:Round 23: time=23.43s  cpu=20.6%  ram=0.0MB  gpu=2822.2MB
+91:Round 24: time=20.84s  cpu=21.6%  ram=0.0MB  gpu=2825.3MB
+92:Avg Stats after 24 rounds: Loss=0.7853  IoU=10.07%
+95:Round 25: time=22.04s  cpu=21.8%  ram=3.6MB  gpu=2822.9MB
+98:Round 26: time=22.94s  cpu=22.2%  ram=0.0MB  gpu=2823.4MB
+99:Avg Stats after 26 rounds: Loss=0.8213  IoU=11.63%
+102:Round 27: time=23.72s  cpu=19.9%  ram=0.0MB  gpu=2822.7MB
+105:Round 28: time=21.46s  cpu=20.1%  ram=5.1MB  gpu=2825.2MB
+106:Avg Stats after 28 rounds: Loss=0.8569  IoU=8.15%
+109:Round 29: time=21.12s  cpu=19.4%  ram=4.4MB  gpu=2824.7MB
+112:Round 30: time=20.39s  cpu=18.9%  ram=0.0MB  gpu=2822.2MB
+113:Avg Stats after 30 rounds: Loss=0.8887  IoU=3.12%
+116:Round 31: time=22.59s  cpu=21.1%  ram=0.1MB  gpu=2822.1MB
+119:Round 32: time=20.63s  cpu=22.6%  ram=4.0MB  gpu=2822.9MB
+120:Avg Stats after 32 rounds: Loss=0.9239  IoU=2.57%
+123:Round 33: time=20.88s  cpu=21.4%  ram=0.0MB  gpu=2821.5MB
+126:Round 34: time=22.85s  cpu=22.2%  ram=2.9MB  gpu=2823.8MB
+127:Avg Stats after 34 rounds: Loss=0.9667  IoU=8.09%
+130:Round 35: time=23.88s  cpu=20.2%  ram=5.2MB  gpu=2825.9MB
+133:Round 36: time=23.76s  cpu=22.0%  ram=0.0MB  gpu=2824.1MB
+134:Avg Stats after 36 rounds: Loss=1.0125  IoU=0.00%
+137:Round 37: time=18.79s  cpu=12.2%  ram=4.0MB  gpu=2825.8MB
+140:Round 38: time=19.27s  cpu=13.2%  ram=2.6MB  gpu=2826.8MB
+141:Avg Stats after 38 rounds: Loss=1.0580  IoU=0.00%
+144:Round 39: time=21.97s  cpu=17.5%  ram=0.0MB  gpu=2822.8MB
+147:Round 40: time=21.05s  cpu=19.1%  ram=0.0MB  gpu=2820.7MB
+148:Avg Stats after 40 rounds: Loss=1.0998  IoU=0.00%
+151:Round 41: time=20.32s  cpu=17.9%  ram=5.1MB  gpu=2818.0MB
+154:Round 42: time=22.86s  cpu=18.3%  ram=4.8MB  gpu=2817.9MB
+155:Avg Stats after 42 rounds: Loss=1.1369  IoU=0.00%
+158:Round 43: time=19.52s  cpu=19.5%  ram=0.0MB  gpu=2822.4MB
+161:Round 44: time=19.89s  cpu=22.7%  ram=3.6MB  gpu=2824.7MB
+162:Avg Stats after 44 rounds: Loss=1.1711  IoU=0.00%
+165:Round 45: time=19.02s  cpu=20.9%  ram=0.0MB  gpu=2819.9MB
+168:Round 46: time=22.55s  cpu=17.7%  ram=0.0MB  gpu=2825.3MB
+169:Avg Stats after 46 rounds: Loss=1.2003  IoU=0.00%
+172:Round 47: time=23.41s  cpu=19.8%  ram=3.9MB  gpu=2821.6MB
+175:Round 48: time=20.59s  cpu=18.9%  ram=0.1MB  gpu=2819.5MB
+176:Avg Stats after 48 rounds: Loss=1.2258  IoU=0.00%
+179:Round 49: time=21.80s  cpu=20.0%  ram=0.0MB  gpu=2819.5MB
+182:Round 50: time=22.99s  cpu=19.0%  ram=3.6MB  gpu=2818.8MB
+183:Avg Stats after 50 rounds: Loss=1.2523  IoU=0.00%
+186:Round 51: time=20.72s  cpu=21.7%  ram=3.6MB  gpu=2818.0MB
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_20260716.log
+import copy
+import json
+import os
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from config import ConfigLoader
+from data import get_dataset
+from models import get_model
+from clients import test_inference, DiceFocalLoss
+from torch.optim import SGD
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = [int(i) for i in idxs]
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, mask = self.dataset[self.idxs[item]]
+        return image.clone(), mask.clone()
+
+
+class HeteroServerAdapter(nn.Module):
+    """Wraps server model with a decoder that maps wide channels -> expected channels."""
+
+    def __init__(self, server_model, wide_channels, server_expected_channels=512):
+        super().__init__()
+        self.decoder = nn.Conv2d(wide_channels, server_expected_channels, kernel_size=3, padding=1)
+        self.server_model = server_model
+
+    def forward(self, x):
+        return self.server_model(self.decoder(x))
+
+
+def extract_narrow_model(wide_model, narrow_channels):
+    narrow_state = copy.deepcopy(wide_model.state_dict())
+    keys = list(narrow_state.keys())
+    # bl_encoder weight and bias are the last two keys of the client model
+    narrow_state[keys[-2]] = narrow_state[keys[-2]][:narrow_channels]
+    narrow_state[keys[-1]] = narrow_state[keys[-1]][:narrow_channels]
+    return narrow_state
+
+
+def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    keys = list(global_wide_weights.keys())
+    weight_key, bias_key = keys[-2], keys[-1]
+
+    for local_w in local_updates:
+        is_narrow = local_w[weight_key].shape[0] == narrow_channels
+        for k in local_w:
+            if k in [weight_key, bias_key] and is_narrow:
+                update_acc[k][:narrow_channels] += local_w[k]
+                count_acc[k][:narrow_channels] += 1
+            else:
+                update_acc[k] += local_w[k]
+                count_acc[k] += 1
+
+    avg_weights = copy.deepcopy(global_wide_weights)
+    for k in avg_weights:
+        mask = count_acc[k] > 0
+        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    return avg_weights
+
+
+def run(cfg_path: str):
+    start_time = time.time()
+    config_loader = ConfigLoader(cfg_path)
+    config = config_loader.get_config()
+
+    WIDE_CHANNELS = config.get("wide_channels", 76)
+    NARROW_CHANNELS = config.get("narrow_channels", 4)
+    SERVER_EXPECTED_CHANNELS = config.get("server_in_channels", 512)
+    HIGH_END_RATIO = config.get("high_end_ratio", 0.3)
+
+    print(f"HeteroSFL (Seg): Wide={WIDE_CHANNELS}, Narrow={NARROW_CHANNELS}, Ratio={HIGH_END_RATIO}")
+    config["client_out_channels"] = WIDE_CHANNELS
+
+    device = torch.device("cuda" if config["is_gpu"] else "cpu")
+    train_dataset, test_dataset, user_groups = get_dataset(config)
+    model_tuple = get_model(config["model"], config["dataset"])
+
+    client_model_wide = model_tuple[0](config).to(device)
+    server_model_raw = model_tuple[1](config).to(device)
+    main_server_model = HeteroServerAdapter(
+        server_model_raw, WIDE_CHANNELS, SERVER_EXPECTED_CHANNELS
+    ).to(device)
+
+    num_users = config["num_users"]
+    num_high = int(num_users * HIGH_END_RATIO)
+    client_types = ["high"] * num_high + ["low"] * (num_users - num_high)
+    np.random.shuffle(client_types)
+
+    criterion = DiceFocalLoss().to(device)
+    comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+    best_iou = 0.0
+
+    for epoch in tqdm(range(config["epochs"])):
+        idxs_users = np.random.choice(
+            range(num_users), max(int(config["frac"] * num_users), 1), replace=False
+        )
+        local_weights, epoch_losses = [], []
+        server_optimizer = SGD(
+            main_server_model.parameters(), lr=config["lr"], momentum=config["momentum"]
+        )
+
+        for idx in idxs_users:
+            client_type = client_types[idx]
+            local_client_model = copy.deepcopy(client_model_wide)
+
+            if client_type == "low":
+                narrow_state = extract_narrow_model(client_model_wide, NARROW_CHANNELS)
+                last_layer = list(local_client_model.children())[-1]
+                if isinstance(last_layer, nn.Conv2d):
+                    last_layer.out_channels = NARROW_CHANNELS
+                    last_layer.weight = nn.Parameter(narrow_state[list(narrow_state.keys())[-2]])
+                    last_layer.bias = nn.Parameter(narrow_state[list(narrow_state.keys())[-1]])
+
+            local_client_model.to(device).train()
+            client_optimizer = SGD(
+                local_client_model.parameters(), lr=config["lr"], momentum=config["momentum"]
+            )
+            loader = DataLoader(
+                DatasetSplit(train_dataset, user_groups[idx]),
+                batch_size=config["local_bs"], shuffle=True,
+            )
+            client_losses = []
+
+            for _ in range(config["local_ep"]):
+                for image, mask in loader:
+                    server_optimizer.zero_grad()
+                    client_optimizer.zero_grad()
+                    image, mask = image.to(device), mask.to(device)
+                    activation = local_client_model(image)
+
+                    if client_type == "high":
+                        act_wide = activation.clone().detach().requires_grad_(True)
+                        # Simulate narrow by zeroing out channels beyond NARROW
+                        act_narrow_sim = act_wide.clone()
+                        act_narrow_sim[:, NARROW_CHANNELS:] = 0
+                        pred_wide = main_server_model(act_wide)
+                        pred_narrow = main_server_model(act_narrow_sim)
+                        # Segmentation: use DiceFocalLoss for both, average
+                        loss_wide = criterion(pred_wide, mask)
+                        loss_narrow = criterion(pred_narrow, mask)
+                        loss = loss_wide + 0.5 * loss_narrow
+                        loss.backward()
+                        activation_grad = act_wide.grad
+                    else:
+                        act_narrow = activation.clone().detach().requires_grad_(True)
+                        padding = torch.zeros(
+                            act_narrow.shape[0],
+                            WIDE_CHANNELS - NARROW_CHANNELS,
+                            act_narrow.shape[2],
+                            act_narrow.shape[3],
+                        ).to(device)
+                        act_input = torch.cat([act_narrow, padding], dim=1)
+                        pred = main_server_model(act_input)
+                        loss = criterion(pred, mask)
+                        loss.backward()
+                        activation_grad = act_narrow.grad
+
+                    server_optimizer.step()
+                    activation.backward(activation_grad)
+                    client_optimizer.step()
+import json
+import os
+import time
+
+import torch
+from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
+from ehsfp.integrity import git_commit
+from config.config_loader import ConfigLoader
+from data import get_dataset
+from hierarchy import HierarchicalFL
+from models import get_model, get_decoder
+from clients import test_inference
+from torch.utils.data import DataLoader
+
+
+def run(cfg_path: str):
+    start_time = time.time()
+    config_loader = ConfigLoader(cfg_path)
+    config = config_loader.get_config()
+    effective_ehsfp = get_ehsfp_config(config)
+    config_hash = resolved_config_hash(config, effective_ehsfp)
+    config["resolved_config_hash"] = config_hash
+    print("Method: {}".format(config["strategy"]))
+
+    if config["is_gpu"]:
+        torch.cuda.set_device(config["gpu"])
+    device = torch.device("cuda") if config["is_gpu"] else torch.device("cpu")
+
+    train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
+
+    # 3-tier models: client, edge, cloud (classifier on prototypes)
+    client_cls, edge_cls, cloud_cls = get_model(config["model"], config["dataset"])
+    client_model = client_cls()
+    edge_model = edge_cls()
+    cloud_model = cloud_cls(config)
+
+    # Decoder for full-pipeline inference (spatial segmentation)
+    decoder_cls = get_decoder(config["model"], config["dataset"])
+    cloud_decoder = decoder_cls()
+    arch = architecture_manifest((client_model, edge_model, cloud_model, cloud_decoder))
+    out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
+    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
+    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
+    metadata = {
+        "resolved_config": config,
+        "effective_ehsfp": effective_ehsfp,
+        "resolved_config_hash": config_hash,
+        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
+        "partition_hash": partition_hash(user_groups),
+        "architecture": arch,
+        "run_dir": run_dir,
+    }
+    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+    print(f"[Integrity] resolved_config_hash={config_hash}")
+    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
+
+    hierarchical_fl = HierarchicalFL(
+        args=config,
+        client_model=client_model,
+        client_weights=client_model.state_dict(),
+        edge_model=edge_model,
+        edge_weights=edge_model.state_dict(),
+        cloud_model=cloud_model,
+        cloud_weight=cloud_model.state_dict(),
+        cloud_decoder=cloud_decoder,
+        test_dataset=test_dataset,
+    )
+    hierarchical_fl.print_structure()
+
+    output = hierarchical_fl.train_end_to_end(
+        train_dataset=train_dataset,
+        valid_dataset=valid_dataset,
+        test_dataset=test_dataset,
+        user_groups=user_groups,
+        config=config,
+        epochs=config["epochs"],
+        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
+    )
+
+    # Save metrics
+    filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(filtered_output, f, indent=4)
+
+    # Test best model
+    best_model = output.get("best_weight")
+    if best_model is not None:
+        best_model = best_model.to(device).eval()
+        test_iou, test_dice, test_loss = test_inference(config, best_model, test_dataset)
+        print(f"\nResults after {config['epochs']} global rounds:")
+        print(f"|---- Best Validation IoU: {output['best_iou']*100:.2f}%")
+        print(f"|---- Test IoU: {test_iou*100:.2f}%  Dice: {test_dice*100:.2f}%")
+    else:
+        print("\nNo best model was saved during training.")
+        print(f"|---- Best Validation IoU: {output['best_iou']*100:.2f}%")
+
+    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+            print(f"    --method {method:<12} {tag:<11}  {path}/")
+        print()
+
+
+def list_configs(task=None, method=None):
+    print("Available configs:\n")
+    for t, methods in REGISTRY.items():
+        if task and t != task:
+            continue
+        for m in methods:
+            if method and m != method:
+                continue
+            cfg_dir = os.path.join(ROOT_DIR, "configs", t, m)
+            if not os.path.isdir(cfg_dir):
+                continue
+            yamls = sorted(
+                y for y in _glob.glob(os.path.join(cfg_dir, "*.yaml"))
+                if "default" not in os.path.basename(y)
+            )
+            if yamls:
+                tag = "[PRIMARY]" if m == "h-sfp" else "[baseline]"
+                print(f"  [{t}] {m} {tag}:")
+                for y in yamls:
+                    print(f"    {os.path.relpath(y, ROOT_DIR)}")
+                print()
+
+
+def _load_runner(method_dir: str):
+    """Import runner.py from a method directory, adding it to sys.path."""
+    runner_path = os.path.join(method_dir, "runner.py")
+    if not os.path.isfile(runner_path):
+        raise FileNotFoundError(f"runner.py not found in {method_dir}")
+
+    sys.path.insert(0, method_dir)
+    spec = importlib.util.spec_from_file_location("_runner", runner_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _cleanup_runner(method_dir: str):
+    """Remove method dir from sys.path and clear cached modules."""
+    if method_dir in sys.path:
+        sys.path.remove(method_dir)
+    stale = [k for k in list(sys.modules) if k in {
+        "_runner", "config", "data", "models", "hierarchy",
+        "clients", "server", "servers", "FedServer", "strategies",
+    }]
+    for k in stale:
+        del sys.modules[k]
+
+
+def _init_wandb(task, method, cfg_path, wandb_project, wandb_entity):
+    """Initialize a wandb run. Returns True if wandb was initialized."""
+    if wandb is None:
+        print("Warning: wandb not installed. Run: pip install wandb")
+        return False
+
+    # Parse YAML config to log as wandb config
+    import yaml
+    with open(cfg_path, "r") as f:
+
+exec
+/bin/bash -lc "sed -n '1,120p' segmentation/Federated/clients/test.py
+sed -n '1,120p' segmentation/Federated/clients/DiceFocalLoss.py
+sed -n '1,110p' segmentation/Federated/models/CNN_ISIC.py
+sed -n '1,100p' segmentation/Federated/clients/FedAvgClient.py
+sed -n '1,130p' segmentation/Federated/data/utils/ISIC.py
+rg -n \"optimizer|SGD|Adam|lr|local_ep|outputs\" segmentation/Federated/clients segmentation/HierFL/clients
+for f in docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_*.log docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_*.log; do echo \"LOG "'$f"; sed -n '"'1,35p' \""'$f"; tail -25 "$f"; done' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+import torch
+from sklearn.metrics import f1_score
+from torch.utils.data import DataLoader
+import numpy as np
+from .DiceFocalLoss import DiceFocalLoss
+
+
+def compute_iou_and_dice(preds, labels):
+    # Convert tensors to numpy arrays
+    preds = preds.cpu().numpy()
+    labels = labels.cpu().numpy()
+
+    # Flatten arrays
+    preds = preds.flatten()
+    labels = labels.flatten()
+
+    # Convert to binary predictions (if needed)
+    preds_binary = (preds > 0.5).astype(np.int32)
+
+    # Compute Intersection and Union for IoU
+    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    union = np.sum((preds_binary == 1) | (labels == 1))
+    iou = intersection / union if union != 0 else 0
+
+    # Compute Dice Coefficient
+    dice = (
+        2 * intersection / (np.sum(preds_binary == 1) + np.sum(labels == 1))
+        if (np.sum(preds_binary == 1) + np.sum(labels == 1)) != 0
+        else 0
+    )
+
+    return iou, dice
+
+
+def test_inference(args, model, test_dataset):
+    """Returns the test F1 score (macro) and loss."""
+    model.eval()
+    loss = 0.0
+
+    device = "cuda" if args["gpu"] else "cpu"
+    criterion = DiceFocalLoss().to(device)
+    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    model = model.to(device)
+    test_iou = 0.0
+    test_dice = 0.0
+    total_samples = 0
+    torch.cuda.empty_cache()  # Clear GPU memory
+    for batch_idx, (inputs, masks) in enumerate(testloader):
+        torch.cuda.empty_cache()
+        inputs, masks = inputs.to(device), masks.to(device)
+
+        outputs = model(inputs)
+        size = inputs.size(0)
+        del inputs
+
+        batch_loss = criterion(outputs, masks)
+        loss += batch_loss.item()
+        del batch_loss
+        outputs = torch.sigmoid(
+            outputs
+        )  # Apply sigmoid if the output is logits
+        outputs = (outputs > 0.5).float()
+        iou, dice = compute_iou_and_dice(outputs, masks)
+        del outputs, masks
+        test_iou += iou * size  # Multiply by batch size
+        test_dice += dice * size
+        total_samples += (
+            size  # Update total_samples to use size instead of inputs.size(0)
+        )
+    test_iou /= total_samples
+    test_dice /= total_samples
+    return test_iou, test_dice, loss / len(testloader)
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class DiceFocalLoss(nn.Module):
+    def __init__(
+        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+    ):
+        super(DiceFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.smooth = smooth
+        self.eps = eps
+        self.debug = debug
+
+    def _sanity_check(self, preds, targets):
+        if preds.dim() == 3:
+            preds = preds.unsqueeze(1)
+        if targets.dim() == 3:
+            targets = targets.unsqueeze(1)
+
+        if preds.shape != targets.shape:
+            raise ValueError(
+                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+            )
+
+        # Invalid values cannot be made finite by clamp alone. Map them to the
+        # nearest valid binary value, then keep probabilities away from log(0).
+        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+        targets = targets.clamp(min=0.0, max=1.0)
+
+        return preds, targets
+
+    def dice_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        intersection = (preds * targets).sum()
+        union = preds.sum() + targets.sum()
+        dice = (2.0 * intersection + self.smooth + self.eps) / (
+            union + self.smooth + self.eps
+        )
+
+        return 1 - dice
+
+    def focal_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        if preds.numel() == 0:
+            return preds.sum()
+
+        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+        pt = torch.exp(-bce)
+        focal = self.alpha * (1 - pt) ** self.gamma * bce
+        return focal.mean()
+
+    def forward(self, preds, targets):
+        # Keep reductions and BCE in float32 even when the caller uses autocast.
+        with torch.autocast(device_type=preds.device.type, enabled=False):
+            preds = preds.float()
+            targets = targets.float()
+            preds, targets = self._sanity_check(preds, targets)
+
+            loss_dice = self.dice_loss(preds, targets)
+            loss_focal = self.focal_loss(preds, targets)
+            total_loss = loss_dice + loss_focal
+
+        if self.debug:
+            print(
+                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+            )
+
+        return total_loss
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision import models
+
+
+class ISIC_UNET_2D(nn.Module):
+    def __init__(self, args=None):
+        super(ISIC_UNET_2D, self).__init__()
+
+        # Load pretrained ResNet-50
+        self.encoder = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+
+        self.encoder1 = nn.Sequential(
+            self.encoder.conv1,
+            self.encoder.bn1,
+            self.encoder.relu,
+            self.encoder.maxpool,
+        )
+        self.encoder2 = self.encoder.layer1
+        self.encoder3 = self.encoder.layer2
+        self.encoder4 = self.encoder.layer3
+        self.encoder5 = self.encoder.layer4
+
+        # Decoder (upsampling path)
+        self.upconv5 = nn.ConvTranspose2d(2048, 1024, kernel_size=2, stride=2)
+        self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
+        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
+        self.upconv2 = nn.ConvTranspose2d(256, 64, kernel_size=2, stride=2)
+
+        # Final conv layer
+        self.final_conv = nn.Conv2d(64, 1, kernel_size=1)
+
+    def forward(self, x):
+        # Downsample (encode)
+        x1 = self.encoder1(x)
+        x2 = self.encoder2(x1)
+        x3 = self.encoder3(x2)
+        x4 = self.encoder4(x3)
+        x5 = self.encoder5(x4)
+
+        # Upsample (decode) with skip connections
+        d5 = self.upconv5(x5)
+        # d5 = F.interpolate(d5, size=(x4.size(2), x4.size(3)), mode='bilinear', align_corners=False) + x4
+
+        d4 = self.upconv4(d5)
+        # d4 = F.interpolate(d4, size=(x3.size(2), x3.size(3)), mode='bilinear', align_corners=False) + x3
+
+        d3 = self.upconv3(d4)
+        # d3 = F.interpolate(d3, size=(x2.size(2), x2.size(3)), mode='bilinear', align_corners=False) + x2
+
+        d2 = self.upconv2(d3)
+        # d2 = F.interpolate(d2, size=(x1.size(2), x1.size(3)), mode='bilinear', align_corners=False) + x1
+
+        # Final layer
+        out = self.final_conv(d2)
+        out = F.interpolate(
+            out,
+            size=(x.size(2), x.size(3)),
+            mode="bilinear",
+            align_corners=False,
+        )
+        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+        return out
+import torch
+from torch import nn
+
+from .Client import Client
+from tqdm import tqdm
+from .DiceFocalLoss import DiceFocalLoss
+
+
+class FedAvgClient(Client):
+    def update_weights(self, model, global_round):
+        model.train()
+        criterion = DiceFocalLoss().to(self.device)
+        optimizer = (
+            torch.optim.SGD(
+                model.parameters(),
+                lr=self.args["lr"],
+                momentum=self.args["momentum"],
+            )
+            if self.args["optimizer"] == "sgd"
+            else torch.optim.Adam(
+                model.parameters(), lr=self.args["lr"], weight_decay=1e-4
+            )
+        )
+
+        epoch_loss = []
+        model = model.to(self.device)
+        for _ in range(self.args["local_ep"]):
+            torch.cuda.empty_cache()
+            batch_loss = []
+            for images, masks in self.trainloader:
+                torch.cuda.empty_cache()
+                images, masks = images.to(self.device), masks.to(self.device)
+                optimizer.zero_grad()
+                outputs = model(images)
+                loss = criterion(outputs, masks)
+                del images, masks, outputs
+                torch.cuda.empty_cache()
+                loss.backward()
+                self.logger.add_scalar("loss", loss.item())
+                batch_loss.append(loss.item())
+                del loss
+                torch.cuda.empty_cache()
+                optimizer.step()
+
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+mean = [0.7084, 0.5821, 0.5361]
+std = [0.0967, 0.1118, 0.1261]
+from torchvision import transforms
+
+data_transforms = {
+    "train": transforms.Compose(
+        [
+            transforms.Resize((+224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    ),
+    "val": transforms.Compose(
+        [
+            transforms.Resize((+224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    ),
+    "test": transforms.Compose(
+        [
+            transforms.Resize((+224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std),
+        ]
+    ),
+}
+
+mask_transforms = transforms.Compose(
+    [transforms.Resize((+224, 224)), transforms.ToTensor()]
+)
+
+
+import glob
+
+from PIL import Image
+from torch.utils.data import Dataset
+
+
+class ISICSegmentationDataset(Dataset):
+    def __init__(
+        self,
+        image_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1-2_Training_Input",
+        mask_data_folder_path="/mnt/d/AiThings/SimCLRxConPro/Dataset/ISIC/Segment_dataset/ISIC2018_Task1_Training_GroundTruth",
+        phase="train",
+    ):
+        self.image_data_folder_path = image_data_folder_path
+        self.mask_data_folder_path = mask_data_folder_path
+        self.phase = phase
+        self.img_files = glob.glob(self.image_data_folder_path + "/*.jpg")
+        self.mask_imgs = glob.glob(self.mask_data_folder_path + "/*.png")
+        self.data_transforms = data_transforms[phase]
+        self.mask_transforms = mask_transforms
+        self.datalen = len(self.img_files)
+
+    def __getitem__(self, index):
+        img = self.img_files[index]
+        mask = self.mask_imgs[index]
+        img = self.data_transforms(Image.open(img))
+        mask = self.mask_transforms(Image.open(mask))
+
+        return img, mask
+
+    def __len__(self):
+        assert self.datalen == len(self.mask_imgs)
+        return self.datalen
+segmentation/HierFL/clients/test.py:52:        outputs = model(inputs)
+segmentation/HierFL/clients/test.py:56:        batch_loss = criterion(outputs, masks)
+segmentation/HierFL/clients/test.py:59:        outputs = torch.sigmoid(
+segmentation/HierFL/clients/test.py:60:            outputs
+segmentation/HierFL/clients/test.py:62:        outputs = (outputs > 0.5).float()
+segmentation/HierFL/clients/test.py:63:        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/HierFL/clients/test.py:64:        del outputs, masks
+segmentation/HierFL/clients/Client.py:58:            outputs = model(images)
+segmentation/HierFL/clients/Client.py:59:            batch_loss = criterion(outputs, labels)
+segmentation/HierFL/clients/Client.py:62:            _, preds = torch.max(outputs, 1)
+segmentation/HierFL/clients/FedAvgClient.py:13:        optimizer = (
+segmentation/HierFL/clients/FedAvgClient.py:14:            torch.optim.SGD(
+segmentation/HierFL/clients/FedAvgClient.py:16:                lr=self.args["lr"],
+segmentation/HierFL/clients/FedAvgClient.py:19:            if self.args["optimizer"] == "sgd"
+segmentation/HierFL/clients/FedAvgClient.py:20:            else torch.optim.Adam(
+segmentation/HierFL/clients/FedAvgClient.py:21:                model.parameters(), lr=self.args["lr"], weight_decay=1e-4
+segmentation/HierFL/clients/FedAvgClient.py:27:        for _ in range(self.args["local_ep"]):
+segmentation/HierFL/clients/FedAvgClient.py:33:                optimizer.zero_grad()
+segmentation/HierFL/clients/FedAvgClient.py:34:                outputs = model(images)
+segmentation/HierFL/clients/FedAvgClient.py:35:                loss = criterion(outputs, masks)
+segmentation/HierFL/clients/FedAvgClient.py:36:                del images, masks, outputs
+segmentation/HierFL/clients/FedAvgClient.py:43:                optimizer.step()
+segmentation/Federated/clients/FedSGDClient.py:7:class FedSGDClient(Client):
+segmentation/Federated/clients/FedSGDClient.py:14:        optimizer = (
+segmentation/Federated/clients/FedSGDClient.py:15:            torch.optim.SGD(
+segmentation/Federated/clients/FedSGDClient.py:17:                lr=self.args["lr"],
+segmentation/Federated/clients/FedSGDClient.py:20:            if self.args["optimizer"] == "sgd"
+segmentation/Federated/clients/FedSGDClient.py:21:            else torch.optim.Adam(
+segmentation/Federated/clients/FedSGDClient.py:23:                lr=self.args["lr"],
+segmentation/Federated/clients/FedSGDClient.py:36:        optimizer.step()
+segmentation/Federated/clients/FedNovaClient.py:17:        optimizer = (
+segmentation/Federated/clients/FedNovaClient.py:18:            torch.optim.SGD(
+segmentation/Federated/clients/FedNovaClient.py:20:                lr=self.args["lr"],
+segmentation/Federated/clients/FedNovaClient.py:23:            if self.args["optimizer"] == "sgd"
+segmentation/Federated/clients/FedNovaClient.py:24:            else torch.optim.Adam(
+segmentation/Federated/clients/FedNovaClient.py:26:                lr=self.args["lr"],
+segmentation/Federated/clients/FedNovaClient.py:32:        for _ in range(self.args["local_ep"]):
+segmentation/Federated/clients/FedNovaClient.py:41:                optimizer.step()
+segmentation/Federated/clients/constant.py:4:from .FedSGDClient import FedSGDClient
+segmentation/Federated/clients/constant.py:10:    "fedsgd": FedSGDClient,
+segmentation/Federated/clients/test.py:52:        outputs = model(inputs)
+segmentation/Federated/clients/test.py:56:        batch_loss = criterion(outputs, masks)
+segmentation/Federated/clients/test.py:59:        outputs = torch.sigmoid(
+segmentation/Federated/clients/test.py:60:            outputs
+segmentation/Federated/clients/test.py:62:        outputs = (outputs > 0.5).float()
+segmentation/Federated/clients/test.py:63:        iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/test.py:64:        del outputs, masks
+segmentation/Federated/clients/Client.py:108:            outputs = model(inputs)
+segmentation/Federated/clients/Client.py:109:            batch_loss = criterion(outputs, masks)
+segmentation/Federated/clients/Client.py:111:            outputs = torch.sigmoid(
+segmentation/Federated/clients/Client.py:112:                outputs
+segmentation/Federated/clients/Client.py:114:            outputs = (outputs > 0.5).float()
+segmentation/Federated/clients/Client.py:115:            iou, dice = compute_iou_and_dice(outputs, masks)
+segmentation/Federated/clients/FedProxClient.py:15:        optimizer = (
+segmentation/Federated/clients/FedProxClient.py:16:            torch.optim.SGD(
+segmentation/Federated/clients/FedProxClient.py:18:                lr=self.args["lr"],
+segmentation/Federated/clients/FedProxClient.py:21:            if self.args["optimizer"] == "sgd"
+segmentation/Federated/clients/FedProxClient.py:22:            else torch.optim.Adam(
+segmentation/Federated/clients/FedProxClient.py:24:                lr=self.args["lr"],
+segmentation/Federated/clients/FedProxClient.py:31:        for _ in range(self.args["local_ep"]):
+segmentation/Federated/clients/FedProxClient.py:46:                optimizer.step()
+segmentation/Federated/clients/FedAvgClient.py:13:        optimizer = (
+segmentation/Federated/clients/FedAvgClient.py:14:            torch.optim.SGD(
+segmentation/Federated/clients/FedAvgClient.py:16:                lr=self.args["lr"],
+segmentation/Federated/clients/FedAvgClient.py:19:            if self.args["optimizer"] == "sgd"
+segmentation/Federated/clients/FedAvgClient.py:20:            else torch.optim.Adam(
+segmentation/Federated/clients/FedAvgClient.py:21:                model.parameters(), lr=self.args["lr"], weight_decay=1e-4
+segmentation/Federated/clients/FedAvgClient.py:27:        for _ in range(self.args["local_ep"]):
+segmentation/Federated/clients/FedAvgClient.py:33:                optimizer.zero_grad()
+segmentation/Federated/clients/FedAvgClient.py:34:                outputs = model(images)
+segmentation/Federated/clients/FedAvgClient.py:35:                loss = criterion(outputs, masks)
+segmentation/Federated/clients/FedAvgClient.py:36:                del images, masks, outputs
+segmentation/Federated/clients/FedAvgClient.py:43:                optimizer.step()
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_20260714.log
+START isic_federated_20260714 2026-07-16T21:29:30+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260714
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/federated_seed20260714'}
+[Runner] task=segmentation  method=federated
+[Runner] cfg=configs/proxy/exp_ntb2z884.yaml
+
+Method: fedavg
+Number of training images: 2594
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [01:55<1:53:45, 115.68s/it]  3%|▎         | 2/60 [03:56<1:54:31, 118.48s/it]  5%|▌         | 3/60 [06:02<1:56:07, 122.23s/it]  7%|▋         | 4/60 [08:10<1:56:10, 124.47s/it]  8%|▊         | 5/60 [10:11<1:53:02, 123.31s/it] 10%|█         | 6/60 [12:16<1:51:16, 123.64s/it] 12%|█▏        | 7/60 [14:21<1:49:47, 124.29s/it] 13%|█▎        | 8/60 [16:55<1:55:52, 133.70s/it] 15%|█▌        | 9/60 [19:22<1:57:04, 137.73s/it] 17%|█▋        | 10/60 [21:42<1:55:30, 138.60s/it] 18%|█▊        | 11/60 [23:32<1:45:58, 129.76s/it] 20%|██        | 12/60 [25:21<1:38:41, 123.37s/it] 22%|██▏       | 13/60 [27:42<1:40:51, 128.75s/it] 23%|██▎       | 14/60 [29:55<1:39:40, 130.01s/it] 25%|██▌       | 15/60 [32:14<1:39:30, 132.67s/it] 27%|██▋       | 16/60 [34:31<1:38:16, 134.02s/it] 28%|██▊       | 17/60 [36:25<1:31:49, 128.13s/it] 30%|███       | 18/60 [38:18<1:26:29, 123.56s/it] 32%|███▏      | 19/60 [40:21<1:24:12, 123.22s/it] 33%|███▎      | 20/60 [42:33<1:23:55, 125.90s/it] 35%|███▌      | 21/60 [44:41<1:22:11, 126.45s/it] 37%|███▋      | 22/60 [46:51<1:20:55, 127.78s/it] 38%|███▊      | 23/60 [48:48<1:16:45, 124.48s/it] 40%|████      | 24/60 [50:38<1:12:00, 120.00s/it] 42%|████▏     | 25/60 [52:34<1:09:17, 118.79s/it] 43%|████▎     | 26/60 [54:35<1:07:39, 119.40s/it] 45%|████▌     | 27/60 [56:28<1:04:37, 117.50s/it] 47%|████▋     | 28/60 [58:20<1:01:51, 115.97s/it] 48%|████▊     | 29/60 [1:00:30<1:02:06, 120.20s/it] 50%|█████     | 30/60 [1:02:34<1:00:40, 121.36s/it] 52%|█████▏    | 31/60 [1:04:46<1:00:10, 124.50s/it] 53%|█████▎    | 32/60 [1:06:46<57:27, 123.14s/it]   55%|█████▌    | 33/60 [1:08:53<55:56, 124.32s/it] 57%|█████▋    | 34/60 [1:11:00<54:16, 125.26s/it] 58%|█████▊    | 35/60 [1:12:54<50:42, 121.72s/it] 60%|██████    | 36/60 [1:14:48<47:48, 119.52s/it] 62%|██████▏   | 37/60 [1:17:01<47:17, 123.35s/it] 63%|██████▎   | 38/60 [1:19:03<45:08, 123.12s/it] 65%|██████▌   | 39/60 [1:21:07<43:12, 123.47s/it] 67%|██████▋   | 40/60 [1:23:09<40:56, 122.82s/it] 68%|██████▊   | 41/60 [1:25:01<37:52, 119.62s/it] 70%|███████   | 42/60 [1:26:46<34:34, 115.23s/it] 72%|███████▏  | 43/60 [1:28:38<32:21, 114.23s/it] 73%|███████▎  | 44/60 [1:30:41<31:11, 116.94s/it] 75%|███████▌  | 45/60 [1:32:44<29:42, 118.86s/it] 77%|███████▋  | 46/60 [1:34:48<28:04, 120.30s/it] 78%|███████▊  | 47/60 [1:37:01<26:52, 124.03s/it] 80%|████████  | 48/60 [1:38:54<24:10, 120.90s/it] 82%|████████▏ | 49/60 [1:41:04<22:36, 123.36s/it] 83%|████████▎ | 50/60 [1:43:14<20:53, 125.36s/it]Round 1: time=20.70s  cpu=16.5%  ram=156.8MB  gpu=2730.9MB
+  client_model_upload_MB: 1149.16 MB
+  client_model_download_MB: 11491.57 MB
+Round 2: time=21.18s  cpu=11.5%  ram=0.0MB  gpu=2825.1MB
+Avg Stats after 2 rounds: Loss=0.6868  IoU=27.14%
+  client_model_upload_MB: 2298.31 MB
+  client_model_download_MB: 22983.14 MB
+Round 3: time=21.67s  cpu=17.8%  ram=9.3MB  gpu=2825.0MB
+  client_model_upload_MB: 3447.47 MB
+  client_model_download_MB: 34474.71 MB
+Round 4: time=22.18s  cpu=18.0%  ram=0.0MB  gpu=2820.4MB
+Avg Stats after 4 rounds: Loss=0.6803  IoU=16.65%
+  client_model_upload_MB: 4596.63 MB
+  client_model_download_MB: 45966.27 MB
+Round 5: time=21.72s  cpu=19.9%  ram=0.1MB  gpu=2816.6MB
+  client_model_upload_MB: 5745.78 MB
+  client_model_download_MB: 57457.84 MB
+Round 6: time=22.36s  cpu=11.2%  ram=0.1MB  gpu=2820.5MB
+Avg Stats after 6 rounds: Loss=0.6602  IoU=27.46%
+  client_model_upload_MB: 6894.94 MB
+  client_model_download_MB: 68949.41 MB
+Round 7: time=20.54s  cpu=14.9%  ram=7.6MB  gpu=2820.6MB
+  client_model_upload_MB: 8044.10 MB
+  client_model_download_MB: 80440.98 MB
+Round 8: time=26.16s  cpu=33.0%  ram=1.3MB  gpu=2817.2MB
+  client_model_download_MB: 505629.02 MB
+Round 45: time=21.57s  cpu=17.4%  ram=3.6MB  gpu=2821.4MB
+  client_model_upload_MB: 51712.06 MB
+  client_model_download_MB: 517120.59 MB
+Round 46: time=21.72s  cpu=20.5%  ram=0.0MB  gpu=2818.6MB
+Avg Stats after 46 rounds: Loss=1.1989  IoU=0.00%
+  client_model_upload_MB: 52861.22 MB
+  client_model_download_MB: 528612.15 MB
+Round 47: time=23.53s  cpu=22.1%  ram=3.7MB  gpu=2818.6MB
+  client_model_upload_MB: 54010.37 MB
+  client_model_download_MB: 540103.72 MB
+Round 48: time=19.71s  cpu=18.1%  ram=3.6MB  gpu=2819.7MB
+Avg Stats after 48 rounds: Loss=1.2271  IoU=0.00%
+  client_model_upload_MB: 55159.53 MB
+  client_model_download_MB: 551595.29 MB
+Round 49: time=22.83s  cpu=18.7%  ram=0.0MB  gpu=2819.1MB
+  client_model_upload_MB: 56308.69 MB
+  client_model_download_MB: 563086.86 MB
+Round 50: time=23.04s  cpu=19.2%  ram=0.0MB  gpu=2821.4MB
+Avg Stats after 50 rounds: Loss=1.2537  IoU=0.00%
+  client_model_upload_MB: 57457.84 MB
+  client_model_download_MB: 574578.43 MB
+Round 51: time=22.31s  cpu=13.4%  ram=0.0MB  gpu=2821.6MB
+  client_model_upload_MB: 58607.00 MB
+  client_model_download_MB: 586070.00 MB 85%|████████▌ | 51/60 [1:45:17<18:44, 124.91s/it] 87%|████████▋ | 52/60 [1:47:18<16:30, 123.77s/it] 88%|████████▊ | 53/60 [1:49:22<14:25, 123.65s/it] 90%|█████████ | 54/60 [1:51:33<12:35, 125.84s/it] 92%|█████████▏| 55/60 [1:53:43<10:35, 127.13s/it] 93%|█████████▎| 56/60 [1:55:45<08:23, 125.75s/it] 95%|█████████▌| 57/60 [1:57:51<06:17, 125.67s/it]EXIT isic_federated_20260714 code=124 runtime_s=7200
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_20260715.log
+START isic_federated_20260715 2026-07-16T23:29:30+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260715
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/federated_seed20260715'}
+[Runner] task=segmentation  method=federated
+[Runner] cfg=configs/proxy/exp_llswsd6y.yaml
+
+Method: fedavg
+Number of training images: 2594
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [02:12<2:10:25, 132.63s/it]  3%|▎         | 2/60 [04:28<2:09:46, 134.24s/it]  5%|▌         | 3/60 [06:47<2:09:47, 136.62s/it]  7%|▋         | 4/60 [08:58<2:05:23, 134.35s/it]  8%|▊         | 5/60 [10:53<1:56:43, 127.34s/it] 10%|█         | 6/60 [12:40<1:48:26, 120.50s/it] 12%|█▏        | 7/60 [14:34<1:44:31, 118.33s/it] 13%|█▎        | 8/60 [16:47<1:46:43, 123.15s/it] 15%|█▌        | 9/60 [18:57<1:46:27, 125.24s/it] 17%|█▋        | 10/60 [21:14<1:47:22, 128.85s/it] 18%|█▊        | 11/60 [23:36<1:48:23, 132.72s/it] 20%|██        | 12/60 [25:38<1:43:33, 129.45s/it] 22%|██▏       | 13/60 [27:44<1:40:43, 128.58s/it] 23%|██▎       | 14/60 [29:55<1:39:04, 129.23s/it] 25%|██▌       | 15/60 [32:07<1:37:35, 130.13s/it] 27%|██▋       | 16/60 [34:12<1:34:15, 128.53s/it] 28%|██▊       | 17/60 [36:14<1:30:38, 126.49s/it] 30%|███       | 18/60 [38:23<1:29:02, 127.21s/it] 32%|███▏      | 19/60 [40:27<1:26:22, 126.40s/it] 33%|███▎      | 20/60 [42:26<1:22:41, 124.05s/it] 35%|███▌      | 21/60 [44:23<1:19:19, 122.05s/it] 37%|███▋      | 22/60 [46:24<1:17:03, 121.68s/it] 38%|███▊      | 23/60 [48:29<1:15:37, 122.62s/it] 40%|████      | 24/60 [50:49<1:16:51, 128.09s/it] 42%|████▏     | 25/60 [52:56<1:14:29, 127.69s/it] 43%|████▎     | 26/60 [55:13<1:13:57, 130.53s/it] 45%|████▌     | 27/60 [57:29<1:12:37, 132.03s/it] 47%|████▋     | 28/60 [59:39<1:10:06, 131.44s/it] 48%|████▊     | 29/60 [1:01:46<1:07:09, 129.99s/it] 50%|█████     | 30/60 [1:03:50<1:04:13, 128.44s/it] 52%|█████▏    | 31/60 [1:05:44<59:58, 124.10s/it]   53%|█████▎    | 32/60 [1:07:45<57:28, 123.15s/it] 55%|█████▌    | 33/60 [1:09:50<55:33, 123.48s/it] 57%|█████▋    | 34/60 [1:12:02<54:36, 126.02s/it] 58%|█████▊    | 35/60 [1:14:03<51:55, 124.63s/it] 60%|██████    | 36/60 [1:16:11<50:14, 125.62s/it] 62%|██████▏   | 37/60 [1:18:16<48:08, 125.58s/it] 63%|██████▎   | 38/60 [1:20:14<45:09, 123.15s/it] 65%|██████▌   | 39/60 [1:22:27<44:12, 126.31s/it] 67%|██████▋   | 40/60 [1:24:28<41:28, 124.43s/it] 68%|██████▊   | 41/60 [1:26:33<39:29, 124.72s/it] 70%|███████   | 42/60 [1:28:30<36:41, 122.33s/it] 72%|███████▏  | 43/60 [1:30:43<35:37, 125.73s/it] 73%|███████▎  | 44/60 [1:32:56<34:05, 127.84s/it] 75%|███████▌  | 45/60 [1:35:10<32:26, 129.75s/it] 77%|███████▋  | 46/60 [1:37:18<30:09, 129.23s/it] 78%|███████▊  | 47/60 [1:39:31<28:15, 130.40s/it] 80%|████████  | 48/60 [1:41:37<25:45, 128.83s/it] 82%|████████▏ | 49/60 [1:43:43<23:27, 127.96s/it] 83%|████████▎ | 50/60 [1:45:41<20:51, 125.10s/it]Round 1: time=23.69s  cpu=16.8%  ram=158.6MB  gpu=2730.6MB
+  client_model_upload_MB: 1149.16 MB
+  client_model_download_MB: 11491.57 MB
+Round 2: time=24.08s  cpu=17.5%  ram=2.5MB  gpu=2823.9MB
+Avg Stats after 2 rounds: Loss=0.7010  IoU=27.15%
+  client_model_upload_MB: 2298.31 MB
+  client_model_download_MB: 22983.14 MB
+Round 3: time=24.88s  cpu=21.0%  ram=3.6MB  gpu=2824.9MB
+  client_model_upload_MB: 3447.47 MB
+  client_model_download_MB: 34474.71 MB
+Round 4: time=23.83s  cpu=19.9%  ram=1.0MB  gpu=2824.7MB
+Avg Stats after 4 rounds: Loss=0.6716  IoU=29.21%
+  client_model_upload_MB: 4596.63 MB
+  client_model_download_MB: 45966.27 MB
+Round 5: time=20.53s  cpu=13.8%  ram=0.0MB  gpu=2819.2MB
+  client_model_upload_MB: 5745.78 MB
+  client_model_download_MB: 57457.84 MB
+Round 6: time=18.96s  cpu=15.0%  ram=9.3MB  gpu=2820.6MB
+Avg Stats after 6 rounds: Loss=0.6489  IoU=28.18%
+  client_model_upload_MB: 6894.94 MB
+  client_model_download_MB: 68949.41 MB
+Round 7: time=20.44s  cpu=12.5%  ram=0.0MB  gpu=2825.7MB
+  client_model_upload_MB: 8044.10 MB
+  client_model_download_MB: 80440.98 MB
+Round 8: time=23.37s  cpu=17.0%  ram=0.7MB  gpu=2824.1MB
+  client_model_download_MB: 505629.02 MB
+Round 45: time=23.35s  cpu=21.0%  ram=0.0MB  gpu=2824.5MB
+  client_model_upload_MB: 51712.06 MB
+  client_model_download_MB: 517120.59 MB
+Round 46: time=22.15s  cpu=20.3%  ram=6.0MB  gpu=2822.3MB
+Avg Stats after 46 rounds: Loss=1.1974  IoU=0.00%
+  client_model_upload_MB: 52861.22 MB
+  client_model_download_MB: 528612.15 MB
+Round 47: time=22.97s  cpu=21.0%  ram=6.1MB  gpu=2823.0MB
+  client_model_upload_MB: 54010.37 MB
+  client_model_download_MB: 540103.72 MB
+Round 48: time=21.39s  cpu=21.4%  ram=0.0MB  gpu=2821.8MB
+Avg Stats after 48 rounds: Loss=1.2284  IoU=0.00%
+  client_model_upload_MB: 55159.53 MB
+  client_model_download_MB: 551595.29 MB
+Round 49: time=21.71s  cpu=21.2%  ram=6.1MB  gpu=2822.6MB
+  client_model_upload_MB: 56308.69 MB
+  client_model_download_MB: 563086.86 MB
+Round 50: time=20.86s  cpu=23.4%  ram=6.1MB  gpu=2820.1MB
+Avg Stats after 50 rounds: Loss=1.2539  IoU=0.00%
+  client_model_upload_MB: 57457.84 MB
+  client_model_download_MB: 574578.43 MB
+Round 51: time=22.32s  cpu=20.2%  ram=3.1MB  gpu=2820.0MB
+  client_model_upload_MB: 58607.00 MB
+  client_model_download_MB: 586070.00 MB 85%|████████▌ | 51/60 [1:47:49<18:54, 126.00s/it] 87%|████████▋ | 52/60 [1:49:55<16:48, 126.06s/it] 88%|████████▊ | 53/60 [1:52:10<15:01, 128.72s/it] 90%|█████████ | 54/60 [1:54:23<12:59, 129.90s/it] 92%|█████████▏| 55/60 [1:56:26<10:39, 127.82s/it] 93%|█████████▎| 56/60 [1:58:25<08:21, 125.31s/it]EXIT isic_federated_20260715 code=124 runtime_s=7200
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_federated_20260716.log
+START isic_federated_20260716 2026-07-17T01:29:30+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260716
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/federated_seed20260716'}
+[Runner] task=segmentation  method=federated
+[Runner] cfg=configs/proxy/exp_l9hdbtgx.yaml
+
+Method: fedavg
+Number of training images: 2594
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [02:06<2:04:25, 126.54s/it]  3%|▎         | 2/60 [03:59<1:54:19, 118.26s/it]  5%|▌         | 3/60 [06:07<1:56:55, 123.08s/it]  7%|▋         | 4/60 [08:17<1:57:29, 125.88s/it]  8%|▊         | 5/60 [10:29<1:57:07, 127.77s/it] 10%|█         | 6/60 [12:19<1:49:44, 121.93s/it] 12%|█▏        | 7/60 [14:11<1:44:42, 118.54s/it] 13%|█▎        | 8/60 [16:28<1:47:49, 124.42s/it] 15%|█▌        | 9/60 [18:29<1:44:53, 123.40s/it] 17%|█▋        | 10/60 [20:24<1:40:36, 120.74s/it] 18%|█▊        | 11/60 [22:24<1:38:29, 120.59s/it] 20%|██        | 12/60 [24:36<1:39:08, 123.93s/it] 22%|██▏       | 13/60 [26:36<1:36:08, 122.73s/it] 23%|██▎       | 14/60 [28:32<1:32:32, 120.71s/it] 25%|██▌       | 15/60 [30:31<1:30:15, 120.35s/it] 27%|██▋       | 16/60 [32:36<1:29:09, 121.58s/it] 28%|██▊       | 17/60 [34:40<1:27:41, 122.35s/it] 30%|███       | 18/60 [36:45<1:26:17, 123.26s/it] 32%|███▏      | 19/60 [38:45<1:23:37, 122.37s/it] 33%|███▎      | 20/60 [40:43<1:20:35, 120.88s/it] 35%|███▌      | 21/60 [42:47<1:19:13, 121.89s/it] 37%|███▋      | 22/60 [45:02<1:19:41, 125.83s/it] 38%|███▊      | 23/60 [47:16<1:19:04, 128.22s/it] 40%|████      | 24/60 [49:16<1:15:32, 125.89s/it] 42%|████▏     | 25/60 [51:22<1:13:26, 125.90s/it] 43%|████▎     | 26/60 [53:31<1:11:50, 126.79s/it] 45%|████▌     | 27/60 [55:46<1:11:05, 129.25s/it] 47%|████▋     | 28/60 [57:50<1:08:06, 127.69s/it] 48%|████▊     | 29/60 [59:51<1:04:56, 125.71s/it] 50%|█████     | 30/60 [1:01:50<1:01:48, 123.63s/it] 52%|█████▏    | 31/60 [1:03:56<1:00:09, 124.46s/it] 53%|█████▎    | 32/60 [1:05:56<57:20, 122.88s/it]   55%|█████▌    | 33/60 [1:07:57<55:03, 122.36s/it] 57%|█████▋    | 34/60 [1:10:08<54:09, 124.96s/it] 58%|█████▊    | 35/60 [1:12:24<53:27, 128.32s/it] 60%|██████    | 36/60 [1:14:35<51:42, 129.29s/it] 62%|██████▏   | 37/60 [1:16:22<46:55, 122.41s/it] 63%|██████▎   | 38/60 [1:18:12<43:34, 118.85s/it] 65%|██████▌   | 39/60 [1:20:19<42:27, 121.29s/it] 67%|██████▋   | 40/60 [1:22:22<40:32, 121.64s/it] 68%|██████▊   | 41/60 [1:24:19<38:08, 120.43s/it] 70%|███████   | 42/60 [1:26:30<37:04, 123.56s/it] 72%|███████▏  | 43/60 [1:28:25<34:13, 120.79s/it] 73%|███████▎  | 44/60 [1:30:19<31:40, 118.80s/it] 75%|███████▌  | 45/60 [1:32:10<29:07, 116.50s/it] 77%|███████▋  | 46/60 [1:34:20<28:06, 120.50s/it] 78%|███████▊  | 47/60 [1:36:34<26:58, 124.52s/it] 80%|████████  | 48/60 [1:38:32<24:32, 122.74s/it] 82%|████████▏ | 49/60 [1:40:37<22:36, 123.34s/it] 83%|████████▎ | 50/60 [1:42:48<20:56, 125.65s/it]Round 1: time=21.86s  cpu=18.6%  ram=169.2MB  gpu=2729.0MB
+  client_model_upload_MB: 1149.16 MB
+  client_model_download_MB: 11491.57 MB
+Round 2: time=19.05s  cpu=21.1%  ram=0.0MB  gpu=2828.9MB
+Avg Stats after 2 rounds: Loss=0.7061  IoU=26.87%
+  client_model_upload_MB: 2298.31 MB
+  client_model_download_MB: 22983.14 MB
+Round 3: time=22.45s  cpu=21.3%  ram=1.3MB  gpu=2823.6MB
+  client_model_upload_MB: 3447.47 MB
+  client_model_download_MB: 34474.71 MB
+Round 4: time=23.44s  cpu=22.2%  ram=1.4MB  gpu=2821.2MB
+Avg Stats after 4 rounds: Loss=0.6855  IoU=22.82%
+  client_model_upload_MB: 4596.63 MB
+  client_model_download_MB: 45966.27 MB
+Round 5: time=23.83s  cpu=14.1%  ram=0.1MB  gpu=2820.7MB
+  client_model_upload_MB: 5745.78 MB
+  client_model_download_MB: 57457.84 MB
+Round 6: time=19.61s  cpu=12.2%  ram=9.3MB  gpu=2823.7MB
+Avg Stats after 6 rounds: Loss=0.6650  IoU=23.50%
+  client_model_upload_MB: 6894.94 MB
+  client_model_download_MB: 68949.41 MB
+Round 7: time=19.37s  cpu=15.5%  ram=0.7MB  gpu=2823.6MB
+  client_model_upload_MB: 8044.10 MB
+  client_model_download_MB: 80440.98 MB
+Round 8: time=24.06s  cpu=19.1%  ram=9.2MB  gpu=2822.4MB
+  client_model_download_MB: 505629.02 MB
+Round 45: time=19.02s  cpu=20.9%  ram=0.0MB  gpu=2819.9MB
+  client_model_upload_MB: 51712.06 MB
+  client_model_download_MB: 517120.59 MB
+Round 46: time=22.55s  cpu=17.7%  ram=0.0MB  gpu=2825.3MB
+Avg Stats after 46 rounds: Loss=1.2003  IoU=0.00%
+  client_model_upload_MB: 52861.22 MB
+  client_model_download_MB: 528612.15 MB
+Round 47: time=23.41s  cpu=19.8%  ram=3.9MB  gpu=2821.6MB
+  client_model_upload_MB: 54010.37 MB
+  client_model_download_MB: 540103.72 MB
+Round 48: time=20.59s  cpu=18.9%  ram=0.1MB  gpu=2819.5MB
+Avg Stats after 48 rounds: Loss=1.2258  IoU=0.00%
+  client_model_upload_MB: 55159.53 MB
+  client_model_download_MB: 551595.29 MB
+Round 49: time=21.80s  cpu=20.0%  ram=0.0MB  gpu=2819.5MB
+  client_model_upload_MB: 56308.69 MB
+  client_model_download_MB: 563086.86 MB
+Round 50: time=22.99s  cpu=19.0%  ram=3.6MB  gpu=2818.8MB
+Avg Stats after 50 rounds: Loss=1.2523  IoU=0.00%
+  client_model_upload_MB: 57457.84 MB
+  client_model_download_MB: 574578.43 MB
+Round 51: time=20.72s  cpu=21.7%  ram=3.6MB  gpu=2818.0MB
+  client_model_upload_MB: 58607.00 MB
+  client_model_download_MB: 586070.00 MB 85%|████████▌ | 51/60 [1:44:47<18:34, 123.78s/it] 87%|████████▋ | 52/60 [1:46:52<16:31, 123.94s/it] 88%|████████▊ | 53/60 [1:48:49<14:14, 122.01s/it] 90%|█████████ | 54/60 [1:50:59<12:26, 124.40s/it] 92%|█████████▏| 55/60 [1:53:19<10:44, 128.91s/it] 93%|█████████▎| 56/60 [1:55:31<08:39, 129.86s/it] 95%|█████████▌| 57/60 [1:57:37<06:26, 128.71s/it] 97%|█████████▋| 58/60 [1:59:42<04:15, 127.65s/it]EXIT isic_federated_20260716 code=124 runtime_s=7200
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_20260714.log
+START isic_hierfl_20260714 2026-07-17T03:29:30+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260714
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/hierfl_seed20260714'}
+[Runner] task=segmentation  method=hierfl
+[Runner] cfg=configs/proxy/exp_jdgjkn88.yaml
+
+Method: hier_fedavg
+Number of training images: 2594
+
+--- Hierarchical Federated Learning Structure ---
+Layer -1 - Clients:
+  Client 0
+  Client 1
+  Client 2
+  Client 3
+  Client 4
+  Client 5
+  Client 6
+  Client 7
+  Client 8
+  Client 9
+  Client 10
+  Client 11
+  Client 12
+  Client 13
+  Client 14
+  Client 15
+  Client 16
+  Client 17
+  Client 18
+  Client 19
+  Client 20
+  Client 21
+  Client 36
+  Client 37
+  Client 38
+  Client 39
+  Client 40
+  Client 41
+  Client 42
+  Client 43
+  Client 44
+  Client 45
+  Client 46
+  Client 47
+  Client 48
+  Client 49
+
+Layer 0 - Edge Servers:
+  Edge Server 0 serves Clients: [np.int64(5), np.int64(8), np.int64(13), np.int64(20), np.int64(21), np.int64(27), np.int64(31), np.int64(35), np.int64(38), np.int64(40)]
+  Edge Server 1 serves Clients: [np.int64(0), np.int64(3), np.int64(4), np.int64(6), np.int64(11), np.int64(15), np.int64(39), np.int64(43), np.int64(47), np.int64(49)]
+  Edge Server 2 serves Clients: [np.int64(2), np.int64(10), np.int64(18), np.int64(25), np.int64(26), np.int64(32), np.int64(33), np.int64(36), np.int64(37), np.int64(45)]
+  Edge Server 3 serves Clients: [np.int64(7), np.int64(12), np.int64(14), np.int64(17), np.int64(23), np.int64(24), np.int64(34), np.int64(41), np.int64(42), np.int64(44)]
+  Edge Server 4 serves Clients: [1, 9, 16, 19, 22, 28, 29, 30, 46, 48]
+
+Layer 1 - Cloud Server:
+  Cloud Server 0 connects Edge Servers: [0, 1, 2, 3, 4]
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [05:00<4:55:12, 300.22s/it]  3%|▎         | 2/60 [10:01<4:51:02, 301.08s/it]  5%|▌         | 3/60 [14:59<4:44:25, 299.39s/it]  7%|▋         | 4/60 [19:44<4:34:21, 293.96s/it]  8%|▊         | 5/60 [23:58<4:16:10, 279.45s/it] 10%|█         | 6/60 [28:01<4:00:26, 267.15s/it] 12%|█▏        | 7/60 [32:04<3:48:56, 259.17s/it] 13%|█▎        | 8/60 [35:55<3:36:52, 250.24s/it] 15%|█▌        | 9/60 [39:45<3:27:13, 243.79s/it] 17%|█▋        | 10/60 [43:47<3:22:47, 243.36s/it] 18%|█▊        | 11/60 [47:40<3:16:08, 240.17s/it] 20%|██        | 12/60 [51:40<3:12:00, 240.02s/it] 22%|██▏       | 13/60 [55:47<3:09:41, 242.16s/it] 23%|██▎       | 14/60 [59:44<3:04:31, 240.68s/it] 25%|██▌       | 15/60 [1:03:40<2:59:23, 239.19s/it] 27%|██▋       | 16/60 [1:07:44<2:56:25, 240.58s/it] 28%|██▊       | 17/60 [1:11:42<2:51:56, 239.91s/it] 30%|███       | 18/60 [1:15:34<2:46:19, 237.61s/it] 32%|███▏      | 19/60 [1:19:32<2:42:26, 237.73s/it] 33%|███▎      | 20/60 [1:23:27<2:37:56, 236.92s/it] 35%|███▌      | 21/60 [1:27:21<2:33:24, 236.02s/it] 37%|███▋      | 22/60 [1:31:22<2:30:19, 237.36s/it] 38%|███▊      | 23/60 [1:35:22<2:26:52, 238.18s/it] 40%|████      | 24/60 [1:39:13<2:21:41, 236.16s/it] 42%|████▏     | 25/60 [1:43:01<2:16:20, 233.72s/it] 43%|████▎     | 26/60 [1:47:06<2:14:16, 236.95s/it] 45%|████▌     | 27/60 [1:51:07<2:10:57, 238.10s/it] 47%|████▋     | 28/60 [1:55:08<2:07:33, 239.16s/it] 48%|████▊     | 29/60 [1:59:00<2:02:27, 237.02s/it]EXIT isic_hierfl_20260714 code=124 runtime_s=7201
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_20260715.log
+START isic_hierfl_20260715 2026-07-17T05:29:31+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260715
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/hierfl_seed20260715'}
+[Runner] task=segmentation  method=hierfl
+[Runner] cfg=configs/proxy/exp_8ufs203p.yaml
+
+Method: hier_fedavg
+Number of training images: 2594
+
+--- Hierarchical Federated Learning Structure ---
+Layer -1 - Clients:
+  Client 0
+  Client 1
+  Client 2
+  Client 3
+  Client 4
+  Client 5
+  Client 6
+  Client 7
+  Client 8
+  Client 9
+  Client 10
+  Client 11
+  Client 12
+  Client 13
+  Client 14
+  Client 15
+  Client 16
+  Client 17
+  Client 18
+  Client 19
+  Client 20
+  Client 21
+  Client 36
+  Client 37
+  Client 38
+  Client 39
+  Client 40
+  Client 41
+  Client 42
+  Client 43
+  Client 44
+  Client 45
+  Client 46
+  Client 47
+  Client 48
+  Client 49
+
+Layer 0 - Edge Servers:
+  Edge Server 0 serves Clients: [np.int64(1), np.int64(4), np.int64(7), np.int64(8), np.int64(9), np.int64(10), np.int64(14), np.int64(31), np.int64(40), np.int64(45)]
+  Edge Server 1 serves Clients: [np.int64(2), np.int64(6), np.int64(17), np.int64(19), np.int64(36), np.int64(37), np.int64(41), np.int64(44), np.int64(48), np.int64(49)]
+  Edge Server 2 serves Clients: [np.int64(13), np.int64(15), np.int64(18), np.int64(22), np.int64(26), np.int64(28), np.int64(30), np.int64(38), np.int64(39), np.int64(42)]
+  Edge Server 3 serves Clients: [np.int64(5), np.int64(11), np.int64(12), np.int64(20), np.int64(23), np.int64(24), np.int64(27), np.int64(33), np.int64(46), np.int64(47)]
+  Edge Server 4 serves Clients: [0, 3, 16, 21, 25, 29, 32, 34, 35, 43]
+
+Layer 1 - Cloud Server:
+  Cloud Server 0 connects Edge Servers: [0, 1, 2, 3, 4]
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [04:04<4:00:01, 244.10s/it]  3%|▎         | 2/60 [07:51<3:46:17, 234.10s/it]  5%|▌         | 3/60 [11:53<3:45:54, 237.79s/it]  7%|▋         | 4/60 [15:54<3:43:16, 239.22s/it]  8%|▊         | 5/60 [19:58<3:40:51, 240.94s/it] 10%|█         | 6/60 [24:01<3:37:31, 241.69s/it] 12%|█▏        | 7/60 [28:00<3:32:36, 240.69s/it] 13%|█▎        | 8/60 [32:10<3:31:11, 243.68s/it] 15%|█▌        | 9/60 [36:10<3:26:06, 242.48s/it] 17%|█▋        | 10/60 [40:21<3:24:22, 245.25s/it] 18%|█▊        | 11/60 [44:28<3:20:32, 245.56s/it] 20%|██        | 12/60 [48:38<3:17:29, 246.87s/it] 22%|██▏       | 13/60 [52:36<3:11:23, 244.34s/it] 23%|██▎       | 14/60 [56:26<3:03:53, 239.87s/it] 25%|██▌       | 15/60 [1:00:25<2:59:42, 239.60s/it] 27%|██▋       | 16/60 [1:04:16<2:53:57, 237.21s/it] 28%|██▊       | 17/60 [1:08:17<2:50:44, 238.23s/it] 30%|███       | 18/60 [1:12:13<2:46:19, 237.60s/it] 32%|███▏      | 19/60 [1:16:22<2:44:36, 240.89s/it] 33%|███▎      | 20/60 [1:20:22<2:40:35, 240.88s/it] 35%|███▌      | 21/60 [1:24:19<2:35:38, 239.44s/it] 37%|███▋      | 22/60 [1:28:30<2:33:52, 242.96s/it] 38%|███▊      | 23/60 [1:32:29<2:29:08, 241.84s/it] 40%|████      | 24/60 [1:36:24<2:23:51, 239.78s/it] 42%|████▏     | 25/60 [1:40:45<2:23:31, 246.06s/it] 43%|████▎     | 26/60 [1:44:51<2:19:25, 246.03s/it] 45%|████▌     | 27/60 [1:48:50<2:14:13, 244.03s/it] 47%|████▋     | 28/60 [1:52:45<2:08:39, 241.25s/it] 48%|████▊     | 29/60 [1:56:45<2:04:33, 241.09s/it]EXIT isic_hierfl_20260715 code=124 runtime_s=7200
+LOG docs/optimization_loop/logs/plan26_isicfix_212502/isic_hierfl_20260716.log
+START isic_hierfl_20260716 2026-07-17T07:29:31+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260716
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/hierfl_seed20260716'}
+[Runner] task=segmentation  method=hierfl
+[Runner] cfg=configs/proxy/exp_iiytxwyz.yaml
+
+Method: hier_fedavg
+Number of training images: 2594
+
+--- Hierarchical Federated Learning Structure ---
+Layer -1 - Clients:
+  Client 0
+  Client 1
+  Client 2
+  Client 3
+  Client 4
+  Client 5
+  Client 6
+  Client 7
+  Client 8
+  Client 9
+  Client 10
+  Client 11
+  Client 12
+  Client 13
+  Client 14
+  Client 15
+  Client 16
+  Client 17
+  Client 18
+  Client 19
+  Client 20
+  Client 21
+  Client 36
+  Client 37
+  Client 38
+  Client 39
+  Client 40
+  Client 41
+  Client 42
+  Client 43
+  Client 44
+  Client 45
+  Client 46
+  Client 47
+  Client 48
+  Client 49
+
+Layer 0 - Edge Servers:
+  Edge Server 0 serves Clients: [np.int64(0), np.int64(11), np.int64(16), np.int64(24), np.int64(25), np.int64(27), np.int64(36), np.int64(39), np.int64(43), np.int64(45)]
+  Edge Server 1 serves Clients: [np.int64(1), np.int64(3), np.int64(7), np.int64(10), np.int64(17), np.int64(23), np.int64(28), np.int64(30), np.int64(34), np.int64(35)]
+  Edge Server 2 serves Clients: [np.int64(8), np.int64(18), np.int64(21), np.int64(26), np.int64(33), np.int64(38), np.int64(41), np.int64(42), np.int64(44), np.int64(46)]
+  Edge Server 3 serves Clients: [np.int64(9), np.int64(13), np.int64(14), np.int64(15), np.int64(29), np.int64(31), np.int64(32), np.int64(40), np.int64(47), np.int64(48)]
+  Edge Server 4 serves Clients: [2, 4, 5, 6, 12, 19, 20, 22, 37, 49]
+
+Layer 1 - Cloud Server:
+  Cloud Server 0 connects Edge Servers: [0, 1, 2, 3, 4]
+  0%|          | 0/60 [00:00<?, ?it/s]  2%|▏         | 1/60 [03:46<3:43:03, 226.84s/it]  3%|▎         | 2/60 [07:34<3:39:55, 227.50s/it]  5%|▌         | 3/60 [11:31<3:40:18, 231.91s/it]  7%|▋         | 4/60 [15:16<3:33:41, 228.96s/it]  8%|▊         | 5/60 [18:57<3:27:21, 226.21s/it] 10%|█         | 6/60 [22:45<3:24:06, 226.78s/it] 12%|█▏        | 7/60 [26:35<3:21:12, 227.77s/it] 13%|█▎        | 8/60 [30:25<3:18:05, 228.57s/it] 15%|█▌        | 9/60 [34:17<3:15:03, 229.47s/it] 17%|█▋        | 10/60 [38:04<3:10:46, 228.94s/it] 18%|█▊        | 11/60 [41:57<3:07:59, 230.20s/it] 20%|██        | 12/60 [45:40<3:02:17, 227.87s/it] 22%|██▏       | 13/60 [49:27<2:58:20, 227.67s/it] 23%|██▎       | 14/60 [53:06<2:52:24, 224.88s/it] 25%|██▌       | 15/60 [56:56<2:49:59, 226.65s/it] 27%|██▋       | 16/60 [1:00:43<2:46:10, 226.61s/it] 28%|██▊       | 17/60 [1:04:25<2:41:31, 225.39s/it] 30%|███       | 18/60 [1:08:13<2:38:11, 225.99s/it] 32%|███▏      | 19/60 [1:12:13<2:37:16, 230.17s/it] 33%|███▎      | 20/60 [1:16:09<2:34:43, 232.08s/it] 35%|███▌      | 21/60 [1:19:55<2:29:31, 230.04s/it] 37%|███▋      | 22/60 [1:23:44<2:25:36, 229.91s/it] 38%|███▊      | 23/60 [1:27:38<2:22:34, 231.20s/it] 40%|████      | 24/60 [1:31:37<2:20:05, 233.49s/it] 42%|████▏     | 25/60 [1:35:25<2:15:10, 231.73s/it] 43%|████▎     | 26/60 [1:39:12<2:10:34, 230.44s/it] 45%|████▌     | 27/60 [1:42:57<2:05:49, 228.78s/it] 47%|████▋     | 28/60 [1:46:51<2:02:48, 230.27s/it] 48%|████▊     | 29/60 [1:50:35<1:57:59, 228.38s/it] 50%|█████     | 30/60 [1:54:20<1:53:37, 227.25s/it] 52%|█████▏    | 31/60 [1:58:15<1:51:02, 229.74s/it]EXIT isic_hierfl_20260716 code=124 runtime_s=7200
+
+exec
+/bin/bash -lc "git log --oneline --all -- configs/segmentation/federated/default.yaml segmentation/Federated/clients/test.py segmentation/Federated/clients/DiceFocalLoss.py segmentation/Federated/models/CNN_ISIC.py | head -30
+git blame -L 50,70 segmentation/Federated/clients/test.py
+git blame -L 25,80 segmentation/Federated/clients/DiceFocalLoss.py
+git log -p -8 -- configs/segmentation/federated/default.yaml | sed -n '1,260p'
+git status --short" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 140ms:
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 50)         inputs, masks = inputs.to(device), masks.to(device)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 51) 
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 52)         outputs = model(inputs)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 53)         size = inputs.size(0)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 54)         del inputs
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 55) 
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 56)         batch_loss = criterion(outputs, masks)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 57)         loss += batch_loss.item()
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 58)         del batch_loss
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 59)         outputs = torch.sigmoid(
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 60)             outputs
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 61)         )  # Apply sigmoid if the output is logits
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 62)         outputs = (outputs > 0.5).float()
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 63)         iou, dice = compute_iou_and_dice(outputs, masks)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 64)         del outputs, masks
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 65)         test_iou += iou * size  # Multiply by batch size
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 66)         test_dice += dice * size
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 67)         total_samples += (
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 68)             size  # Update total_samples to use size instead of inputs.size(0)
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 69)         )
+474c3e03 (Jackson2706 2025-07-29 13:40:11 +0700 70)     test_iou /= total_samples
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 25)                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 26)             )
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 27) 
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 28)         # Invalid values cannot be made finite by clamp alone. Map them to the
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 29)         # nearest valid binary value, then keep probabilities away from log(0).
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 30)         preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 31)         targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 32)         preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 33)         targets = targets.clamp(min=0.0, max=1.0)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 34) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 35)         return preds, targets
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 36) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 37)     def dice_loss(self, preds, targets):
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 38)         preds = preds.contiguous().view(-1)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 39)         targets = targets.contiguous().view(-1)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 40) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 41)         intersection = (preds * targets).sum()
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 42)         union = preds.sum() + targets.sum()
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 43)         dice = (2.0 * intersection + self.smooth + self.eps) / (
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 44)             union + self.smooth + self.eps
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 45)         )
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 46) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 47)         return 1 - dice
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 48) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 49)     def focal_loss(self, preds, targets):
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 50)         preds = preds.contiguous().view(-1)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 51)         targets = targets.contiguous().view(-1)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 52) 
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 53)         if preds.numel() == 0:
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 54)             return preds.sum()
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 55) 
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 56)         preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 57)         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 58)         pt = torch.exp(-bce)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 59)         focal = self.alpha * (1 - pt) ** self.gamma * bce
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 60)         return focal.mean()
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 61) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 62)     def forward(self, preds, targets):
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 63)         # Keep reductions and BCE in float32 even when the caller uses autocast.
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 64)         with torch.autocast(device_type=preds.device.type, enabled=False):
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 65)             preds = preds.float()
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 66)             targets = targets.float()
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 67)             preds, targets = self._sanity_check(preds, targets)
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 68) 
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 69)             loss_dice = self.dice_loss(preds, targets)
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 70)             loss_focal = self.focal_loss(preds, targets)
+00000000 (Not Committed Yet 2026-07-17 15:21:02 +0700 71)             total_loss = loss_dice + loss_focal
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 72) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 73)         if self.debug:
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 74)             print(
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 75)                 f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 76)             )
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 77) 
+474c3e03 (Jackson2706       2025-07-29 13:40:11 +0700 78)         return total_loss
+commit cf6454cd3b7a796bc82eb8b2a13693b74baa114b
+Author: Jackson2706 <dung27062002@gmail.com>
+Date:   Thu Jul 16 16:30:56 2026 +0700
+
+    feat(e-hsfp): corrected eval + deadlock/device fixes + prototype-space + fair-comparison harness
+    
+    Optimization-loop work on H-SFP/E-HSFP:
+    - Fix eval bug: evaluate the FedAvg-global client (not frozen client-0) in
+      classification/H-SFP/hierarchy.py:_run_validation (was grading a never-selected,
+      frozen encoder; corrected CIFAR-100 H-SFP 3.81 -> ~10%).
+    - Fix ablation-precedence, PRC wiring, CPU bfloat16/FP32 dtype, and GPU device-placement
+      bugs across ehsfp/ and hierarchy; add resolved-config hashing + runtime counters + guards.
+    - Add prototype_space={raw,centered_cosine,whitened_cosine} (centered+cosine head is a
+      validated corrected-eval win) and client_objective flag; NaN-safe metrics logging.
+    - Remove unused tensorboardX SummaryWriter (autograd-thread contention); HierFL aggregator
+      device fix; configurable num_workers.
+    - Add fair-comparison harness (tools/fair_compare) + diagnostics (tools/diag) + proxy/smoke
+      configs for CIFAR-100/HAM10000.
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+    Claude-Session: https://claude.ai/code/session_015zfnTzsFiqh6tKRaXbpm9y
+
+diff --git a/configs/segmentation/federated/default.yaml b/configs/segmentation/federated/default.yaml
+index e80c4a5..ebe0e29 100644
+--- a/configs/segmentation/federated/default.yaml
++++ b/configs/segmentation/federated/default.yaml
+@@ -2,7 +2,7 @@ is_gpu: true
+ gpu: 0
+ iid: true
+ num_users: 50
+-epochs: 200
++epochs: 60
+ local_ep: 5
+ frac: 0.1
+ local_bs: 16
+
+commit de60494258badba5ba940166781159bfb681f6c1
+Author: Jackson2706 <dung27062002@gmail.com>
+Date:   Wed May 13 23:06:18 2026 +0700
+
+    feat: implement H-SFP and HeteroSFL segmentation architectures and configuration suites for ISIC dataset
+
+diff --git a/configs/segmentation/federated/default.yaml b/configs/segmentation/federated/default.yaml
+index d6f4d7e..e80c4a5 100644
+--- a/configs/segmentation/federated/default.yaml
++++ b/configs/segmentation/federated/default.yaml
+@@ -1,8 +1,8 @@
+ is_gpu: true
+ gpu: 0
+ iid: true
+-num_users: 200
+-epochs: 15
++num_users: 50
++epochs: 200
+ local_ep: 5
+ frac: 0.1
+ local_bs: 16
+@@ -11,4 +11,4 @@ lr: !!float 1e-4
+ momentum: 0.9
+ weight_decay: !!float 1e-4
+ verbose: false
+-print_every: 100
++print_every: 1
+
+commit 6c67ccc65d28a3387cf480615e4e7ffd7db7c537
+Author: Jackson2706 <dung27062002@gmail.com>
+Date:   Wed May 13 17:35:25 2026 +0700
+
+    refactor: restructure repository by migrating legacy classification and segmentation modules into a unified H-SFP and serverless architecture.
+
+diff --git a/configs/segmentation/federated/default.yaml b/configs/segmentation/federated/default.yaml
+new file mode 100644
+index 0000000..d6f4d7e
+--- /dev/null
++++ b/configs/segmentation/federated/default.yaml
+@@ -0,0 +1,14 @@
++is_gpu: true
++gpu: 0
++iid: true
++num_users: 200
++epochs: 15
++local_ep: 5
++frac: 0.1
++local_bs: 16
++optimizer: "adam"
++lr: !!float 1e-4
++momentum: 0.9
++weight_decay: !!float 1e-4
++verbose: false
++print_every: 100
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+
+exec
+/bin/bash -lc "ls -ld config config.py 2>/dev/null || true
+find config -maxdepth 2 -type f -print 2>/dev/null
+nl -ba main.py | sed -n '96,112p;230,252p'
+nl -ba segmentation/HeteroSFL/runner.py | sed -n '1,20p;120,185p'
+nl -ba segmentation/Federated/clients/test.py | sed -n '8,75p'
+nl -ba segmentation/Federated/models/CNN_ISIC.py | sed -n '55,70p'
+nl -ba segmentation/Federated/clients/DiceFocalLoss.py | sed -n '6,75p'
+nl -ba configs/segmentation/federated/default.yaml
+nl -ba configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml
+nl -ba configs/proxy/plan_isic2018_hsfp.yaml
+rg -n \"plan_isic2018_h-sfp|plan_isic2018_hsfp\" docs tools scripts configs .github 2>/dev/null | head -100" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+    96	
+    97	def _load_runner(method_dir: str):
+    98	    """Import runner.py from a method directory, adding it to sys.path."""
+    99	    runner_path = os.path.join(method_dir, "runner.py")
+   100	    if not os.path.isfile(runner_path):
+   101	        raise FileNotFoundError(f"runner.py not found in {method_dir}")
+   102	
+   103	    sys.path.insert(0, method_dir)
+   104	    spec = importlib.util.spec_from_file_location("_runner", runner_path)
+   105	    module = importlib.util.module_from_spec(spec)
+   106	    spec.loader.exec_module(module)
+   107	    return module
+   108	
+   109	
+   110	def _cleanup_runner(method_dir: str):
+   111	    """Remove method dir from sys.path and clear cached modules."""
+   112	    if method_dir in sys.path:
+   230	        tmp.close()
+   231	        cfg_path = tmp.name
+   232	
+   233	    # Set global seed before anything else
+   234	    _set_seed(seed)
+   235	
+   236	    wandb_active = False
+   237	    if use_wandb:
+   238	        wandb_active = _init_wandb(task, method, cfg_path, wandb_project, wandb_entity)
+   239	
+   240	    method_dir = os.path.join(ROOT_DIR, method_rel)
+   241	    print(f"[Runner] task={task}  method={method}")
+   242	    print(f"[Runner] cfg={os.path.relpath(cfg_path, ROOT_DIR)}\n")
+   243	
+   244	    runner = _load_runner(method_dir)
+   245	    try:
+   246	        runner.run(cfg_path)
+   247	    finally:
+   248	        _cleanup_runner(method_dir)
+   249	        if wandb_active and wandb.run is not None:
+   250	            wandb.finish()
+   251	        # Clean up temp config
+   252	        if use_tmp_cfg:
+     1	import copy
+     2	import json
+     3	import os
+     4	import time
+     5	
+     6	import numpy as np
+     7	import torch
+     8	import torch.nn as nn
+     9	import torch.nn.functional as F
+    10	from config import ConfigLoader
+    11	from data import get_dataset
+    12	from models import get_model
+    13	from clients import test_inference, DiceFocalLoss
+    14	from torch.optim import SGD
+    15	from torch.utils.data import DataLoader, Dataset
+    16	from tqdm import tqdm
+    17	
+    18	try:
+    19	    import wandb
+    20	except ImportError:
+   120	        )
+   121	
+   122	        for idx in idxs_users:
+   123	            client_type = client_types[idx]
+   124	            local_client_model = copy.deepcopy(client_model_wide)
+   125	
+   126	            if client_type == "low":
+   127	                narrow_state = extract_narrow_model(client_model_wide, NARROW_CHANNELS)
+   128	                last_layer = list(local_client_model.children())[-1]
+   129	                if isinstance(last_layer, nn.Conv2d):
+   130	                    last_layer.out_channels = NARROW_CHANNELS
+   131	                    last_layer.weight = nn.Parameter(narrow_state[list(narrow_state.keys())[-2]])
+   132	                    last_layer.bias = nn.Parameter(narrow_state[list(narrow_state.keys())[-1]])
+   133	
+   134	            local_client_model.to(device).train()
+   135	            client_optimizer = SGD(
+   136	                local_client_model.parameters(), lr=config["lr"], momentum=config["momentum"]
+   137	            )
+   138	            loader = DataLoader(
+   139	                DatasetSplit(train_dataset, user_groups[idx]),
+   140	                batch_size=config["local_bs"], shuffle=True,
+   141	            )
+   142	            client_losses = []
+   143	
+   144	            for _ in range(config["local_ep"]):
+   145	                for image, mask in loader:
+   146	                    server_optimizer.zero_grad()
+   147	                    client_optimizer.zero_grad()
+   148	                    image, mask = image.to(device), mask.to(device)
+   149	                    activation = local_client_model(image)
+   150	
+   151	                    if client_type == "high":
+   152	                        act_wide = activation.clone().detach().requires_grad_(True)
+   153	                        # Simulate narrow by zeroing out channels beyond NARROW
+   154	                        act_narrow_sim = act_wide.clone()
+   155	                        act_narrow_sim[:, NARROW_CHANNELS:] = 0
+   156	                        pred_wide = main_server_model(act_wide)
+   157	                        pred_narrow = main_server_model(act_narrow_sim)
+   158	                        # Segmentation: use DiceFocalLoss for both, average
+   159	                        loss_wide = criterion(pred_wide, mask)
+   160	                        loss_narrow = criterion(pred_narrow, mask)
+   161	                        loss = loss_wide + 0.5 * loss_narrow
+   162	                        loss.backward()
+   163	                        activation_grad = act_wide.grad
+   164	                    else:
+   165	                        act_narrow = activation.clone().detach().requires_grad_(True)
+   166	                        padding = torch.zeros(
+   167	                            act_narrow.shape[0],
+   168	                            WIDE_CHANNELS - NARROW_CHANNELS,
+   169	                            act_narrow.shape[2],
+   170	                            act_narrow.shape[3],
+   171	                        ).to(device)
+   172	                        act_input = torch.cat([act_narrow, padding], dim=1)
+   173	                        pred = main_server_model(act_input)
+   174	                        loss = criterion(pred, mask)
+   175	                        loss.backward()
+   176	                        activation_grad = act_narrow.grad
+   177	
+   178	                    server_optimizer.step()
+   179	                    activation.backward(activation_grad)
+   180	                    client_optimizer.step()
+   181	                    client_losses.append(loss.item())
+   182	                    comm_cost_dict["upload_MB"] += activation.numel() * 4 / (1024**2)
+   183	
+   184	            local_weights.append(copy.deepcopy(local_client_model.state_dict()))
+   185	            epoch_losses.append(np.mean(client_losses))
+     8	def compute_iou_and_dice(preds, labels):
+     9	    # Convert tensors to numpy arrays
+    10	    preds = preds.cpu().numpy()
+    11	    labels = labels.cpu().numpy()
+    12	
+    13	    # Flatten arrays
+    14	    preds = preds.flatten()
+    15	    labels = labels.flatten()
+    16	
+    17	    # Convert to binary predictions (if needed)
+    18	    preds_binary = (preds > 0.5).astype(np.int32)
+    19	
+    20	    # Compute Intersection and Union for IoU
+    21	    intersection = np.sum((preds_binary == 1) & (labels == 1))
+    22	    union = np.sum((preds_binary == 1) | (labels == 1))
+    23	    iou = intersection / union if union != 0 else 0
+    24	
+    25	    # Compute Dice Coefficient
+    26	    dice = (
+    27	        2 * intersection / (np.sum(preds_binary == 1) + np.sum(labels == 1))
+    28	        if (np.sum(preds_binary == 1) + np.sum(labels == 1)) != 0
+    29	        else 0
+    30	    )
+    31	
+    32	    return iou, dice
+    33	
+    34	
+    35	def test_inference(args, model, test_dataset):
+    36	    """Returns the test F1 score (macro) and loss."""
+    37	    model.eval()
+    38	    loss = 0.0
+    39	
+    40	    device = "cuda" if args["gpu"] else "cpu"
+    41	    criterion = DiceFocalLoss().to(device)
+    42	    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+    43	    model = model.to(device)
+    44	    test_iou = 0.0
+    45	    test_dice = 0.0
+    46	    total_samples = 0
+    47	    torch.cuda.empty_cache()  # Clear GPU memory
+    48	    for batch_idx, (inputs, masks) in enumerate(testloader):
+    49	        torch.cuda.empty_cache()
+    50	        inputs, masks = inputs.to(device), masks.to(device)
+    51	
+    52	        outputs = model(inputs)
+    53	        size = inputs.size(0)
+    54	        del inputs
+    55	
+    56	        batch_loss = criterion(outputs, masks)
+    57	        loss += batch_loss.item()
+    58	        del batch_loss
+    59	        outputs = torch.sigmoid(
+    60	            outputs
+    61	        )  # Apply sigmoid if the output is logits
+    62	        outputs = (outputs > 0.5).float()
+    63	        iou, dice = compute_iou_and_dice(outputs, masks)
+    64	        del outputs, masks
+    65	        test_iou += iou * size  # Multiply by batch size
+    66	        test_dice += dice * size
+    67	        total_samples += (
+    68	            size  # Update total_samples to use size instead of inputs.size(0)
+    69	        )
+    70	    test_iou /= total_samples
+    71	    test_dice /= total_samples
+    72	    return test_iou, test_dice, loss / len(testloader)
+    55	        # Final layer
+    56	        out = self.final_conv(d2)
+    57	        out = F.interpolate(
+    58	            out,
+    59	            size=(x.size(2), x.size(3)),
+    60	            mode="bilinear",
+    61	            align_corners=False,
+    62	        )
+    63	        out = torch.sigmoid(out)  # Apply sigmoid for binary segmentation
+    64	        return out
+     6	class DiceFocalLoss(nn.Module):
+     7	    def __init__(
+     8	        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+     9	    ):
+    10	        super(DiceFocalLoss, self).__init__()
+    11	        self.alpha = alpha
+    12	        self.gamma = gamma
+    13	        self.smooth = smooth
+    14	        self.eps = eps
+    15	        self.debug = debug
+    16	
+    17	    def _sanity_check(self, preds, targets):
+    18	        if preds.dim() == 3:
+    19	            preds = preds.unsqueeze(1)
+    20	        if targets.dim() == 3:
+    21	            targets = targets.unsqueeze(1)
+    22	
+    23	        if preds.shape != targets.shape:
+    24	            raise ValueError(
+    25	                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+    26	            )
+    27	
+    28	        # Invalid values cannot be made finite by clamp alone. Map them to the
+    29	        # nearest valid binary value, then keep probabilities away from log(0).
+    30	        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
+    31	        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
+    32	        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+    33	        targets = targets.clamp(min=0.0, max=1.0)
+    34	
+    35	        return preds, targets
+    36	
+    37	    def dice_loss(self, preds, targets):
+    38	        preds = preds.contiguous().view(-1)
+    39	        targets = targets.contiguous().view(-1)
+    40	
+    41	        intersection = (preds * targets).sum()
+    42	        union = preds.sum() + targets.sum()
+    43	        dice = (2.0 * intersection + self.smooth + self.eps) / (
+    44	            union + self.smooth + self.eps
+    45	        )
+    46	
+    47	        return 1 - dice
+    48	
+    49	    def focal_loss(self, preds, targets):
+    50	        preds = preds.contiguous().view(-1)
+    51	        targets = targets.contiguous().view(-1)
+    52	
+    53	        if preds.numel() == 0:
+    54	            return preds.sum()
+    55	
+    56	        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+    57	        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+    58	        pt = torch.exp(-bce)
+    59	        focal = self.alpha * (1 - pt) ** self.gamma * bce
+    60	        return focal.mean()
+    61	
+    62	    def forward(self, preds, targets):
+    63	        # Keep reductions and BCE in float32 even when the caller uses autocast.
+    64	        with torch.autocast(device_type=preds.device.type, enabled=False):
+    65	            preds = preds.float()
+    66	            targets = targets.float()
+    67	            preds, targets = self._sanity_check(preds, targets)
+    68	
+    69	            loss_dice = self.dice_loss(preds, targets)
+    70	            loss_focal = self.focal_loss(preds, targets)
+    71	            total_loss = loss_dice + loss_focal
+    72	
+    73	        if self.debug:
+    74	            print(
+    75	                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+     1	is_gpu: true
+     2	gpu: 0
+     3	iid: true
+     4	num_users: 50
+     5	epochs: 60
+     6	local_ep: 5
+     7	frac: 0.1
+     8	local_bs: 16
+     9	optimizer: "adam"
+    10	lr: !!float 1e-4
+    11	momentum: 0.9
+    12	weight_decay: !!float 1e-4
+    13	verbose: false
+    14	print_every: 1
+     1	base: default.yaml
+     2	
+     3	strategy: "HeteroSFL"
+     4	dataset: "isic-2018"
+     5	train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+     6	train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+     7	test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+     8	test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+     9	
+    10	model: "resnet50"
+    11	num_classes: 2
+    12	server_in_channels: 512
+    13	wide_channels: 76
+    14	narrow_channels: 4
+    15	high_end_ratio: 0.3
+     1	base: ../segmentation/h-sfp/isic_our_resnet50_5_10.yaml
+     2	
+     3	output_dir: outputs/isic2018/hsfp
+tools/fair_compare/run_grid_isic2018.sh:15:python main.py --task segmentation --method h-sfp --cfg configs/proxy/plan_isic2018_hsfp.yaml --ablation baseline_hsfp --seed 20260714 --set output_dir=outputs/isic2018/hsfp_seed20260714
+tools/fair_compare/run_grid_isic2018.sh:16:python main.py --task segmentation --method h-sfp --cfg configs/proxy/plan_isic2018_hsfp.yaml --ablation baseline_hsfp --seed 20260715 --set output_dir=outputs/isic2018/hsfp_seed20260715
+tools/fair_compare/run_grid_isic2018.sh:17:python main.py --task segmentation --method h-sfp --cfg configs/proxy/plan_isic2018_hsfp.yaml --ablation baseline_hsfp --seed 20260716 --set output_dir=outputs/isic2018/hsfp_seed20260716
+tools/fair_compare/aggregate.py:98:        "h-sfp": "plan_isic2018_hsfp.yaml",
+
+exec
+/bin/bash -lc 'for f in segmentation/HeteroSFL/config/__init__.py segmentation/HeteroSFL/config/config_loader.py segmentation/Federated/config/__init__.py; do echo $f; sed -n '"'1,50p' "'$f; done
+rg -n '"'sys.modules\\[|import config|from config' main.py tools/fair_compare segmentation/HeteroSFL | head -100
+git show HEAD:segmentation/Federated/clients/DiceFocalLoss.py | sed -n '1,100p'
+git show 474c3e0:segmentation/Federated/clients/DiceFocalLoss.py 2>/dev/null | sed -n '1,100p'
+git diff -- segmentation/Federated/clients/DiceFocalLoss.py | sed -n '1,180p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/HeteroSFL/config/__init__.py
+sed: can't read segmentation/HeteroSFL/config/__init__.py: No such file or directory
+segmentation/HeteroSFL/config/config_loader.py
+import os
+
+import yaml
+
+
+class ConfigLoader:
+    def __init__(self, cfg_path):
+        self.cfg_path = cfg_path
+        self.config = self._load_and_merge(cfg_path)
+
+    def get_config(self):
+        return self.config
+
+    def _load_yaml(self, path):
+        with open(path, 'r') as f:
+            return yaml.safe_load(f) or {}
+
+    def _load_and_merge(self, path):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Config file not found: {path}")
+
+        cfg = self._load_yaml(path)
+
+        if 'base' in cfg:
+            base_path = os.path.join(os.path.dirname(path), cfg['base'])
+            base_cfg = self._load_and_merge(base_path)
+            cfg.pop('base')
+            return self._merge_dicts(base_cfg, cfg)
+        return cfg
+
+    def _merge_dicts(self, base, override):
+        for key, value in override.items():
+            if isinstance(value, dict) and key in base and isinstance(base[key], dict):
+                base[key] = self._merge_dicts(base[key], value)
+            else:
+                base[key] = value
+        return base
+segmentation/Federated/config/__init__.py
+from .config_loader import ConfigLoadermain.py:119:        del sys.modules[k]
+segmentation/HeteroSFL/runner.py:10:from config import ConfigLoader
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class DiceFocalLoss(nn.Module):
+    def __init__(
+        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+    ):
+        super(DiceFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.smooth = smooth
+        self.eps = eps  # for clamping
+        self.debug = debug
+
+    def _sanity_check(self, preds, targets):
+        if targets.dtype != torch.float32:
+            targets = targets.float()
+
+        if preds.dim() == 3:
+            preds = preds.unsqueeze(1)
+        if targets.dim() == 3:
+            targets = targets.unsqueeze(1)
+
+        if preds.shape != targets.shape:
+            raise ValueError(
+                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+            )
+
+        # Clamp predictions to avoid NaN/Inf in log and BCE
+        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+
+        if torch.isnan(preds).any() or torch.isinf(preds).any():
+            print("❌ NaN or Inf found in predictions")
+        if torch.isnan(targets).any() or torch.isinf(targets).any():
+            print("❌ NaN or Inf found in targets")
+
+        return preds, targets
+
+    def dice_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        intersection = (preds * targets).sum()
+        dice = (2.0 * intersection + self.smooth) / (
+            preds.sum() + targets.sum() + self.smooth
+        )
+
+        if torch.isnan(dice) or torch.isinf(dice):
+            print("❌ NaN/Inf in Dice loss computation")
+
+        return 1 - dice
+
+    def focal_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+        pt = torch.exp(-bce)
+        focal = self.alpha * (1 - pt) ** self.gamma * bce
+        return focal.mean()
+
+    def forward(self, preds, targets):
+        preds, targets = self._sanity_check(preds, targets)
+
+        loss_dice = self.dice_loss(preds, targets)
+        loss_focal = self.focal_loss(preds, targets)
+        total_loss = loss_dice + loss_focal
+
+        if self.debug:
+            print(
+                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+            )
+
+        return total_loss
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class DiceFocalLoss(nn.Module):
+    def __init__(
+        self, alpha=0.25, gamma=2.0, smooth=1.0, eps=1e-7, debug=False
+    ):
+        super(DiceFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.smooth = smooth
+        self.eps = eps  # for clamping
+        self.debug = debug
+
+    def _sanity_check(self, preds, targets):
+        if targets.dtype != torch.float32:
+            targets = targets.float()
+
+        if preds.dim() == 3:
+            preds = preds.unsqueeze(1)
+        if targets.dim() == 3:
+            targets = targets.unsqueeze(1)
+
+        if preds.shape != targets.shape:
+            raise ValueError(
+                f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+            )
+
+        # Clamp predictions to avoid NaN/Inf in log and BCE
+        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+
+        if torch.isnan(preds).any() or torch.isinf(preds).any():
+            print("❌ NaN or Inf found in predictions")
+        if torch.isnan(targets).any() or torch.isinf(targets).any():
+            print("❌ NaN or Inf found in targets")
+
+        return preds, targets
+
+    def dice_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        intersection = (preds * targets).sum()
+        dice = (2.0 * intersection + self.smooth) / (
+            preds.sum() + targets.sum() + self.smooth
+        )
+
+        if torch.isnan(dice) or torch.isinf(dice):
+            print("❌ NaN/Inf in Dice loss computation")
+
+        return 1 - dice
+
+    def focal_loss(self, preds, targets):
+        preds = preds.contiguous().view(-1)
+        targets = targets.contiguous().view(-1)
+
+        bce = F.binary_cross_entropy(preds, targets, reduction="none")
+        pt = torch.exp(-bce)
+        focal = self.alpha * (1 - pt) ** self.gamma * bce
+        return focal.mean()
+
+    def forward(self, preds, targets):
+        preds, targets = self._sanity_check(preds, targets)
+
+        loss_dice = self.dice_loss(preds, targets)
+        loss_focal = self.focal_loss(preds, targets)
+        total_loss = loss_dice + loss_focal
+
+        if self.debug:
+            print(
+                f"Dice Loss: {loss_dice.item():.6f}, Focal Loss: {loss_focal.item():.6f}, Total: {total_loss.item():.6f}"
+            )
+
+        return total_loss
+diff --git a/segmentation/Federated/clients/DiceFocalLoss.py b/segmentation/Federated/clients/DiceFocalLoss.py
+index 0183b24..bdeb92d 100644
+--- a/segmentation/Federated/clients/DiceFocalLoss.py
++++ b/segmentation/Federated/clients/DiceFocalLoss.py
+@@ -11,13 +11,10 @@ class DiceFocalLoss(nn.Module):
+         self.alpha = alpha
+         self.gamma = gamma
+         self.smooth = smooth
+-        self.eps = eps  # for clamping
++        self.eps = eps
+         self.debug = debug
+ 
+     def _sanity_check(self, preds, targets):
+-        if targets.dtype != torch.float32:
+-            targets = targets.float()
+-
+         if preds.dim() == 3:
+             preds = preds.unsqueeze(1)
+         if targets.dim() == 3:
+@@ -28,13 +25,12 @@ class DiceFocalLoss(nn.Module):
+                 f"[DiceFocalLoss] Shape mismatch: preds {preds.shape}, targets {targets.shape}"
+             )
+ 
+-        # Clamp predictions to avoid NaN/Inf in log and BCE
+-        preds = torch.clamp(preds, min=self.eps, max=1 - self.eps)
+-
+-        if torch.isnan(preds).any() or torch.isinf(preds).any():
+-            print("❌ NaN or Inf found in predictions")
+-        if torch.isnan(targets).any() or torch.isinf(targets).any():
+-            print("❌ NaN or Inf found in targets")
++        # Invalid values cannot be made finite by clamp alone. Map them to the
++        # nearest valid binary value, then keep probabilities away from log(0).
++        preds = torch.nan_to_num(preds, nan=0.0, posinf=1.0, neginf=0.0)
++        targets = torch.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=0.0)
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
++        targets = targets.clamp(min=0.0, max=1.0)
+ 
+         return preds, targets
+ 
+@@ -43,30 +39,36 @@ class DiceFocalLoss(nn.Module):
+         targets = targets.contiguous().view(-1)
+ 
+         intersection = (preds * targets).sum()
+-        dice = (2.0 * intersection + self.smooth) / (
+-            preds.sum() + targets.sum() + self.smooth
++        union = preds.sum() + targets.sum()
++        dice = (2.0 * intersection + self.smooth + self.eps) / (
++            union + self.smooth + self.eps
+         )
+ 
+-        if torch.isnan(dice) or torch.isinf(dice):
+-            print("❌ NaN/Inf in Dice loss computation")
+-
+         return 1 - dice
+ 
+     def focal_loss(self, preds, targets):
+         preds = preds.contiguous().view(-1)
+         targets = targets.contiguous().view(-1)
+ 
++        if preds.numel() == 0:
++            return preds.sum()
++
++        preds = preds.clamp(min=self.eps, max=1.0 - self.eps)
+         bce = F.binary_cross_entropy(preds, targets, reduction="none")
+         pt = torch.exp(-bce)
+         focal = self.alpha * (1 - pt) ** self.gamma * bce
+         return focal.mean()
+ 
+     def forward(self, preds, targets):
+-        preds, targets = self._sanity_check(preds, targets)
++        # Keep reductions and BCE in float32 even when the caller uses autocast.
++        with torch.autocast(device_type=preds.device.type, enabled=False):
++            preds = preds.float()
++            targets = targets.float()
++            preds, targets = self._sanity_check(preds, targets)
+ 
+-        loss_dice = self.dice_loss(preds, targets)
+-        loss_focal = self.focal_loss(preds, targets)
+-        total_loss = loss_dice + loss_focal
++            loss_dice = self.dice_loss(preds, targets)
++            loss_focal = self.focal_loss(preds, targets)
++            total_loss = loss_dice + loss_focal
+ 
+         if self.debug:
+             print(
+
+codex
+The runs expose two independent failures: the reported IoU is invalid due to double sigmoid, while the code=1 failures occur before any model executes.
+
+## (a) Why IoU reaches 0
+
+The segmentation models already return one-channel probabilities:
+
+- [CNN_ISIC.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/models/CNN_ISIC.py:63) applies `torch.sigmoid(out)`.
+- HierFL uses the same architecture.
+- HeteroSFL and H-SFP models also end in sigmoid.
+
+But federated/HierFL evaluation applies sigmoid again in [test.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py:59), then thresholds at `> 0.5`.
+
+For a model probability `p ∈ (0,1)`, `sigmoid(p) ∈ (0.5,0.731)`. Thus almost every finite pixel becomes foreground. The early reported IoUs around 23–28% are therefore approximately lesion-area prevalence, not learned segmentation quality.
+
+Once model probabilities saturate to exactly zero—or invalid values are converted to zero—the second sigmoid produces exactly `0.5`, and strict `> 0.5` produces all-background. That explains the abrupt transition to IoU 0. It is a metric/prediction-path bug, not a class-dimension or `argmax` issue.
+
+There is also a training-stability problem currently hidden by uncommitted loss changes. [DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py:28) converts NaN predictions to zero with `nan_to_num`. That silently turns numerical failure into all-background and supplies no useful gradient at invalid elements. A loss around 1.25 is consistent with near-zero predictions: Dice loss near 1 plus foreground focal penalty.
+
+Additional loss concerns:
+
+- The focal implementation multiplies every pixel by the same `alpha=0.25`; it does not use separate foreground/background weights. Therefore it does not actually correct lesion/background imbalance.
+- Dice and focal weights are fixed 1:1 and cannot be configured.
+- Independent unsorted image/mask `glob()` lists in the ISIC datasets are unsafe. They should be paired by ISIC identifier, although the repeatable collapse does not prove that mismatching occurred in these runs.
+
+## Configuration assessment
+
+The proxy YAMLs contain only `base` plus `output_dir`; the effective settings come from `configs/segmentation/*`.
+
+For federated and HierFL:
+
+- Adam, LR `1e-4`, local epochs 5 and batch size 16 match the repository’s existing segmentation defaults and are reasonable starting values.
+- 60 global epochs is not intrinsically unreasonable.
+- Binary segmentation correctly uses a one-channel sigmoid output. A `num_classes` value is unnecessary for these models.
+
+For HeteroSFL:
+
+- `num_classes: 2` is conceptually inconsistent with its one-channel sigmoid/BCE-Dice decoder, although it appears unused in the segmentation output path. Prefer `num_classes: 1` or remove it.
+- More importantly, [runner.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:135) ignores `optimizer: adam` and hard-codes SGD at `1e-4` for both client and server. That LR is extremely conservative for SGD and is not comparable to the working Adam defaults.
+
+## (b) code=1 crashes
+
+### HeteroSFL
+
+All three logs fail while importing the runner:
+
+```text
+main.py:314  main()
+main.py:304  run(...)
+main.py:244  runner = _load_runner(method_dir)
+main.py:106  spec.loader.exec_module(module)
+segmentation/HeteroSFL/runner.py:10
+    from config import ConfigLoader
+ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+```
+
+Root cause: `segmentation/HeteroSFL/config/` has `config_loader.py` but no `__init__.py`, so `from config import ConfigLoader` cannot work. Other runners either export `ConfigLoader` from `config/__init__.py` or import it explicitly.
+
+This is an import/package bug, not an ISIC tensor-shape or model bug. Training never began, so the suspected HeteroSFL model shape path was not exercised.
+
+### H-SFP
+
+There is no traceback because runner loading never starts:
+
+```text
+Error: config not found:
+.../configs/proxy/plan_isic2018_h-sfp.yaml
+Tip: python main.py --list-configs --task segmentation --method h-sfp
+EXIT ... code=1
+```
+
+The actual file is [plan_isic2018_hsfp.yaml](/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_hsfp.yaml:1), without the hyphen between `h` and `sfp`. The checked-in fair-comparison script already references the correct filename, so the plan-26 launcher/invocation used an incorrect method-to-config filename. No H-SFP shape/model code ran.
+
+## Minimal proposed fixes
+
+1. Establish one consistent output contract:
+
+   - Minimal: keep model sigmoid outputs and remove sigmoid from every segmentation evaluation path; threshold probabilities directly with `outputs >= 0.5`.
+   - Cleaner: return logits, use `BCEWithLogitsLoss` plus a logits-compatible soft-Dice loss, and apply sigmoid exactly once for metrics.
+
+2. Replace `nan_to_num` on predictions with an explicit finite-value assertion/failure. Numerical corruption should stop the run rather than be reported as all-background.
+
+3. Correct focal class weighting, e.g. foreground `alpha` and background `1-alpha`, or use configurable `pos_weight` with BCE. Make Dice/BCE weights configurable.
+
+4. Fix HeteroSFL import with:
+
+   ```python
+   from config.config_loader import ConfigLoader
+   ```
+
+   or add `config/__init__.py` exporting `ConfigLoader`.
+
+5. Make HeteroSFL honor `config["optimizer"]`; for the existing fair settings, use Adam at `1e-4`. If retaining SGD, give it a separately tuned LR.
+
+6. Change/remove HeteroSFL and H-SFP `num_classes: 2` for the one-channel binary decoder.
+
+7. Fix the plan-26 H-SFP config mapping to `plan_isic2018_hsfp.yaml`.
+
+8. Pair ISIC images and masks by filename stem and use nearest-neighbor mask resizing.
+
+No files were modified and no GPU/training commands were run. Existing uncommitted changes were preserved.
+tokens used
+60,518
+The runs expose two independent failures: the reported IoU is invalid due to double sigmoid, while the code=1 failures occur before any model executes.
+
+## (a) Why IoU reaches 0
+
+The segmentation models already return one-channel probabilities:
+
+- [CNN_ISIC.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/models/CNN_ISIC.py:63) applies `torch.sigmoid(out)`.
+- HierFL uses the same architecture.
+- HeteroSFL and H-SFP models also end in sigmoid.
+
+But federated/HierFL evaluation applies sigmoid again in [test.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/test.py:59), then thresholds at `> 0.5`.
+
+For a model probability `p ∈ (0,1)`, `sigmoid(p) ∈ (0.5,0.731)`. Thus almost every finite pixel becomes foreground. The early reported IoUs around 23–28% are therefore approximately lesion-area prevalence, not learned segmentation quality.
+
+Once model probabilities saturate to exactly zero—or invalid values are converted to zero—the second sigmoid produces exactly `0.5`, and strict `> 0.5` produces all-background. That explains the abrupt transition to IoU 0. It is a metric/prediction-path bug, not a class-dimension or `argmax` issue.
+
+There is also a training-stability problem currently hidden by uncommitted loss changes. [DiceFocalLoss.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/clients/DiceFocalLoss.py:28) converts NaN predictions to zero with `nan_to_num`. That silently turns numerical failure into all-background and supplies no useful gradient at invalid elements. A loss around 1.25 is consistent with near-zero predictions: Dice loss near 1 plus foreground focal penalty.
+
+Additional loss concerns:
+
+- The focal implementation multiplies every pixel by the same `alpha=0.25`; it does not use separate foreground/background weights. Therefore it does not actually correct lesion/background imbalance.
+- Dice and focal weights are fixed 1:1 and cannot be configured.
+- Independent unsorted image/mask `glob()` lists in the ISIC datasets are unsafe. They should be paired by ISIC identifier, although the repeatable collapse does not prove that mismatching occurred in these runs.
+
+## Configuration assessment
+
+The proxy YAMLs contain only `base` plus `output_dir`; the effective settings come from `configs/segmentation/*`.
+
+For federated and HierFL:
+
+- Adam, LR `1e-4`, local epochs 5 and batch size 16 match the repository’s existing segmentation defaults and are reasonable starting values.
+- 60 global epochs is not intrinsically unreasonable.
+- Binary segmentation correctly uses a one-channel sigmoid output. A `num_classes` value is unnecessary for these models.
+
+For HeteroSFL:
+
+- `num_classes: 2` is conceptually inconsistent with its one-channel sigmoid/BCE-Dice decoder, although it appears unused in the segmentation output path. Prefer `num_classes: 1` or remove it.
+- More importantly, [runner.py](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:135) ignores `optimizer: adam` and hard-codes SGD at `1e-4` for both client and server. That LR is extremely conservative for SGD and is not comparable to the working Adam defaults.
+
+## (b) code=1 crashes
+
+### HeteroSFL
+
+All three logs fail while importing the runner:
+
+```text
+main.py:314  main()
+main.py:304  run(...)
+main.py:244  runner = _load_runner(method_dir)
+main.py:106  spec.loader.exec_module(module)
+segmentation/HeteroSFL/runner.py:10
+    from config import ConfigLoader
+ImportError: cannot import name 'ConfigLoader' from 'config' (unknown location)
+```
+
+Root cause: `segmentation/HeteroSFL/config/` has `config_loader.py` but no `__init__.py`, so `from config import ConfigLoader` cannot work. Other runners either export `ConfigLoader` from `config/__init__.py` or import it explicitly.
+
+This is an import/package bug, not an ISIC tensor-shape or model bug. Training never began, so the suspected HeteroSFL model shape path was not exercised.
+
+### H-SFP
+
+There is no traceback because runner loading never starts:
+
+```text
+Error: config not found:
+.../configs/proxy/plan_isic2018_h-sfp.yaml
+Tip: python main.py --list-configs --task segmentation --method h-sfp
+EXIT ... code=1
+```
+
+The actual file is [plan_isic2018_hsfp.yaml](/home/jackson/Desktop/Split-Federated-Merging-Learning/configs/proxy/plan_isic2018_hsfp.yaml:1), without the hyphen between `h` and `sfp`. The checked-in fair-comparison script already references the correct filename, so the plan-26 launcher/invocation used an incorrect method-to-config filename. No H-SFP shape/model code ran.
+
+## Minimal proposed fixes
+
+1. Establish one consistent output contract:
+
+   - Minimal: keep model sigmoid outputs and remove sigmoid from every segmentation evaluation path; threshold probabilities directly with `outputs >= 0.5`.
+   - Cleaner: return logits, use `BCEWithLogitsLoss` plus a logits-compatible soft-Dice loss, and apply sigmoid exactly once for metrics.
+
+2. Replace `nan_to_num` on predictions with an explicit finite-value assertion/failure. Numerical corruption should stop the run rather than be reported as all-background.
+
+3. Correct focal class weighting, e.g. foreground `alpha` and background `1-alpha`, or use configurable `pos_weight` with BCE. Make Dice/BCE weights configurable.
+
+4. Fix HeteroSFL import with:
+
+   ```python
+   from config.config_loader import ConfigLoader
+   ```
+
+   or add `config/__init__.py` exporting `ConfigLoader`.
+
+5. Make HeteroSFL honor `config["optimizer"]`; for the existing fair settings, use Adam at `1e-4`. If retaining SGD, give it a separately tuned LR.
+
+6. Change/remove HeteroSFL and H-SFP `num_classes: 2` for the one-channel binary decoder.
+
+7. Fix the plan-26 H-SFP config mapping to `plan_isic2018_hsfp.yaml`.
+
+8. Pair ISIC images and masks by filename stem and use nearest-neighbor mask resizing.
+
+No files were modified and no GPU/training commands were run. Existing uncommitted changes were preserved.
