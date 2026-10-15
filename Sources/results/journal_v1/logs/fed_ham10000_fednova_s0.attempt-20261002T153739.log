@@ -1,0 +1,36 @@
+[Runner] Seed: 0
+[Runner] Overrides: {'epochs': 60, 'output_dir': '/media/jackson/Data/ehsfp_campaign/outputs_journal_v1/fed_ham10000_fednova_s0'}
+[Runner] task=classification  method=federated
+[Runner] cfg=configs/classification/federated/exp_tfe0aib5.yaml
+
+Method: fednova
+Train len: 8012
+  0%|          | 0/60 [00:00<?, ?it/s]  0%|          | 0/60 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 315, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 305, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 247, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/classification/Federated/runner.py", line 83, in run
+    w, loss = local_update.update_weights(model=copy.deepcopy(global_model), global_round=epoch)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/classification/Federated/clients/FedNovaClient.py", line 15, in update_weights
+    global_weights = copy.deepcopy(model.state_dict())
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/copy.py", line 172, in deepcopy
+    y = _reconstruct(x, memo, *rv)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/copy.py", line 296, in _reconstruct
+    value = deepcopy(value, memo)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/copy.py", line 153, in deepcopy
+    y = copier(memo)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/_tensor.py", line 172, in __deepcopy__
+    new_storage = self._typed_storage()._deepcopy(memo)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/storage.py", line 1134, in _deepcopy
+    return self._new_wrapped_storage(copy.deepcopy(self._untyped_storage, memo))
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/copy.py", line 153, in deepcopy
+    y = copier(memo)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/storage.py", line 239, in __deepcopy__
+    new_storage = self.clone()
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/storage.py", line 253, in clone
+    return type(self)(self.nbytes(), device=self.device).copy_(self)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 11.64 GiB of which 3.56 MiB is free. Process 750269 has 1.50 GiB memory in use. Process 804307 has 474.00 MiB memory in use. Process 804410 has 522.00 MiB memory in use. Process 804530 has 6.94 GiB memory in use. Process 810100 has 1.70 GiB memory in use. Including non-PyTorch memory, this process has 502.00 MiB memory in use. Of the allocated memory 248.77 MiB is allocated by PyTorch, and 5.23 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

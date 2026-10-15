@@ -1,0 +1,128 @@
+[E-HSFP] Ablation mode: full_e_hsfp
+[Runner] Seed: 1
+[Runner] Overrides: {'epochs': 60, 'output_dir': '/media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1'}
+[Runner] task=segmentation  method=h-sfp
+[Runner] cfg=configs/segmentation/h-sfp/exp_29k70oq3.yaml
+
+Method: H-SFP
+Number of training images: 2594
+[Integrity] resolved_config_hash=b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268
+[Integrity] architecture_id=7f4a75cb46e7 run_dir=/media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1/7f4a75cb46e7/b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268
+
+==================== EPOCH 1/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+New best IoU at epoch 1: 38.77%
+*** Checkpoint saved: /media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1/7f4a75cb46e7/b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268/checkpoint.pt (IoU: 38.77%)
+Epoch 1 completed in 565.73s
+
+==================== EPOCH 2/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+New best IoU at epoch 2: 43.85%
+*** Checkpoint saved: /media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1/7f4a75cb46e7/b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268/checkpoint.pt (IoU: 43.85%)
+Epoch 2 completed in 464.66s
+
+==================== EPOCH 3/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+New best IoU at epoch 3: 44.93%
+*** Checkpoint saved: /media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1/7f4a75cb46e7/b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268/checkpoint.pt (IoU: 44.93%)
+Epoch 3 completed in 457.48s
+
+==================== EPOCH 4/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+Epoch 4 completed in 440.15s
+
+==================== EPOCH 5/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+Epoch 5 completed in 470.43s
+
+==================== EPOCH 6/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+Epoch 6 completed in 588.91s
+
+==================== EPOCH 7/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+Epoch 7 completed in 547.79s
+
+==================== EPOCH 8/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+-> Phase 3: Cloud Supervised Training...
+-> Phase 3b: Decoder Training...
+New best IoU at epoch 8: 45.02%
+*** Checkpoint saved: /media/jackson/Data/ehsfp_campaign/outputs_journal_v1/main_isic2018_ehsfp_s1/7f4a75cb46e7/b9f4642eeea58d776356102e967176f45c65fc652327df87451d1e5845191268/checkpoint.pt (IoU: 45.02%)
+Epoch 8 completed in 564.01s
+
+==================== EPOCH 9/60 ====================
+-> Phase 1: Clients Processing (5 nodes)...
+-> Phase 2: Edge Processing...
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 315, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 305, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/main.py", line 247, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/segmentation/H-SFP/runner.py", line 80, in run
+    output = hierarchical_fl.train_end_to_end(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/segmentation/H-SFP/hierarchy.py", line 1047, in train_end_to_end
+    edge_outputs[eid], edge_support = self._edge_ssl_extraction_phase(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/segmentation/H-SFP/hierarchy.py", line 644, in _edge_ssl_extraction_phase
+    prc = prototype_replay_consistency_loss(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/ehsfp/losses.py", line 86, in prototype_replay_consistency_loss
+    h_memory = representation_fn(z_memory.reshape(flat_shape))
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/segmentation/H-SFP/hierarchy.py", line 643, in edge_repr_fn
+    return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/Sources/segmentation/H-SFP/models/ISIC_ResNet50.py", line 49, in forward
+    return self.part(x)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/container.py", line 240, in forward
+    input = module(input)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/container.py", line 240, in forward
+    input = module(input)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torchvision/models/resnet.py", line 155, in forward
+    out = self.bn3(out)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/modules/batchnorm.py", line 193, in forward
+    return F.batch_norm(
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/site-packages/torch/nn/functional.py", line 2822, in batch_norm
+    return torch.batch_norm(
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 26.00 MiB. GPU 0 has a total capacity of 11.64 GiB of which 79.56 MiB is free. Process 705367 has 858.00 MiB memory in use. Including non-PyTorch memory, this process has 6.72 GiB memory in use. Process 708648 has 986.00 MiB memory in use. Process 750269 has 920.00 MiB memory in use. Process 751170 has 1.06 GiB memory in use. Process 774118 has 1.02 GiB memory in use. Of the allocated memory 6.25 GiB is allocated by PyTorch, and 149.01 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

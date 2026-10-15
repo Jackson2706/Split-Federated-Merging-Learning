@@ -1,0 +1,36 @@
+{
+  // Build with tectonic (no TeX Live on this machine). Absolute path because
+  // the VS Code GUI does not inherit the Homebrew PATH.
+  "latex-workshop.latex.tools": [
+    {
+      "name": "tectonic",
+      "command": "/opt/homebrew/bin/tectonic",
+      "args": [
+        "-X",
+        "compile",
+        "--synctex",
+        "--keep-logs",
+        "%DOC%.tex"
+      ],
+      "env": {}
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "tectonic",
+      "tools": ["tectonic"]
+    }
+  ],
+  "latex-workshop.latex.recipe.default": "first",
+
+  // main.tex is the only root document in this project.
+  "latex-workshop.latex.search.rootFiles.include": ["main.tex"],
+
+  "latex-workshop.view.pdf.viewer": "tab",
+  "latex-workshop.synctex.afterBuild.enabled": true,
+
+  "latex-workshop.latex.clean.fileTypes": [
+    "*.aux", "*.log", "*.blg", "*.bbl", "*.out",
+    "*.synctex.gz", "*.fls", "*.fdb_latexmk"
+  ]
+}
