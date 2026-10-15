@@ -60,6 +60,14 @@ while true; do
     # Pick up environment edits (e.g. DIAG) between runs.
     # shellcheck source=/dev/null
     [[ -f "$ROOT/results/journal_v1/queue/lane_env.sh" ]] && source "$ROOT/results/journal_v1/queue/lane_env.sh"
+    # Do not start a run into a nearly full GPU (shared with other users' jobs):
+    # wait until MIN_GPU_FREE_MB is free (checked every minute, max 2 h, then try anyway).
+    for _w in $(seq 1 120); do
+        free_mb=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | head -1)
+        [[ -z "$free_mb" || "$free_mb" -ge "${MIN_GPU_FREE_MB:-2500}" ]] && break
+        [[ $_w -eq 1 ]] && log_info "lane ${LANE}: waiting for GPU memory (${free_mb} MB free)"
+        sleep 60
+    done
     item="$(next_item)" || { log_info "lane ${LANE}: queue drained"; break; }
     IFS='|' read -r -a F <<< "$item"
     extra=()

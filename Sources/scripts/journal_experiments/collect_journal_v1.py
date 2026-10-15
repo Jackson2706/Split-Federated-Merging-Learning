@@ -109,6 +109,13 @@ def relocate(path_str):
     if p.exists():
         return p
     s = str(p)
+    # 2026-10-02 restructure: the repo moved into <root>/Sources/.
+    outer = str(ROOT.parent) + "/"
+    if s.startswith(outer) and not s.startswith(str(ROOT) + "/"):
+        q = Path(str(ROOT) + "/" + s[len(outer):])
+        if q.exists():
+            return q
+        s = str(q)
     for old in (str(ROOT / "outputs" / "journal_v1"),):
         if s.startswith(old):
             for r in OUT_ROOTS:
@@ -279,8 +286,17 @@ def extract(eid, task, method, log_text):
         m["stability_final"] = st[-1]
         m["curve"] = curve
     # diagnostics (new instrumented runs only)
-    if run_dir and (run_dir / "diagnostics" / "episodic_diagnostics.csv").exists():
-        rows = list(csv.DictReader(open(run_dir / "diagnostics" / "episodic_diagnostics.csv")))
+    diag_dir = None
+    if run_dir:
+        # The launcher writes diagnostics to <OUT_ROOT>/<eid>/diagnostics, two
+        # levels above the <arch>/<hash> run_dir; accept either location.
+        for cand in (run_dir / "diagnostics", run_dir.parent.parent / "diagnostics"):
+            if (cand / "episodic_diagnostics.csv").exists():
+                diag_dir = cand
+                break
+    m["diag_dir"] = str(diag_dir) if diag_dir else ""
+    if diag_dir:
+        rows = list(csv.DictReader(open(diag_dir / "episodic_diagnostics.csv")))
         er = [r for r in rows if r["tier"] == "edge" and fnum(r["drift_w2"]) is not None]
         by_round = defaultdict(list)
         for r in er:
@@ -498,7 +514,7 @@ def main():
              "final_dice", "selection_rule", "comm_MB", "runtime_s", "rounds_done", "conv_rounds",
              "stability_final", "drift_mean", "mean_packet_age", "client_gpu_peak_MB",
              "edge_gpu_peak_MB", "cloud_gpu_peak_MB", "client_mem_records", "edge_mem_records",
-             "peak_vram_MB", "notes", "run_dir"]
+             "peak_vram_MB", "notes", "run_dir", "diag_dir"]
     with open(ART / "per_run_metrics.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=mcols, extrasaction="ignore")
         w.writeheader()
@@ -833,7 +849,7 @@ def write_figures(runs, seed_runs):
     rows = []
     for r in runs.values():
         if r["status"].startswith("completed") and r.get("run_dir"):
-            p = Path(r["run_dir"]) / "diagnostics" / "reliability_weights.csv"
+            p = Path(r.get("diag_dir") or Path(r["run_dir"]) / "diagnostics") / "reliability_weights.csv"
             if p.exists():
                 rows += [x for x in csv.DictReader(open(p)) if x["tier"] == "edge"]
     fig, axes = plt.subplots(1, 4, figsize=(14, 3.2))

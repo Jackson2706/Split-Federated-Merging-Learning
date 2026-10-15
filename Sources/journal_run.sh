@@ -316,6 +316,11 @@ run_exp() {
 
     local out_dir="${OUT_ROOT}/${eid}"
     local log_file="${LOG_DIR}/${eid}.log"
+    # An earlier attempt that did not finish may have left its output dir
+    # (baseline runners refuse to reuse it). Preserve it under a new name.
+    if [[ "$DRY_RUN" != "1" && -d "$out_dir" && ! -f "${MARKER_DIR}/${eid}.done" ]]; then
+        mv "$out_dir" "${out_dir}.attempt-$(date +%Y%m%dT%H%M%S)"
+    fi
     # Never overwrite an earlier attempt's log (e.g. a run killed by a host
     # reboot): keep it as evidence next to the new one.
     if [[ "$DRY_RUN" != "1" && -f "$log_file" && ! -f "${MARKER_DIR}/${eid}.done" ]]; then
@@ -923,6 +928,143 @@ c_comm200() {
     run_exp c_comm200 "comm200_cifar100_ehsfp_s0" classification cifar100 h-sfp "$CIFAR100_HSFP" 0 full_e_hsfp --set epochs=200
 }
 
+
+# =============================================================================
+# J2 — CORRECTED-METHOD JOURNAL STAGES (2026-10-02, protocol v2)
+# Shared H-SFP backbone corrections (H-SFP and E-HSFP rows alike):
+#   full-backbone client split, synchronised client models every round (I_c=1),
+#   residual prototype-space edge, client-local CE head, 500/class edge->cloud
+#   statistics draw, 200/class cloud draw.
+# E-HSFP modules on top: episodic statistics memory (memory_mode=statistics) and
+#   shared-covariance synthesis. Tuned only on a train-held-out split (dev runs
+#   V0-V7, /media/jackson/Data/ehsfp_campaign/dev); reported metric is final-round test.
+# =============================================================================
+J2=(--set client_split_depth=4 --set client_sync=true --set t1=1 --set edge_residual=true
+    --set client_objective=supervised --set client_objective_weight=1.0
+    --set edge_extract_samples_per_class=500 --set cloud_samples_per_class=200)
+J2E=(--set memory_mode=statistics --set synthesis=shared_cov)
+# Protocol v3 (2026-10-04): cross-edge client-encoder sync + linear cloud head.
+# Validated on a train-held-out split: CIFAR-100 round-10 val 28.1% -> 33.5%.
+# Run IDs use prefix JP (default j3); the superseded v2 runs keep their j2_ IDs.
+JP="${JP:-j3}"
+J2+=(--set client_global_sync=true --set cloud_head=linear)
+# HAM10000-only (2026-10-04): batch-4 BatchNorm statistics collapsed the full
+# ResNet-50 client encoder; keep client BN in eval mode, 5 local epochs.
+J2HAM=(--set client_bn_eval=true --set ssl_epochs_client=5)
+hamx() { [[ "$1" == "ham10000" ]] && printf '%s\n' "${J2HAM[@]}"; }
+
+j2_main() {
+    log_stage "${JP}_main — H-SFP(v2) and E-HSFP(v2), CIFAR-10/100 + HAM10000, IID"
+    local seed entry task dataset cfg
+    for seed in $SEEDS; do for entry in "${HSFP_CFG[@]}"; do
+        IFS='|' read -r task dataset cfg <<< "$entry"
+        [[ "$task" == "segmentation" ]] && continue
+        run_exp j2_main "${JP}_${dataset}_hsfp_s${seed}"  "$task" "$dataset" h-sfp "$cfg" "$seed" baseline_hsfp "${J2[@]}" $(hamx "$dataset")
+        run_exp j2_main "${JP}_${dataset}_ehsfp_s${seed}" "$task" "$dataset" h-sfp "$cfg" "$seed" full_e_hsfp "${J2[@]}" $(hamx "$dataset") "${J2E[@]}"
+    done; done
+}
+j2_ablation() {
+    log_stage "${JP}_ablation — Table VIII presets on CIFAR-100"
+    local seed preset
+    for seed in $SEEDS; do for preset in hsfp_memory hsfp_memory_dropout hsfp_memory_reliability hsfp_memory_reliability_prc; do
+        run_exp j2_ablation "${JP}_abl_cifar100_${preset}_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" "$preset" \
+            "${J2[@]}" --set memory_mode=statistics
+    done; done
+}
+j2_dropout() {
+    local seed rate
+    for seed in $SEEDS; do for rate in 0.0 0.1 0.3 0.5; do
+        run_exp j2_dropout "${JP}_dropout_cifar100_p$(tr . p <<< "$rate")_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp \
+            "${J2[@]}" "${J2E[@]}" --set "prototype_dropout_rate=${rate}"
+    done; done
+}
+j2_staleness() {
+    local seed tau
+    for seed in $SEEDS; do for tau in 1 3 5 10; do
+        run_exp j2_staleness "${JP}_stale_cifar100_tau${tau}_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp \
+            "${J2[@]}" "${J2E[@]}" --set "staleness_tau=${tau}"
+    done; done
+}
+j2_serverless() {
+    local seed
+    local none=(--set client_timeout_probability=0.0 --set edge_timeout_probability=0.0 --set cold_start_probability=0.0)
+    for seed in $SEEDS; do
+        run_exp j2_serverless "${JP}_sv_cifar100_none_s${seed}"      classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" "${none[@]}"
+        run_exp j2_serverless "${JP}_sv_cifar100_timeout_s${seed}"   classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" \
+            --set client_timeout_probability=0.10 --set edge_timeout_probability=0.0 --set cold_start_probability=0.0
+        run_exp j2_serverless "${JP}_sv_cifar100_coldstart_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" \
+            --set client_timeout_probability=0.0 --set edge_timeout_probability=0.0 --set cold_start_probability=0.30 --set cold_start_defers_packet=true
+        run_exp j2_serverless "${JP}_sv_cifar100_partial_s${seed}"   classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" \
+            "${none[@]}" --set partial_edge_probability=0.30 --set partial_edge_fraction=0.5
+        run_exp j2_serverless "${JP}_sv_cifar100_missedge_s${seed}"  classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" \
+            --set client_timeout_probability=0.0 --set edge_timeout_probability=0.10 --set cold_start_probability=0.0
+        run_exp j2_serverless "${JP}_sv_cifar100_combined_s${seed}"  classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp "${J2[@]}" "${J2E[@]}" \
+            --set client_timeout_probability=0.10 --set edge_timeout_probability=0.10 --set cold_start_probability=0.30 \
+            --set cold_start_defers_packet=true --set partial_edge_probability=0.30 --set partial_edge_fraction=0.5
+    done
+}
+j2_noniid() {
+    local seed alpha tag entry task dataset cfg
+    for seed in $SEEDS; do for alpha in 0.7 0.3; do
+        tag="a$(tr . p <<< "$alpha")"
+        for entry in "${HSFP_CFG[@]}"; do
+            IFS='|' read -r task dataset cfg <<< "$entry"
+            [[ "$task" == "segmentation" ]] && continue
+            run_exp j2_noniid "${JP}_noniid_${tag}_${dataset}_hsfp_s${seed}"  "$task" "$dataset" h-sfp "$cfg" "$seed" baseline_hsfp "${J2[@]}" $(hamx "$dataset") \
+                --set partition=dirichlet --set "dirichlet_alpha=${alpha}"
+            run_exp j2_noniid "${JP}_noniid_${tag}_${dataset}_ehsfp_s${seed}" "$task" "$dataset" h-sfp "$cfg" "$seed" full_e_hsfp "${J2[@]}" $(hamx "$dataset") "${J2E[@]}" \
+                --set partition=dirichlet --set "dirichlet_alpha=${alpha}"
+        done
+    done; done
+}
+# Table IX — memory size M = effective episode window of the statistics memory:
+# decay gamma=(M-1)/M (M=1: current episode only); M=0 turns the memory module off.
+j2_memory() {
+    local seed m g
+    for seed in $SEEDS; do for m in 0 1 5 10 20; do
+        if [[ "$m" == "0" ]]; then
+            run_exp j2_memory "${JP}_memM_cifar100_M0_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp \
+                "${J2[@]}" --set synthesis=shared_cov --set use_episodic_memory=false --set staleness_tau=3
+        else
+            g=$(python -c "print(max(($m-1)/$m, 1e-6))")
+            run_exp j2_memory "${JP}_memM_cifar100_M${m}_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp \
+                "${J2[@]}" "${J2E[@]}" --set "stat_accumulation_decay=${g}" --set staleness_tau=3
+        fi
+    done; done
+}
+j2_aggregation() {
+    local seed rule mode mem cond cextra
+    for seed in $SEEDS; do
+      for rule in average sample_count_weighted learnable_reliability learnable_reliability_memory; do
+        mode="${rule%_memory}"; mem=false; [[ "$rule" == *_memory ]] && mem=true
+        for cond in clean drop stale; do
+          case "$cond" in
+            clean) cextra=(--set use_prototype_dropout=false) ;;
+            drop)  cextra=(--set use_prototype_dropout=true --set prototype_dropout_rate=0.3) ;;
+            stale) cextra=(--set use_prototype_dropout=false --set staleness_tau=5) ;;
+          esac
+          run_exp j2_aggregation "${JP}_aggr_cifar100_${rule}_${cond}_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" "" \
+              "${J2[@]}" --set "aggregation_mode=${mode}" --set "use_episodic_memory=${mem}" --set memory_mode=statistics \
+              --set use_prc_loss=false --set use_serverless_simulation=false --set use_residual_generator=false "${cextra[@]}"
+        done
+      done
+    done
+}
+j2_synthesis() {
+    local seed
+    for seed in $SEEDS; do
+        run_exp j2_synthesis "${JP}_synth_cifar100_diag_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" full_e_hsfp \
+            "${J2[@]}" --set memory_mode=statistics --set synthesis=diag
+    done
+}
+j2_scalability() {
+    local seed k
+    for seed in $SEEDS; do for k in 20 50 100 500; do
+        run_exp j2_scalability "${JP}_scale_cifar100_K${k}_hsfp_s${seed}" classification cifar100 h-sfp "$CIFAR100_HSFP" "$seed" baseline_hsfp \
+            "${J2[@]}" --set "num_users=${k}"
+    done; done
+}
+
 # =============================================================================
 # DRIVER
 # =============================================================================
@@ -930,7 +1072,9 @@ STAGES=(s0_preflight s1_parity s2_main s2b_fedvariants s3_ablation s4_noniid
         s5_dropout s6_staleness s7_serverless s8_memory s9_aggregation
         s10_intervals s11_scalability s12_eccv_recover s99_collect
         c_fedvariants c_ablation c_dropout c_staleness c_serverless c_noniid
-        c_memory c_aggregation c_scalability c_comm200)
+        c_memory c_aggregation c_scalability c_comm200
+        j2_main j2_ablation j2_dropout j2_staleness j2_serverless j2_noniid
+        j2_memory j2_aggregation j2_synthesis j2_scalability)
 
 # The defensible journal core: the parity gate that decides whether any of it
 # is trustworthy, the headline matched comparison, and the E-HSFP component

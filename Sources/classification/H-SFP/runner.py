@@ -47,13 +47,29 @@ def run(cfg_path: str):
     # Optional deeper client split for the CIFAR ResNet path (default 2 = historical).
     split_depth = int(config.get("client_split_depth", 2) or 2)
     if split_depth != 2:
-        if config["dataset"] != "cifar100" or config["model"] != "resnet50":
-            raise ValueError("client_split_depth is implemented for cifar100/resnet50 only")
-        client_model = client_model(split_depth=split_depth)
-        d = client_model.SPLIT_DIMS[split_depth]
+        key = (config["model"], config["dataset"])
         residual = bool(config.get("edge_residual", False))
-        edge_model = edge_model(in_dim=d, residual=residual)
-        cloud_model = cloud_model({**config, "cloud_in_dim": d if residual else 256})
+        if key == ("resnet50", "cifar100"):
+            client_model = client_model(split_depth=split_depth)
+            d = client_model.SPLIT_DIMS[split_depth]
+            edge_model = edge_model(in_dim=d, residual=residual)
+            cloud_model = cloud_model({**config, "cloud_in_dim": d if residual else 256})
+        elif key in (("alexnet", "cifar10"), ("resnet50", "ham10000")) and split_depth == 4:
+            # Full backbone on the client; the edge becomes the residual
+            # prototype-space MLP (cnn_cifar.EdgeModel); cloud head unchanged.
+            from models.cnn_cifar import EdgeModel as _ResidualEdge
+            if not residual:
+                raise ValueError("full-backbone client split requires edge_residual=true")
+            client_model = client_model(split_depth=4)
+            d = client_model.SPLIT_DIMS[4]
+            edge_model = _ResidualEdge(in_dim=d, residual=True)
+            cloud_model = cloud_model(config)
+        else:
+            raise ValueError(f"client_split_depth={split_depth} not implemented for {key}")
+        if config.get("cloud_head", "mlp") == "linear":
+            from models.cnn_cifar import LinearCloudHead
+            in_dim = d if (residual or key != ("resnet50", "cifar100")) else 256
+            cloud_model = LinearCloudHead(in_dim, int(config["num_classes"]))
     else:
         client_model, edge_model, cloud_model = (
             client_model(), edge_model(), cloud_model(config)

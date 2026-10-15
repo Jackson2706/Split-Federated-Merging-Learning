@@ -160,6 +160,29 @@ class EdgeModel(nn.Module):
         return self.fc(out)
 
 
+class LinearCloudHead(nn.Module):
+    """Linear cloud classifier (cloud_head=linear).
+
+    The cloud trains only on synthetic prototype samples; nonlinear MLP heads
+    overfit artifacts of the diagonal-Gaussian synthesis (HAM10000 diagnostic:
+    linear 55% vs MLP 12% on held-out training images from the same encoder).
+    """
+
+    def __init__(self, in_dim, num_classes):
+        super().__init__()
+        self.fc = nn.Linear(in_dim, num_classes)
+        # Post-hoc logit adjustment (Menon et al., 2021): the head trains on
+        # class-balanced synthetic samples; at prediction time log(prior) is added
+        # so decisions match the federation's class distribution (zero = off).
+        self.register_buffer("log_prior", torch.zeros(num_classes))
+
+    def forward(self, x):
+        logits = self.fc(x.view(x.size(0), -1))
+        if not self.training:
+            logits = logits + self.log_prior
+        return logits
+
+
 class CloudModel(nn.Module):
     def __init__(self, args):
         super(CloudModel, self).__init__()

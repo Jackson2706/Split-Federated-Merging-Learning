@@ -514,6 +514,13 @@ class HierarchicalFL:
         # far too few for stable class statistics; decayed sums over rounds fix
         # that without transmitting anything extra.
         self.stat_decay = float(args.get("stat_accumulation_decay", 0.0) or 0.0)
+        # E-HSFP episodic memory, "statistics" mode: the memory keeps decayed
+        # per-class sufficient statistics across stateless episodes (on top of
+        # the record-replay memory). Enabled only when the memory module is on,
+        # so H-SFP (memory off) never accumulates.
+        if (self.ecfg["use_episodic_memory"] and args.get("memory_mode") == "statistics"
+                and not args.get("stat_accumulation_decay")):
+            self.stat_decay = 0.8
         self._edge_acc = {}
 
         # --- Episodic stress protocol (journal completion campaign) ---------
@@ -696,6 +703,31 @@ class HierarchicalFL:
                 self._edge_head_state[eid] = {k: v / n for k, v in hs.items()}
             if hasattr(self, "_head_sum"):
                 self._head_sum = {}
+            # client_global_sync: also average the client encoder ACROSS edges
+            # (FedAvg of the encoder). Without it the edges keep diverging
+            # encoders while the cloud pools their prototypes and evaluation uses
+            # their average (diagnosed: HAM10000 collapse). Weighted by contributions.
+            if self.args.get("client_global_sync", False):
+                w = {e: float(self._client_cnt.get(e, 0)) for e in self.edge_client_state}
+                tot = sum(w.values())
+                if tot > 0:
+                    first = next(iter(self.edge_client_state))
+                    glob = {}
+                    for k, v0 in self.edge_client_state[first].items():
+                        if v0.is_floating_point():
+                            glob[k] = sum(self.edge_client_state[e][k].float() * (w[e] / tot)
+                                          for e in self.edge_client_state if w[e] > 0).to(v0.dtype)
+                        else:
+                            glob[k] = v0.clone()
+                    mb = get_model_size_MB(glob)
+                    n_e = sum(1 for e in w if w[e] > 0)
+                    add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=mb, copies=n_e)
+                    add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=mb, copies=len(self.edge_client_state))
+                    self.edge_client_state = {e: {k: v.clone() for k, v in glob.items()} for e in self.edge_client_state}
+                    if getattr(self, "_edge_head_state", None):
+                        hs = list(self._edge_head_state.values())
+                        gh = {k: sum(h[k] for h in hs) / len(hs) for k in hs[0]}
+                        self._edge_head_state = {e: {k: v.clone() for k, v in gh.items()} for e in self._edge_head_state}
             self._client_sum, self._client_cnt = {}, {}
             self.edge_cache = {eid: {"edge_model": self.structure[0][eid].state_dict()}
                                for eid in self.structure[0]}
@@ -841,6 +873,13 @@ class HierarchicalFL:
         
         # 1. Supervised Contrastive Training (Paper Eq. 1, Alg. 1)
         model.train()
+        if getattr(self, "args", {}).get("client_bn_eval", False):
+            # Tiny local batches (HAM10000: 4) make BN running statistics noisy and
+            # their cross-client average fits no one; keep BN in eval mode (frozen
+            # pretrained statistics) while its affine parameters still train.
+            for mod in model.modules():
+                if isinstance(mod, nn.modules.batchnorm._BatchNorm):
+                    mod.eval()
         for _ in range(ssl_epochs):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
@@ -903,7 +942,9 @@ class HierarchicalFL:
         # Optimization: accumulate per batch to avoid huge tensors
         # For simplicity and correct std, use class-wise grouping
         feats_by_cls = {}
-        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+        # Full-backbone clients extract in fp32: deep eval-mode activations overflowed fp16
+        # on HAM10000 (ResNet-50, batch-4 BN statistics) -> NaN prototypes. Default split unchanged.
+        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda' and int(self.args.get('client_split_depth', 2) or 2) < 4)):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
                 # Cast immediately after the autocast forward, before retaining
@@ -920,6 +961,13 @@ class HierarchicalFL:
         # Compute mean/std per class (and the per-class support count, which
         # feeds the E-HSFP reliability network — previously left at 0).
         support_counts = {}
+        if os.environ.get("HSFP_NAN_DEBUG") == "1":
+            allf = torch.stack([t for ts in feats_by_cls.values() for t in ts])
+            bad_params = [n for n, q in model.named_parameters() if not torch.isfinite(q).all()]
+            bad_bufs = [n for n, q in model.named_buffers() if q.is_floating_point() and not torch.isfinite(q).all()]
+            if not torch.isfinite(allf).all() or bad_params or bad_bufs:
+                print(f"[NAN] client {cid}: feats_finite={bool(torch.isfinite(allf).all())} n={allf.shape[0]} "
+                      f"bad_params={bad_params[:3]} bad_bufs={bad_bufs[:3]}", flush=True)
         for cls_id, tensors in feats_by_cls.items():
             stacked = torch.stack(tensors)
             all_protos[cls_id] = stacked.mean(0).cpu() # Move to CPU to save VRAM
@@ -1056,6 +1104,7 @@ class HierarchicalFL:
         _batch_budget = self.partial_edge.batch_budget(ssl_epochs * len(syn_loader_L1))
         self._edge_partial = _batch_budget < ssl_epochs * len(syn_loader_L1)
         _batches_done = 0
+        total_loss = 0.0  # ssl_epochs=0 (identity edge) skips the loop entirely
         for epoch in range(ssl_epochs):
             if _batches_done >= _batch_budget:
                 break
@@ -1073,7 +1122,7 @@ class HierarchicalFL:
                     spatial_size = features.shape[-1]  # H dimension of feature map
                     self.ssl_transforms_edge = build_edge_ssl_transforms(spatial_size).to(self.device)
 
-                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda' and not getattr(model, 'residual', False))):
                     view_1 = self.ssl_transforms_edge(features)
                     view_2 = self.ssl_transforms_edge(features)
                     
@@ -1109,12 +1158,17 @@ class HierarchicalFL:
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
+                if os.environ.get("HSFP_NAN_DEBUG") == "1" and not torch.isfinite(loss):
+                    print(f"[NAN] edge {eid}: input_finite={bool(torch.isfinite(features).all())} "
+                          f"z_finite={bool(torch.isfinite(z1).all())} "
+                          f"prc={'n/a' if prc_inputs is None else 'on'} "
+                          f"feat_absmax={float(features.float().abs().max())}", flush=True)
                 optimizer.zero_grad()
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 scaler.update()
                 total_loss += loss.item()
-        print(f"Edge {eid}: SSL done, final loss: {total_loss/len(syn_loader_L1):.4f}")
+        print(f"Edge {eid}: SSL done, final loss: {total_loss/max(len(syn_loader_L1), 1):.4f}")
 
         # --- 2c. Extract proto/dist ---
         model.to(self.device).eval()
@@ -1138,7 +1192,8 @@ class HierarchicalFL:
             _eval_bs = 512
         
         # Avoid FutureWarning
-        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+        # Residual (prototype-space) edges run in fp32: 2048-d HAM features overflowed fp16 (NaN SupCon).
+        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda' and not getattr(model, 'residual', False))):
             syn_loader_L1_eval = DataLoader(
                 syn_dataset_L1, # reuse dataset (features + labels)
                 batch_size=_eval_bs, 
@@ -1853,6 +1908,20 @@ class HierarchicalFL:
             del edge_outputs
             torch.cuda.empty_cache()
             gc.collect()
+
+            # Logit adjustment: class prior from the support counts that clients
+            # already transmit with their prototypes (EMA over rounds).
+            if self.args.get("cloud_logit_adjust", False):
+                cnt = torch.zeros(int(self.args["num_classes"]))
+                for sup in getattr(self, "_fresh_client_support", {}).values():
+                    for c, n in sup.items():
+                        cnt[int(c)] += float(n)
+                if cnt.sum() > 0:
+                    pr = cnt / cnt.sum()
+                    self._class_prior = pr if getattr(self, "_class_prior", None) is None else 0.8 * self._class_prior + 0.2 * pr
+                    cm = self.structure[len(self.args["mid_server"])][0]
+                    if hasattr(cm, "log_prior"):
+                        cm.log_prior.copy_(torch.log(self._class_prior.clamp(min=1e-4)).to(cm.log_prior.device))
 
             # --- E-HSFP: Age memories and train reliability ---
             if self.client_memory is not None:

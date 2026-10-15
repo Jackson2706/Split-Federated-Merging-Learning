@@ -118,8 +118,27 @@ import torch
 from ehsfp.prototype_space import CosineClassifier, validate_prototype_space
 
 class AlexnetClientModel(nn.Module):
-    def __init__(self):
+    SPLIT_DIMS = {4: 256}
+
+    def __init__(self, split_depth=1):
         super().__init__()
+        if split_depth == 4:
+            # Full conv stack on the client -> pooled 256-d semantic prototype
+            # (the historical split sent a 64x16x16 first-layer map).
+            self.client_part = nn.Sequential(
+                nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(2, 2),
+                nn.Conv2d(64, 192, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.MaxPool2d(2, 2),
+                nn.Conv2d(192, 384, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(384, 256, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.AdaptiveAvgPool2d(1),  # -> [B, 256, 1, 1]
+            )
+            return
         self.client_part = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),
             nn.ReLU(inplace=True),

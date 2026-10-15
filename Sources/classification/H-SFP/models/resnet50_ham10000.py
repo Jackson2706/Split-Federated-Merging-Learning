@@ -9,15 +9,21 @@ def set_requires_grad(module, freeze=True):
 
 
 class HAM10000ClientModelResNet50(nn.Module):
-    def __init__(self, freeze_backbone=False):
+    SPLIT_DIMS = {4: 2048}
+
+    def __init__(self, freeze_backbone=False, split_depth=1):
         super(HAM10000ClientModelResNet50, self).__init__()
         resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        deep = [resnet.layer2, resnet.layer3, resnet.layer4, resnet.avgpool] if split_depth == 4 else []
+        # split_depth=4: full backbone on the client -> pooled 2048-d prototype
+        # (historical split: layer1, a 256x56x56 map).
         self.part = nn.Sequential(
             resnet.conv1,
             resnet.bn1,
             resnet.relu,
             resnet.maxpool,
             resnet.layer1,
+            *deep,
         )
         set_requires_grad(self.part, freeze=freeze_backbone)
 

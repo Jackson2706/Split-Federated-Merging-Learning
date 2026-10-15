@@ -40,7 +40,15 @@ def pooled_covariance(stats: Iterable[Tuple[torch.Tensor, int, int]]) -> Optiona
         k += ki
     if S is None or n - k <= 1:
         return None
-    return S / float(n - k)
+    cov = S / float(n - k)
+    d = cov.shape[0]
+    if n - k < 2 * d:
+        # Too few samples for a d x d covariance (e.g. HAM10000: ~180 per edge
+        # round vs d=2048): shrink towards the diagonal (Ledoit-Wolf-style fixed
+        # weight that vanishes as n - k grows past 2d).
+        lam = 1.0 - (n - k) / (2.0 * d)
+        cov = (1 - lam) * cov + lam * torch.diag(cov.diagonal())
+    return cov
 
 
 def scatter_payload_MB(d: int) -> float:
