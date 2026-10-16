@@ -68,7 +68,21 @@ while true; do
         [[ $_w -eq 1 ]] && log_info "lane ${LANE}: waiting for GPU memory (${free_mb} MB free)"
         sleep 60
     done
-    item="$(next_item)" || { log_info "lane ${LANE}: queue drained"; break; }
+    item="$(next_item)" || {
+        log_info "lane ${LANE}: queue drained"
+        # Final collection right after the LAST job finishes (no run lock alive anywhere), once per
+        # drained state; the 2-hourly cron collection continues independently.
+        busy=0
+        for lk in "${MARKER_DIR}"/*.lock; do
+            [[ -d "$lk" ]] || continue
+            o="$(cat "$lk/pid" 2>/dev/null)"; [[ -n "$o" ]] && kill -0 "$o" 2>/dev/null && busy=1
+        done
+        if [[ $busy -eq 0 && ! -f "${MARKER_DIR}/FINAL_COLLECTED" ]]; then
+            log_info "lane ${LANE}: last job finished -> final collection"
+            touch "${MARKER_DIR}/FINAL_COLLECTED"
+            "$ROOT/scripts/campaign/collect_all.sh" final && "$ROOT/scripts/campaign/autostop.sh" || true
+        fi
+        break; }
     IFS='|' read -r -a F <<< "$item"
     extra=()
     for ((i = 8; i < ${#F[@]}; i++)); do [[ -n "${F[$i]}" ]] && extra+=("${F[$i]}"); done

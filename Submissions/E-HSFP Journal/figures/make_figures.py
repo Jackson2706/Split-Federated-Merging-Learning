@@ -21,6 +21,7 @@ Theorem 1 are unspecified, so the bound cannot be evaluated numerically.
 from __future__ import annotations
 
 import csv
+import json
 from collections import defaultdict
 from pathlib import Path
 
@@ -36,6 +37,22 @@ SEEDS = range(3)  # figures: seeds 0-2 (user decision 2026-10-06); tables: see f
 # Run-ID prefix of the corrected method (protocol v3). Superseded v2 runs use j2_.
 JP = "j3"
 RUNS = {r["experiment_id"]: r for r in csv.DictReader(open(SRC / "artifacts" / "per_run_metrics.csv"))}
+# Per-round curves of runs completed on the legacy host whose run dirs were not migrated, recovered from the
+# committed figure data and verified against the ledger (Sources/scripts/campaign/extract_legacy_curves.py).
+_LP = SRC / "results" / "journal_v1" / "legacy" / "figure_curves_oldmachine.json"
+LEGACY = {(c["prefix"], c["what"]): c for c in json.load(open(_LP))["curves"]} if _LP.exists() else {}
+WHAT = {"history.csv": "acc", "diagnostics/episodic_diagnostics.csv": "drift"}
+
+
+class Agg:
+    """A legacy series stored only as seed mean/SD (all n seeds from the legacy host)."""
+    def __init__(self, mean, sd, n):
+        self.mean, self.sd, self.n = np.asarray(mean), np.asarray(sd), n
+
+    def __mul__(self, k):
+        return Agg(self.mean * k, self.sd * abs(k), self.n)
+
+
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 8, "legend.fontsize": 6.5, "figure.dpi": 150})
 
 
@@ -46,7 +63,8 @@ def done(eid):
 
 def series(prefix, file, col, filt=None, agg=np.mean):
     """Per-seed per-round series of `col` from <run_dir>/<file>."""
-    out = []
+    out, agg_seeds = [], []
+    lg = LEGACY.get((prefix, WHAT.get(file)))
     for s in SEEDS:
         r = done(f"{prefix}_s{s}")
         if not r:
@@ -55,6 +73,11 @@ def series(prefix, file, col, filt=None, agg=np.mean):
         if not p.exists() and file.startswith("diagnostics/") and r.get("diag_dir"):
             p = Path(r["diag_dir"]) / file.split("/", 1)[1]
         if not p.exists():
+            if lg and lg["n"] == 1 and s == 0:   # legacy n=1 series == this run's exact per-round curve
+                out.append(list(lg["mean"])); _LEGACY_USED.add(f"{prefix}_s0"); continue
+            if lg and lg["n"] > 1 and s < lg["n"]:
+                agg_seeds.append(s); continue
+            _MISSING.append(f"{prefix}_s{s}:{file}")   # completed run whose curve is unavailable here
             continue
         by = defaultdict(list)
         for row in csv.DictReader(open(p)):
@@ -66,6 +89,11 @@ def series(prefix, file, col, filt=None, agg=np.mean):
                 pass
         if by:
             out.append([agg(by[k]) for k in sorted(by)])
+    if agg_seeds:
+        if agg_seeds == list(range(lg["n"])) and not out:
+            _LEGACY_USED.update(f"{prefix}_s{s}" for s in agg_seeds)
+            return Agg(lg["mean"], lg["sd"], lg["n"])
+        _MISSING.extend(f"{prefix}_s{s}:{file} (legacy aggregate cannot be combined)" for s in agg_seeds)
     if not out:
         return None
     L = min(len(x) for x in out)
@@ -84,20 +112,37 @@ def scalar(prefix, key, scale=1.0):
 
 
 def band(ax, a, label, rows, name):
-    x = np.arange(1, a.shape[1] + 1)
-    mu = a.mean(0)
-    sd = a.std(0, ddof=1) if a.shape[0] > 1 else np.zeros_like(mu)
-    ax.plot(x, mu, label=f"{label} (n={a.shape[0]})", lw=1.2)
+    if isinstance(a, Agg):
+        mu, sd, n = a.mean, a.sd, a.n
+    else:
+        mu = a.mean(0)
+        sd = a.std(0, ddof=1) if a.shape[0] > 1 else np.zeros_like(mu)
+        n = a.shape[0]
+    x = np.arange(1, len(mu) + 1)
+    ax.plot(x, mu, label=f"{label} (n={n})", lw=1.2)
     ax.fill_between(x, mu - sd, mu + sd, alpha=0.18)
-    rows += [{"figure": name, "series": label, "round": int(i), "mean": float(m), "sd": float(d), "n": a.shape[0]}
+    rows += [{"figure": name, "series": label, "round": int(i), "mean": float(m), "sd": float(d), "n": n}
              for i, m, d in zip(x, mu, sd)]
 
 
+_LEGACY_USED = set()  # runs whose curve came from the legacy-host store
+_MISSING = []  # filled by series(); a figure with any missing contributor is frozen, not overwritten
+
+
 def save(fig, name, rows):
+    if _MISSING:
+        plt.close(fig)
+        print(f"frozen {name}: {len(_MISSING)} completed runs lack per-round artifacts on this machine "
+              f"(e.g. {_MISSING[0]}); existing figure kept")
+        _MISSING.clear()
+        return
     if not rows:
         plt.close(fig)
         print(f"skip {name}: no completed runs yet")
         return
+    if _LEGACY_USED:
+        print(f"  {name}: {len(_LEGACY_USED)} curves from legacy-host figure data")
+        _LEGACY_USED.clear()
     DATA.mkdir(exist_ok=True)
     with open(DATA / f"{name}.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=sorted({k for r in rows for k in r}))

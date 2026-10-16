@@ -975,9 +975,14 @@ class HierarchicalFL:
             support_counts[int(cls_id)] = len(tensors)
 
         if getattr(self, "synthesis", "diag") == "shared_cov":
-            self._client_scatter[cid] = within_class_scatter(feats_by_cls)
-            add_communication(self.comm_tracker, "client_to_edge_MB",
-                              mb=scatter_payload_MB(self._client_scatter[cid][0].shape[0]))
+            # A client with no samples this round (non-IID Dirichlet splits) has no scatter.
+            _scatter = within_class_scatter(feats_by_cls)
+            if _scatter[0] is not None:
+                self._client_scatter[cid] = _scatter
+                add_communication(self.comm_tracker, "client_to_edge_MB",
+                                  mb=scatter_payload_MB(_scatter[0].shape[0]))
+            else:
+                self._client_scatter.pop(cid, None)
         # Manual cleanup
         del feats_by_cls
         gc.collect()

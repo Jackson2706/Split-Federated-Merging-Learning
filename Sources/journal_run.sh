@@ -152,7 +152,7 @@ TIMEOUT_S="${TIMEOUT_S:-0}"
 MIN_FREE_GB="${MIN_FREE_GB:-15}"
 FORCE="${FORCE:-0}"
 
-RESULTS_ROOT="results/journal_v1"
+RESULTS_ROOT="${RESULTS_ROOT:-results/journal_v1}"
 MARKER_DIR="${RESULTS_ROOT}/.markers"
 LOG_DIR="${RESULTS_ROOT}/logs"
 # Run artifacts can live on another filesystem (the root disk was at 99%).
@@ -361,6 +361,10 @@ run_exp() {
 
     local start_ts end_ts t0 t1 rc runtime status
     start_ts="$(date -Is)"; t0="$(date +%s)"
+    # Provenance: exact command, code revision + source fingerprint, versions, device, timestamps.
+    local prov="${RESULTS_ROOT}/provenance/${eid}.json"
+    python scripts/campaign/runmeta.py start "$prov" --eid "$eid" --cmd "${cmd[*]}" \
+        --lane "${LANE:-}" --gpu "$GPU_ID" 2>/dev/null || log_warn "provenance capture failed for ${eid}"
 
     if [[ "$TIMEOUT_S" -gt 0 ]]; then
         CUDA_VISIBLE_DEVICES="$GPU_ID" timeout "$TIMEOUT_S" "${cmd[@]}" 2>&1 | tee "$log_file"
@@ -389,6 +393,34 @@ run_exp() {
 
     t1="$(date +%s)"; end_ts="$(date -Is)"; runtime=$((t1 - t0))
 
+    # Gate .done on validated outputs, not on the exit code alone.
+    local vmsg=""
+    if [[ $rc -eq 0 ]]; then
+        vmsg="$(python scripts/campaign/runmeta.py validate --method "$method" --out-dir "$out_dir" \
+                 --log "$log_file" --rounds "$ROUNDS" 2>&1)" || rc=86
+        log_info "validation ${eid}: ${vmsg}"
+    fi
+    # Bounded automatic retry for transient infrastructure failures only (OOM, kill, disk);
+    # deterministic errors are marked .failed and wait for a human/LLM review.
+    if [[ $rc -ne 0 && $rc -ne 86 ]]; then
+        local kind ntry
+        kind="$(python scripts/campaign/runmeta.py classify --log "$log_file" --rc "$rc" 2>/dev/null)"
+        ntry="$(cat "${MARKER_DIR}/${eid}.retries" 2>/dev/null || echo 0)"
+        if [[ "$kind" == "transient" && "$ntry" -lt "${MAX_TRANSIENT_RETRIES:-2}" ]]; then
+            echo $((ntry + 1)) > "${MARKER_DIR}/${eid}.retries"
+            t1="$(date +%s)"; end_ts="$(date -Is)"; runtime=$((t1 - t0))
+            log_warn "[RETRY] ${eid} exit=${rc} classified transient (retry $((ntry + 1))/${MAX_TRANSIENT_RETRIES:-2}); log kept"
+            mv "$log_file" "${log_file%.log}.attempt-$(date +%Y%m%dT%H%M%S)-transient.log"
+            python scripts/campaign/runmeta.py finish "$prov" --rc "$rc" --status RETRY_transient 2>/dev/null
+            rm -f "${MARKER_DIR}/${eid}.lock/pid" "${MARKER_DIR}/${eid}.lock/started"; rmdir "${MARKER_DIR}/${eid}.lock" 2>/dev/null
+            printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"%s",%s,%s,%s\n' \
+                "$start_ts" "$end_ts" "$runtime" "$stage" "$eid" "$task" "$dataset" "$method" \
+                "${ablation:-none}" "$seed" "$ROUNDS" "$cfg" "$overrides" "$rc" "RETRY_transient" "$log_file" >> "$MANIFEST"
+            sleep 60
+            return 0
+        fi
+    fi
+
     if [[ $rc -eq 0 ]]; then
         status="PASS"
         # This campaign has a documented history of silent NaN collapse
@@ -401,12 +433,13 @@ run_exp() {
         touch "${MARKER_DIR}/${eid}.done"; rm -f "${MARKER_DIR}/${eid}.failed"
         log_info "[${status}] ${eid} in $(hms "$runtime")"
     else
-        status="FAIL_exit${rc}"
+        status="FAIL_exit${rc}"; [[ $rc -eq 86 ]] && status="FAIL_validation"
         _FAILED=$((_FAILED + 1)); _FAILED_LIST+=("${eid} (exit ${rc})")
         touch "${MARKER_DIR}/${eid}.failed"
         log_error "[FAIL] ${eid} exit=${rc} after $(hms "$runtime") — ${log_file}"
     fi
 
+    python scripts/campaign/runmeta.py finish "$prov" --rc "$rc" --status "$status" --validation "$vmsg" 2>/dev/null
     rm -f "${MARKER_DIR}/${eid}.lock/pid" "${MARKER_DIR}/${eid}.lock/started"
     rmdir "${MARKER_DIR}/${eid}.lock" 2>/dev/null
     printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"%s",%s,%s,%s\n' \

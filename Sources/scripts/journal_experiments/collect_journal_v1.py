@@ -49,7 +49,7 @@ LOGS = RES / "logs"
 MARK = RES / ".markers"
 QDIR = RES / "queue"
 OUT_ROOTS = [
-    Path(os.environ.get("OUT_ROOT", "/media/jackson/Data/ehsfp_campaign/outputs_journal_v1")),
+    Path(os.environ.get("OUT_ROOT", "/workspace/campaign/outputs_journal_v1")),
     ROOT / "outputs" / "journal_v1",
 ]
 SEG_RUN_ROOTS = [
@@ -195,6 +195,38 @@ def find_baseline_dir(eid):
     return None
 
 
+# Legacy ledger (2026-10-15 migration): the old machine's run directories (histories, prediction NPZs,
+# diagnostics) were not transferred. Their metrics were extracted and validated there and committed in
+# artifacts/per_run_metrics.csv; that snapshot is frozen here and used ONLY when a run's own artifacts
+# are absent. Rows filled this way carry the note 'legacy_ledger' (provenance preserved, not recomputed).
+LEGACY_LEDGER = RES / "legacy" / "per_run_metrics_oldmachine_20261015.csv"
+LEGACY = ({r["experiment_id"]: r for r in csv.DictReader(open(LEGACY_LEDGER))}
+          if LEGACY_LEDGER.exists() else {})
+LEGACY_NUM = ("final_acc", "final_f1", "best_acc_testselected", "test_iou", "test_dice", "final_iou",
+              "final_dice", "comm_MB", "runtime_s", "rounds_done", "conv_rounds", "stability_final",
+              "drift_mean", "mean_packet_age", "client_gpu_peak_MB", "edge_gpu_peak_MB", "cloud_gpu_peak_MB",
+              "client_mem_records", "edge_mem_records", "peak_vram_MB")
+
+
+def legacy_fill(eid, m):
+    L = LEGACY.get(eid)
+    if not L or not L.get("status", "").startswith("completed"):
+        return m
+    if m.get("run_dir") and Path(m["run_dir"]).exists():
+        return m
+    for k in LEGACY_NUM:
+        if m.get(k) is None and fnum(L.get(k)) is not None:
+            m[k] = fnum(L.get(k))
+    if not m.get("selection_rule") and L.get("selection_rule"):
+        m["selection_rule"] = L["selection_rule"]
+    m["run_dir"] = L.get("run_dir", "")      # recorded path on the old machine (artifacts absent here)
+    m["diag_dir"] = L.get("diag_dir", "")
+    m["notes"] = [n for n in (L.get("notes") or "").split(";") if n] + ["legacy_ledger"]
+    if isinstance(m.get("rounds_done"), float):
+        m["rounds_done"] = int(m["rounds_done"])
+    return m
+
+
 def extract(eid, task, method, log_text):
     """Return a dict of recorded metrics for one finished (or partial) run."""
     m = {"run_dir": "", "config_hash": "", "notes": []}
@@ -322,7 +354,7 @@ def extract(eid, task, method, log_text):
         m["notes"].append("near_chance_accuracy")
     if m.get("best_round") == 1:
         m["notes"].append("best_at_round_1(no_learning_after_init)")
-    return m
+    return legacy_fill(eid, m)
 
 
 # ------------------------------------------------------------------ eid parse
@@ -414,6 +446,7 @@ def cells():
 
 # ------------------------------------------------------------------- main
 def main():
+    global FIG
     for d in (ART, TAB, FIG, ROOT / "manifests"):
         d.mkdir(parents=True, exist_ok=True)
     man, queues = load_manifest(), load_queues()
@@ -558,6 +591,11 @@ def main():
         w.writerows(cov_rows)
 
     write_tables(runs, agg, seed_runs)
+    # Runs restored from the legacy ledger have no per-round curves on this machine: never overwrite the
+    # committed full figures with curve-less versions; render to figures_partial/ for inspection instead.
+    if any("legacy_ledger" in str(r.get("notes", "")) for r in runs.values()):
+        FIG = ART / "figures_partial"
+        FIG.mkdir(parents=True, exist_ok=True)
     write_figures(runs, seed_runs)
     write_report(runs, cov_rows)
     n = defaultdict(int)

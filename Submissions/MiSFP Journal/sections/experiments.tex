@@ -19,13 +19,13 @@ Predictive metrics are top-1 accuracy and macro-F1. Communication reports exact 
 The unfilled tables jointly test alternatives rather than presuppose gains. Better fidelity without predictive change would indicate that the classifier is insensitive to retained modes; higher cost without fidelity improvement would argue against extra components; degradation under local but not shared-snapshot extraction would implicate coordinate mismatch; and matched-byte improvement would support allocation rather than payload size as the operative factor. Outcome-specific interpretation is deferred.
 
 \begin{figure*}[t]
-\centering\includegraphics[width=.98\textwidth]{figures/empirical_templates.pdf}
-\caption{Empirical templates generated from the central long-format result file. Panels report (a) predictive performance versus cumulative communication with boundary-specific views, (b) convergence versus round or wall-clock time, (c) held-out mixture fidelity and real/synthetic features under one projection fit on real training features, and (d) adaptive allocation and component-budget tradeoffs. Lines will show seed means and bands $\pm1$ SD when at least two seeds are complete. Empty panels explicitly mean results pending.}
+\centering\IfFileExists{figures/empirical_results.pdf}{\includegraphics[width=.98\textwidth]{figures/empirical_results.pdf}}{\includegraphics[width=.98\textwidth]{figures/empirical_templates.pdf}}
+\caption{Empirical results generated from the central long-format result file (validated runs only; CIFAR-100, Dir($\alpha{=}0.1$)). (a) Validation accuracy versus cumulative communication; (b) validation accuracy versus communication round; (c) sliced Wasserstein distance between synthetic and real training features in a PCA projection fit on real features, single Gaussian versus mixture; (d) edge-to-cloud components per class versus final-round test accuracy, including the matched-budget variants. Lines and bars show seed means; bands and error bars are $\pm1$ sample SD when at least two seeds are complete; $n$ gives the completed seeds per series. Panels without a completed run are marked results pending.}
 \label{fig:empirical}
 \end{figure*}
 
 \begin{figure*}[t]
-\centering\includegraphics[width=.98\textwidth]{figures/diagnostic_templates.pdf}
-\caption{Sensitivity and alignment templates. Planned panels vary component cap, minimum support, boundary Monte Carlo count, and local versus shared-snapshot extraction. Accuracy/F1 and coverage are higher-is-better; NLL, SWD, MMD, bytes, and between-source dispersion are lower-is-better only when their assumptions and controls match. Bands denote $\pm1$ seed SD; panels remain marked results pending until validated records exist.}
+\centering\IfFileExists{figures/diagnostic_results.pdf}{\includegraphics[width=.98\textwidth]{figures/diagnostic_results.pdf}}{\includegraphics[width=.98\textwidth]{figures/diagnostic_templates.pdf}}
+\caption{Sensitivity and alignment diagnostics on CIFAR-100, Dir($\alpha{=}0.1$): final-round test accuracy for (a) component cap (K1, K2, K4, adaptive), (b) minimum support (adaptive), (c) boundary Monte Carlo samples per component (adaptive), and (d) local versus shared-snapshot extraction. Bars are seed means with $\pm1$ sample SD when at least two seeds are complete; $n$ is shown under each bar; panels without a completed run are marked results pending.}
 \label{fig:diagnostics}
 \end{figure*}

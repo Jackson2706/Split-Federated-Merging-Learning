@@ -38,3 +38,5 @@ while read -r lane; do
     "source '$QDIR/lane_env.sh'; echo \$\$ > '$QDIR/$lane.pid'; exec '$ROOT/scripts/journal_experiments/queue_lane.sh' '$QDIR/$lane.queue' '$lane' >> '$QDIR/$lane.out' 2>&1"
   echo "started $lane"
 done < "$QDIR/LANES"
+# Event-driven collection: refresh tables/LaTeX/status soon after any run finishes (see collect_if_new.sh).
+[[ "${1:-}" != "status" ]] && /bin/bash "$ROOT/scripts/campaign/collect_if_new.sh"

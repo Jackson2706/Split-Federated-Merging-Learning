@@ -77,12 +77,28 @@ def vals(prefix, key):
     return out
 
 
+TIMING_KEYS = ("runtime_s",)
+
+
+def legacy_host(prefix):
+    """True if any contributing run was measured on the previous host (legacy ledger)."""
+    return any("legacy_ledger" in (RUNS.get(f"{prefix}_s{s}") or {}).get("notes", "") for s in ACTIVE_SEEDS)
+
+
 def cell(prefix, key, scale=1.0, nd=2):
     if prefix is None:
         return PENDING
     v = vals(prefix, key)
     if not v:
         return PENDING
+    if key in TIMING_KEYS and legacy_host(prefix):
+        # wall-clock from the previous host (RTX 3080 Ti, 4 concurrent lanes): not comparable with
+        # timings taken on the RTX 6000 Ada host; flagged instead of silently mixed
+        return cell_value(v, scale, nd, prefix) + r"$^\star$"
+    return cell_value(v, scale, nd, prefix)
+
+
+def cell_value(v, scale, nd, prefix):
     m = np.mean(v) * scale
     s = f"{m:.{nd}f}"
     if len(v) > 1:
@@ -125,7 +141,8 @@ def main():
     E = f"{JP}_cifar100_ehsfp"   # full E-HSFP, journal protocol v2, CIFAR-100 IID (reference cell)
 
     write("dropout_convergence", [
-        row(f"$p={p}$", E if p == "0.2" else f"{JP}_dropout_cifar100_p{p.replace('.', 'p')}", [ACC, F1, CONV, STAB, DRIFT])
+        # run IDs spell p=0 as p0p0 (j3_dropout_cifar100_p0p0_s0)
+        row(f"$p={p}$", E if p == "0.2" else f"{JP}_dropout_cifar100_p{('0.0' if p == '0' else p).replace('.', 'p')}", [ACC, F1, CONV, STAB, DRIFT])
         for p in ("0", "0.1", "0.2", "0.3", "0.5")], a.dry_run)
     write("staleness_convergence", [
         row(rf"$\tau={t}$", E if t == 0 else f"{JP}_stale_cifar100_tau{t}", [ACC, F1, CONV, DRIFT, na()])
