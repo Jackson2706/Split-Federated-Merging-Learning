@@ -5,19 +5,19 @@ container disk. `/workspace` is **not** a persistent volume: recycling or destro
 everything that is not committed and copied off-box.
 
 <!-- AUTO-STATUS:BEGIN -->
-_Auto-updated 2026-10-17T13:20:31+09:00 (KST) by scripts/campaign/campaign_status.py_
+_Auto-updated 2026-10-17T18:00:31+09:00 (KST) by scripts/campaign/campaign_status.py_
 
 | Paper | validated done | running | queued | failed | remaining P1/P2/P3/P4 |
 |---|---|---|---|---|---|
 | E-HSFP | 79 | 3 | 20 | 0 | 3/0/0/20 |
-| MiSFP | 44 | 9 | 40 | 0 | 0/10/39/0 |
+| MiSFP | 51 | 9 | 33 | 0 | 0/3/39/0 |
 
-- Lanes alive: 12 / 12; running: `j3_memM_cifar100_M20_s0` (23/60), `misfp_dir0.1_k4_s3` (41/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (22/60), `misfp_dir0.1_edge_s3` (54/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (22/60), `misfp_dir0.1_k2_s3` (49/60), `misfp_dir0.7_k4_s3` (1/60), `misfp_iid_k4_s3` (60/60), `misfp_dir0.7_hsfp_s3` (32/60), `misfp_dir0.7_k1_s3` (32/60), `misfp_dir0.7_edge_s3` (30/60), `misfp_dir0.7_k2_s3` (1/60)
+- Lanes alive: 12 / 12; running: `j3_memM_cifar100_M20_s0` (25/60), `misfp_dir0.1_k2_budget2.0x_s1` (29/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (24/60), `misfp_dir0.1_k2_fp16matched_s1` (42/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (24/60), `misfp_dir0.1_k2_budget1.5x_s1` (37/60), `misfp_dir0.7_k4_s3` (45/60), `misfp_dir0.7_k2_s3` (46/60), `misfp_dir0.7_adaptive_s3` (45/60), `misfp_dir0.1_adaptive_fp16matched_s1` (18/60), `misfp_dir0.1_adaptive_budget1.5x_s1` (17/60), `misfp_dir0.1_adaptive_budget2.0x_s1` (15/60)
 - Failed (need review): none
-- Resources: [{'index': '0', 'util_pct': '84', 'mem_used_MiB': '24898', 'mem_total_MiB': '49140'}]; RAM avail 370.8 GiB; disk free 11.1 GiB; pressure: none
-- Measured hours/run on this machine: {'misfp': 6.22, 'cifar100_ehsfp': 8.36, 'cifar10': 5.62, 'cifar100_hsfp': 7.73, 'ham10000': 3.84}
-- ETA all queued work: 2026-10-19T01:43+09:00 KST (by tier: {'P1': '2026-10-17T15:25+09:00', 'P2': '2026-10-17T20:36+09:00', 'P3': '2026-10-18T16:50+09:00', 'P4': '2026-10-19T01:43+09:00'}); fits deadline: True
-- Last collection: 2026-10-17T13:20:31+09:00 (rc 0); next: 2026-10-17T14:00:00+09:00
+- Resources: [{'index': '0', 'util_pct': '99', 'mem_used_MiB': '26736', 'mem_total_MiB': '49140'}]; RAM avail 346.4 GiB; disk free 11.1 GiB; pressure: none
+- Measured hours/run on this machine: {'misfp': 6.2, 'cifar100_ehsfp': 8.36, 'cifar10': 5.62, 'cifar100_hsfp': 7.73, 'ham10000': 3.84}
+- ETA all queued work: 2026-10-19T02:41+09:00 KST (by tier: {'P1': '2026-10-17T20:05+09:00', 'P2': '2026-10-17T21:38+09:00', 'P3': '2026-10-18T17:48+09:00', 'P4': '2026-10-19T02:41+09:00'}); fits deadline: True
+- Last collection: 2026-10-17T18:00:31+09:00 (rc 0); next: 2026-10-17T20:00:00+09:00
 - LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 14, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 8, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
 <!-- AUTO-STATUS:END -->
 
