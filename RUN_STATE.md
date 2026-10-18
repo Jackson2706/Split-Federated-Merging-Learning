@@ -5,19 +5,19 @@ container disk. `/workspace` is **not** a persistent volume: recycling or destro
 everything that is not committed and copied off-box.
 
 <!-- AUTO-STATUS:BEGIN -->
-_Auto-updated 2026-10-17T18:00:31+09:00 (KST) by scripts/campaign/campaign_status.py_
+_Auto-updated 2026-10-17T21:10:34+09:00 (KST) by scripts/campaign/campaign_status.py_
 
 | Paper | validated done | running | queued | failed | remaining P1/P2/P3/P4 |
 |---|---|---|---|---|---|
 | E-HSFP | 79 | 3 | 20 | 0 | 3/0/0/20 |
-| MiSFP | 51 | 9 | 33 | 0 | 0/3/39/0 |
+| MiSFP | 57 | 9 | 27 | 0 | 0/0/36/0 |
 
-- Lanes alive: 12 / 12; running: `j3_memM_cifar100_M20_s0` (25/60), `misfp_dir0.1_k2_budget2.0x_s1` (29/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (24/60), `misfp_dir0.1_k2_fp16matched_s1` (42/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (24/60), `misfp_dir0.1_k2_budget1.5x_s1` (37/60), `misfp_dir0.7_k4_s3` (45/60), `misfp_dir0.7_k2_s3` (46/60), `misfp_dir0.7_adaptive_s3` (45/60), `misfp_dir0.1_adaptive_fp16matched_s1` (18/60), `misfp_dir0.1_adaptive_budget1.5x_s1` (17/60), `misfp_dir0.1_adaptive_budget2.0x_s1` (15/60)
+- Lanes alive: 12 / 12; running: `j3_memM_cifar100_M20_s0` (27/60), `misfp_dir0.1_adaptive_bsamp10_s1` (2/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (26/60), `misfp_dir0.1_adaptive_minsup1_s1` (15/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (26/60), `misfp_dir0.1_adaptive_fp16matched_s1` (51/60), `misfp_dir0.1_adaptive_budget1.5x_s1` (50/60), `misfp_dir0.1_adaptive_budget2.0x_s1` (48/60), `misfp_dir0.1_k1_snapshot_s1` (17/60), `misfp_dir0.1_edge_snapshot_s1` (17/60), `misfp_dir0.1_k2_snapshot_s1` (16/60), `misfp_dir0.1_adaptive_minsup10_s1` (10/60)
 - Failed (need review): none
-- Resources: [{'index': '0', 'util_pct': '99', 'mem_used_MiB': '26736', 'mem_total_MiB': '49140'}]; RAM avail 346.4 GiB; disk free 11.1 GiB; pressure: none
-- Measured hours/run on this machine: {'misfp': 6.2, 'cifar100_ehsfp': 8.36, 'cifar10': 5.62, 'cifar100_hsfp': 7.73, 'ham10000': 3.84}
-- ETA all queued work: 2026-10-19T02:41+09:00 KST (by tier: {'P1': '2026-10-17T20:05+09:00', 'P2': '2026-10-17T21:38+09:00', 'P3': '2026-10-18T17:48+09:00', 'P4': '2026-10-19T02:41+09:00'}); fits deadline: True
-- Last collection: 2026-10-17T18:00:31+09:00 (rc 0); next: 2026-10-17T20:00:00+09:00
+- Resources: [{'index': '0', 'util_pct': '99', 'mem_used_MiB': '25232', 'mem_total_MiB': '49140'}]; RAM avail 386.5 GiB; disk free 11.0 GiB; pressure: none
+- Measured hours/run on this machine: {'misfp': 6.19, 'cifar100_ehsfp': 8.36, 'cifar10': 5.62, 'cifar100_hsfp': 7.73, 'ham10000': 3.84}
+- ETA all queued work: 2026-10-19T02:42+09:00 KST (by tier: {'P1': '2026-10-17T23:15+09:00', 'P3': '2026-10-18T17:49+09:00', 'P4': '2026-10-19T02:42+09:00'}); fits deadline: True
+- Last collection: 2026-10-17T21:10:34+09:00 (rc 0); next: 2026-10-17T22:00:00+09:00
 - LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 14, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 8, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
 <!-- AUTO-STATUS:END -->
 
@@ -180,3 +180,5 @@ billed). The 2-hourly cron collection re-checks the same preconditions as a safe
 ## Review notes
 - 2026-10-15 18:0x KST (review): ETA-beyond-deadline alert is the expected queue overflow noted in the audit (P1 ETA Oct 16, P2 Oct 17 fit; P3/P4 do not). No failures, 12/12 lanes alive; no action. Author decision on dropping P3/P4 still pending.
 - 2026-10-16 KST: j3_noniid_a0p{3,7}_ham10000_ehsfp_s0 crashed in `_client_ssl_extraction_phase` (shared_cov scatter is None for a client with zero samples under the Dirichlet split). Fixed in `classification/H-SFP/hierarchy.py` (empty clients contribute no scatter; no effect on non-empty clients); both runs re-admitted once.
+
+- 2026-10-17 20:27 KST: fixed `scripts/campaign/collect_misfp.py` EID regex (`\w+?` -> `[\w.]+?`); runs with a dot in the variant (`budget1.5x`, `budget2.0x`) had been silently skipped. Unmatched IDs are now reported as collector errors. Backup: `/workspace/campaign/backups/misfp/collect_misfp.py.20261017`.

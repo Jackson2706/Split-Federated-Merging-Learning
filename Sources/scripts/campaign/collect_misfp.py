@@ -41,7 +41,7 @@ MARK = SRC / "results" / "journal_v1" / ".markers"
 OUT_ROOT = Path(os.environ.get("OUT_ROOT", "/workspace/campaign/outputs_journal_v1"))
 GEN = PAPER / "generated"
 SEEDS = (1, 2, 3)
-EID = re.compile(r"^misfp_(iid|dir0\.1|dir0\.7)_(hsfp|k1|edge|k2|k4|adaptive)(?:_(\w+?))?_s(\d+)$")
+EID = re.compile(r"^misfp_(iid|dir0\.1|dir0\.7)_(hsfp|k1|edge|k2|k4|adaptive)(?:_([\w.]+?))?_s(\d+)$")
 VOLATILE = {"seed", "output_dir", "misfp_attempt", "runtime_metrics_path", "runtime_counters_path",
             "history_path", "run_fingerprints_path", "prediction_artifact_dir", "resolved_config_hash",
             "diagnostics_dir", "gpu", "is_gpu"}
@@ -105,8 +105,8 @@ def fidelity(rd):
 
 def load_run(eid):
     m = EID.match(eid)
-    if not m:
-        return None
+    if not m:  # unknown ID pattern: report it rather than drop the run
+        return {"eid": eid, "error": "run ID does not match the collector's EID pattern"}
     split, variant, extra, seed = m.group(1), m.group(2), m.group(3) or "", int(m.group(4))
     sums = glob.glob(str(OUT_ROOT / eid / "**" / "misfp_summary.json"), recursive=True)
     if len(sums) != 1:
