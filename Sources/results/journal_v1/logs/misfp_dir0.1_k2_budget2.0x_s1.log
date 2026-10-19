@@ -1,0 +1,1991 @@
+[Runner] Seed: 1
+[Runner] Overrides: {'epochs': 60, 'output_dir': '/workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1', 'partition': 'dirichlet', 'dirichlet_alpha': 0.1, 'misfp_client_budget': 'match_k1_fp32:2.0', 'misfp_edge_budget': 'match_k1_fp32:2.0', 'misfp_diag_pca_classes': 100}
+[Runner] task=classification  method=misfp
+[Runner] cfg=configs/classification/misfp/exp_0vqq3h34.yaml
+
+/workspace/venvs/sfml/lib/python3.12/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+[MiSFP] variant=k2 (MiSFP-K2)
+Train len: 50000
+[val_from_train] 5000 train images held out for validation
+Using 2 workers for the DataLoader.
+[MiSFP] run_dir=/workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7
+
+==================== EPOCH 1/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4050 L1 samples from 187 components. Starting SSL...
+Edge 4: SSL done, final loss: 1.4143
+Edge 1: generated 4700 L1 samples from 257 components. Starting SSL...
+Edge 1: SSL done, final loss: 1.3365
+Edge 3: generated 3750 L1 samples from 163 components. Starting SSL...
+Edge 3: SSL done, final loss: 1.3829
+Edge 2: generated 2650 L1 samples from 84 components. Starting SSL...
+Edge 2: SSL done, final loss: 1.4789
+Edge 0: generated 2350 L1 samples from 66 components. Starting SSL...
+Edge 0: SSL done, final loss: 1.5278
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 650 components. Starting supervised...
+Cloud 0: supervised done, final loss: 4.2057
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  5  6  8  9 13 15 16 17 18 19 20 23 24 26 28 29 30]
+  ... (60 total unique predictions)
+Predictions - Min: 0, Max: 98
+--- End Validation Debug Info ---
+Saved best model at epoch 1 with Acc: 5.80 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 5.80%)
+/workspace/Split-Federated-Merging-Learning/Sources/classification/H-SFP/hierarchy.py:842: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  od['scheduler'].step()
+Epoch 1 finished in 349.63s
+
+==================== EPOCH 2/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4650 L1 samples from 285 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.9773
+Edge 1: generated 4000 L1 samples from 187 components. Starting SSL...
+Edge 1: SSL done, final loss: 1.0503
+Edge 0: generated 2900 L1 samples from 78 components. Starting SSL...
+Edge 0: SSL done, final loss: 1.0876
+Edge 4: generated 2800 L1 samples from 82 components. Starting SSL...
+Edge 4: SSL done, final loss: 1.0970
+Edge 3: generated 3550 L1 samples from 147 components. Starting SSL...
+Edge 3: SSL done, final loss: 1.1286
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 648 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.8650
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20]
+  ... (93 total unique predictions)
+Predictions - Min: 0, Max: 98
+--- End Validation Debug Info ---
+Saved best model at epoch 2 with Acc: 9.18 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 9.18%)
+Epoch 2 finished in 337.86s
+
+==================== EPOCH 3/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4150 L1 samples from 194 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.8581
+Edge 1: generated 4200 L1 samples from 198 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.8339
+Edge 3: generated 4250 L1 samples from 183 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.8489
+Edge 2: generated 3600 L1 samples from 147 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.9491
+Edge 0: generated 1200 L1 samples from 32 components. Starting SSL...
+Edge 0: SSL done, final loss: 1.4424
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 680 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.4270
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 3 with Acc: 9.20 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 9.20%)
+Epoch 3 finished in 353.97s
+
+==================== EPOCH 4/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4800 L1 samples from 264 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7480
+Edge 2: generated 3900 L1 samples from 167 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7818
+Edge 4: generated 2950 L1 samples from 101 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.8527
+Edge 3: generated 3600 L1 samples from 142 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.8359
+Edge 1: generated 2600 L1 samples from 77 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.8587
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 4950 L2 samples from 664 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.1475
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 4 with Acc: 10.16 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 10.16%)
+Epoch 4 finished in 332.79s
+
+==================== EPOCH 5/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4400 L1 samples from 261 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7706
+Edge 4: generated 2700 L1 samples from 98 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7725
+Edge 1: generated 4150 L1 samples from 155 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6577
+Edge 2: generated 3900 L1 samples from 193 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7928
+Edge 0: generated 1850 L1 samples from 45 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.8196
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 627 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.9167
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  8  9 10 11 12 13 15 16 17 18 19 20 21]
+  ... (96 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 5 finished in 305.14s
+
+==================== EPOCH 6/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4050 L1 samples from 196 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6478
+Edge 3: generated 3950 L1 samples from 146 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6264
+Edge 0: generated 3250 L1 samples from 117 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7628
+Edge 1: generated 3900 L1 samples from 165 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7222
+Edge 4: generated 3700 L1 samples from 149 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6688
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 723 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.9212
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  8  9 10 11 12 13 14 15 16 17 18 19 20]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 6 with Acc: 10.88 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 10.88%)
+Epoch 6 finished in 335.80s
+
+==================== EPOCH 7/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3200 L1 samples from 127 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7604
+Edge 2: generated 3400 L1 samples from 124 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6704
+Edge 1: generated 3750 L1 samples from 159 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6968
+Edge 4: generated 4400 L1 samples from 233 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6407
+Edge 3: generated 3200 L1 samples from 124 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.8472
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 696 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.7416
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 7 with Acc: 11.28 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 11.28%)
+Epoch 7 finished in 345.85s
+
+==================== EPOCH 8/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4450 L1 samples from 223 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6502
+Edge 1: generated 4350 L1 samples from 205 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6971
+Edge 4: generated 3200 L1 samples from 98 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6631
+Edge 3: generated 3600 L1 samples from 158 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7294
+Edge 0: generated 1750 L1 samples from 44 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.9452
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 638 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6969
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 8 finished in 335.50s
+
+==================== EPOCH 9/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 3100 L1 samples from 102 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7144
+Edge 0: generated 2800 L1 samples from 96 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7638
+Edge 3: generated 4750 L1 samples from 274 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6347
+Edge 2: generated 4250 L1 samples from 212 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6629
+Edge 1: generated 2650 L1 samples from 80 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7752
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 638 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6910
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 9 finished in 331.02s
+
+==================== EPOCH 10/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4400 L1 samples from 272 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6981
+Edge 2: generated 2700 L1 samples from 92 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7535
+Edge 1: generated 4000 L1 samples from 170 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6479
+Edge 3: generated 4200 L1 samples from 185 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5946
+Edge 4: generated 2900 L1 samples from 85 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6840
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 681 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5757
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 15 16 17 18 19 20]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 10 finished in 388.83s
+
+==================== EPOCH 11/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4450 L1 samples from 235 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6518
+Edge 1: generated 2850 L1 samples from 88 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6602
+Edge 4: generated 2750 L1 samples from 88 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.8279
+Edge 3: generated 4550 L1 samples from 239 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6172
+Edge 0: generated 3800 L1 samples from 146 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6163
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 682 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6758
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  8  9 10 12 13 14 15 16 17 18 19 20 21 22]
+  ... (95 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 11 finished in 369.10s
+
+==================== EPOCH 12/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4200 L1 samples from 173 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5724
+Edge 3: generated 2350 L1 samples from 61 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6531
+Edge 1: generated 4300 L1 samples from 205 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6144
+Edge 4: generated 4050 L1 samples from 192 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6993
+Edge 2: generated 3700 L1 samples from 142 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6065
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 703 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6240
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 12 finished in 346.23s
+
+==================== EPOCH 13/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4250 L1 samples from 194 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6328
+Edge 0: generated 4300 L1 samples from 205 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5730
+Edge 4: generated 4500 L1 samples from 235 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6582
+Edge 1: generated 1700 L1 samples from 40 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7996
+Edge 2: generated 2350 L1 samples from 72 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7536
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 634 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5450
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 11 12 14 15 16 18 19 20 21 22]
+  ... (92 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 13 finished in 333.24s
+
+==================== EPOCH 14/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4550 L1 samples from 243 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6793
+Edge 0: generated 2750 L1 samples from 80 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6802
+Edge 2: generated 4950 L1 samples from 287 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5606
+Edge 1: generated 3100 L1 samples from 89 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6338
+Edge 4: generated 3450 L1 samples from 112 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7045
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 661 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5130
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 14 finished in 362.55s
+
+==================== EPOCH 15/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 3800 L1 samples from 156 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6379
+Edge 4: generated 3950 L1 samples from 168 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5973
+Edge 1: generated 3500 L1 samples from 146 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7424
+Edge 3: generated 4550 L1 samples from 232 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5814
+Edge 0: generated 2300 L1 samples from 61 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7381
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 693 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4813
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 11 12 13 14 15 16 17 18 19 20]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 15 finished in 331.22s
+
+==================== EPOCH 16/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3900 L1 samples from 171 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6411
+Edge 3: generated 3500 L1 samples from 144 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6700
+Edge 4: generated 4400 L1 samples from 237 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6607
+Edge 1: generated 3350 L1 samples from 122 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6492
+Edge 2: generated 2750 L1 samples from 80 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7647
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 674 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5105
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 16 finished in 322.26s
+
+==================== EPOCH 17/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3050 L1 samples from 108 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7845
+Edge 1: generated 4650 L1 samples from 275 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6410
+Edge 3: generated 4150 L1 samples from 229 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6206
+Edge 2: generated 2850 L1 samples from 83 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6361
+Edge 4: generated 2600 L1 samples from 76 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6491
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 619 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5070
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (96 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 17 finished in 349.69s
+
+==================== EPOCH 18/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3800 L1 samples from 164 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6308
+Edge 4: generated 4700 L1 samples from 307 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6500
+Edge 2: generated 3800 L1 samples from 175 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6379
+Edge 3: generated 3500 L1 samples from 113 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5365
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 4950 L2 samples from 605 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4680
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  7  8  9 10 11 12 13 15 17 18 19 20 21 22]
+  ... (93 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 18 finished in 339.77s
+
+==================== EPOCH 19/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4400 L1 samples from 242 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5399
+Edge 2: generated 3000 L1 samples from 102 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6197
+Edge 1: generated 4100 L1 samples from 210 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6248
+Edge 4: generated 3400 L1 samples from 117 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6323
+Edge 3: generated 2600 L1 samples from 72 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6330
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 630 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.3679
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 11 12 13 14 15 16 18 19 20 21]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 19 with Acc: 11.38 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 11.38%)
+Epoch 19 finished in 348.09s
+
+==================== EPOCH 20/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4300 L1 samples from 215 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5916
+Edge 3: generated 4050 L1 samples from 183 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6068
+Edge 4: generated 4300 L1 samples from 171 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5395
+Edge 1: generated 2300 L1 samples from 75 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.8059
+Edge 2: generated 2850 L1 samples from 83 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6006
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 656 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4169
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 20 finished in 347.46s
+
+==================== EPOCH 21/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 2950 L1 samples from 102 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7161
+Edge 1: generated 4050 L1 samples from 191 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6185
+Edge 0: generated 4500 L1 samples from 219 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5622
+Edge 3: generated 2650 L1 samples from 82 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6356
+Edge 2: generated 3950 L1 samples from 166 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5596
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 684 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4191
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 21 finished in 341.37s
+
+==================== EPOCH 22/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4250 L1 samples from 174 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5347
+Edge 2: generated 4350 L1 samples from 193 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5950
+Edge 4: generated 3750 L1 samples from 153 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6565
+Edge 1: generated 4500 L1 samples from 229 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6155
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 674 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4907
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 22 finished in 345.62s
+
+==================== EPOCH 23/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4250 L1 samples from 242 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6455
+Edge 3: generated 4300 L1 samples from 193 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6600
+Edge 4: generated 1450 L1 samples from 35 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.8527
+Edge 1: generated 3850 L1 samples from 161 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5456
+Edge 2: generated 3200 L1 samples from 108 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5712
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 639 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4078
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 23 finished in 341.85s
+
+==================== EPOCH 24/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4250 L1 samples from 189 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5359
+Edge 1: generated 3650 L1 samples from 133 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6185
+Edge 3: generated 3550 L1 samples from 161 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6515
+Edge 4: generated 2600 L1 samples from 81 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6326
+Edge 0: generated 4400 L1 samples from 224 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5719
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 702 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4419
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 24 finished in 364.70s
+
+==================== EPOCH 25/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 4300 L1 samples from 205 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6185
+Edge 4: generated 4250 L1 samples from 200 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6210
+Edge 2: generated 2650 L1 samples from 75 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7225
+Edge 0: generated 3250 L1 samples from 120 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6081
+Edge 3: generated 3700 L1 samples from 140 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5293
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 676 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5379
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  7  8  9 10 11 12 13 14 15 16 17 18 19 20]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 98
+--- End Validation Debug Info ---
+Epoch 25 finished in 325.41s
+
+==================== EPOCH 26/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4850 L1 samples from 306 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5990
+Edge 0: generated 2850 L1 samples from 105 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6660
+Edge 1: generated 4050 L1 samples from 181 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5760
+Edge 2: generated 3250 L1 samples from 114 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5772
+Edge 3: generated 1350 L1 samples from 32 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.9577
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 607 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.3744
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 26 finished in 330.15s
+
+==================== EPOCH 27/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4400 L1 samples from 209 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5517
+Edge 4: generated 4500 L1 samples from 232 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5879
+Edge 1: generated 1950 L1 samples from 47 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7090
+Edge 3: generated 4200 L1 samples from 168 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6033
+Edge 0: generated 3650 L1 samples from 142 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6159
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 711 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5687
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 15 16 17 18 20 21 22]
+  ... (93 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 27 finished in 348.98s
+
+==================== EPOCH 28/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4450 L1 samples from 188 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5221
+Edge 4: generated 3900 L1 samples from 162 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5693
+Edge 3: generated 3050 L1 samples from 125 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7210
+Edge 1: generated 3250 L1 samples from 115 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6478
+Edge 0: generated 4100 L1 samples from 174 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5597
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 735 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4438
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 28 finished in 354.85s
+
+==================== EPOCH 29/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4050 L1 samples from 147 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5805
+Edge 2: generated 4200 L1 samples from 188 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5196
+Edge 1: generated 3900 L1 samples from 159 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6075
+Edge 4: generated 4400 L1 samples from 199 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5928
+Edge 0: generated 3100 L1 samples from 109 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5588
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 753 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5473
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 15 16 17 18 19 20]
+  ... (97 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 29 finished in 384.52s
+
+==================== EPOCH 30/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4300 L1 samples from 230 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6068
+Edge 1: generated 2750 L1 samples from 72 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6511
+Edge 0: generated 4000 L1 samples from 148 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6083
+Edge 2: generated 3650 L1 samples from 142 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5704
+Edge 3: generated 3950 L1 samples from 159 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5506
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 691 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.5720
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 30 with Acc: 12.68 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 12.68%)
+Epoch 30 finished in 358.31s
+
+==================== EPOCH 31/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 3150 L1 samples from 113 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6367
+Edge 0: generated 3100 L1 samples from 107 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6645
+Edge 4: generated 4350 L1 samples from 221 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5513
+Edge 1: generated 3200 L1 samples from 122 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7617
+Edge 3: generated 4200 L1 samples from 187 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5415
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 684 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6632
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 98
+--- End Validation Debug Info ---
+Epoch 31 finished in 380.39s
+
+==================== EPOCH 32/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4150 L1 samples from 190 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5501
+Edge 3: generated 3200 L1 samples from 98 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5737
+Edge 0: generated 3500 L1 samples from 158 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5989
+Edge 1: generated 4050 L1 samples from 171 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5851
+Edge 4: generated 3250 L1 samples from 113 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5691
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 679 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.4507
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 32 finished in 347.08s
+
+==================== EPOCH 33/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 3300 L1 samples from 108 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5944
+Edge 2: generated 4300 L1 samples from 213 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.4987
+Edge 0: generated 4650 L1 samples from 265 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5769
+Edge 4: generated 3200 L1 samples from 113 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6297
+Edge 1: generated 2350 L1 samples from 71 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7497
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 649 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6074
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  7  8  9 10 11 12 13 14 15 16 17 18 19 20]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 33 finished in 357.88s
+
+==================== EPOCH 34/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4150 L1 samples from 181 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5351
+Edge 4: generated 4000 L1 samples from 148 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5217
+Edge 2: generated 4650 L1 samples from 235 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5486
+Edge 1: generated 2700 L1 samples from 78 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6257
+Edge 0: generated 3250 L1 samples from 113 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6161
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 689 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6098
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20]
+  ... (96 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 34 finished in 370.76s
+
+==================== EPOCH 35/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 4050 L1 samples from 184 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6027
+Edge 3: generated 4000 L1 samples from 184 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6051
+Edge 4: generated 3950 L1 samples from 196 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6015
+Edge 2: generated 3900 L1 samples from 175 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5629
+Edge 0: generated 1350 L1 samples from 35 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.9852
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 671 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6521
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  7  8  9 10 11 12 14 15 17 18 19 20 21 22]
+  ... (96 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 35 finished in 344.31s
+
+==================== EPOCH 36/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 3550 L1 samples from 109 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5825
+Edge 0: generated 4200 L1 samples from 191 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5597
+Edge 1: generated 3900 L1 samples from 161 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5653
+Edge 2: generated 4750 L1 samples from 172 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.4726
+Edge 4: generated 4000 L1 samples from 177 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5807
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 763 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.7969
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 36 finished in 364.69s
+
+==================== EPOCH 37/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4650 L1 samples from 226 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6131
+Edge 0: generated 4350 L1 samples from 208 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5262
+Edge 2: generated 3300 L1 samples from 116 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5676
+Edge 1: generated 3450 L1 samples from 111 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5837
+Edge 3: generated 3000 L1 samples from 86 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5840
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 671 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.6425
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 37 finished in 352.70s
+
+==================== EPOCH 38/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 4700 L1 samples from 272 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5536
+Edge 3: generated 2600 L1 samples from 77 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6962
+Edge 2: generated 3300 L1 samples from 144 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6196
+Edge 1: generated 3350 L1 samples from 113 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5827
+Edge 0: generated 3450 L1 samples from 151 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6494
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 648 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.8308
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 38 finished in 341.04s
+
+==================== EPOCH 39/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 3550 L1 samples from 125 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6233
+Edge 4: generated 3950 L1 samples from 155 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5610
+Edge 3: generated 4050 L1 samples from 181 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5834
+Edge 0: generated 3800 L1 samples from 148 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6306
+Edge 2: generated 4900 L1 samples from 242 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.4981
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 784 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.9533
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 39 finished in 375.27s
+
+==================== EPOCH 40/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 2900 L1 samples from 99 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6231
+Edge 0: generated 3700 L1 samples from 141 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6292
+Edge 1: generated 4350 L1 samples from 237 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5971
+Edge 3: generated 3850 L1 samples from 139 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5984
+Edge 2: generated 3250 L1 samples from 115 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6529
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 666 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.7977
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 15 16 17 18 19 20]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 40 finished in 357.05s
+
+==================== EPOCH 41/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4850 L1 samples from 396 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6123
+Edge 3: generated 3550 L1 samples from 130 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5614
+Edge 2: generated 2950 L1 samples from 87 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6005
+Edge 4: generated 2850 L1 samples from 98 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7071
+Edge 1: generated 1450 L1 samples from 37 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.9761
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 543 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.7547
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (96 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 41 finished in 346.54s
+
+==================== EPOCH 42/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 3950 L1 samples from 171 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5610
+Edge 0: generated 4600 L1 samples from 270 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5365
+Edge 4: generated 3350 L1 samples from 113 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6489
+Edge 3: generated 3750 L1 samples from 131 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5848
+Edge 2: generated 2950 L1 samples from 92 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6168
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 4950 L2 samples from 677 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.7716
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 42 with Acc: 13.18 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 13.18%)
+Epoch 42 finished in 363.44s
+
+==================== EPOCH 43/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4050 L1 samples from 208 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6003
+Edge 1: generated 3750 L1 samples from 147 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6597
+Edge 4: generated 2800 L1 samples from 83 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6416
+Edge 2: generated 4050 L1 samples from 195 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5956
+Edge 0: generated 3550 L1 samples from 129 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6317
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 681 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.1026
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 43 with Acc: 13.48 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 13.48%)
+Epoch 43 finished in 346.84s
+
+==================== EPOCH 44/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 3550 L1 samples from 114 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5921
+Edge 0: generated 3550 L1 samples from 126 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6476
+Edge 1: generated 4050 L1 samples from 174 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5765
+Edge 4: generated 4250 L1 samples from 191 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5438
+Edge 2: generated 3800 L1 samples from 149 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6538
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 719 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.0050
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 44 with Acc: 13.74 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 13.74%)
+Epoch 44 finished in 340.06s
+
+==================== EPOCH 45/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 3750 L1 samples from 143 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6609
+Edge 4: generated 4600 L1 samples from 269 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5834
+Edge 1: generated 4100 L1 samples from 188 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5855
+Edge 0: generated 2200 L1 samples from 65 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.8527
+Edge 2: generated 2400 L1 samples from 77 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6744
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 630 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.8841
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 45 finished in 352.24s
+
+==================== EPOCH 46/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 4650 L1 samples from 268 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5760
+Edge 2: generated 3400 L1 samples from 116 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6839
+Edge 0: generated 4350 L1 samples from 220 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5797
+Edge 3: generated 2200 L1 samples from 61 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7134
+Edge 4: generated 2600 L1 samples from 78 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6602
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 614 components. Starting supervised...
+Cloud 0: supervised done, final loss: 1.9906
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 46 with Acc: 14.80 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 14.80%)
+Epoch 46 finished in 340.04s
+
+==================== EPOCH 47/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4400 L1 samples from 258 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6290
+Edge 2: generated 3300 L1 samples from 112 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6096
+Edge 3: generated 4000 L1 samples from 146 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5741
+Edge 1: generated 4150 L1 samples from 196 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6770
+Edge 4: generated 1100 L1 samples from 31 components. Starting SSL...
+Edge 4: SSL done, final loss: 1.2448
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 4950 L2 samples from 630 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.0695
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 19 20]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 47 finished in 327.42s
+
+==================== EPOCH 48/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 4500 L1 samples from 281 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6332
+Edge 0: generated 2900 L1 samples from 100 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6223
+Edge 1: generated 3150 L1 samples from 101 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6136
+Edge 4: generated 4000 L1 samples from 193 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6626
+Edge 3: generated 2600 L1 samples from 70 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7267
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 608 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.1979
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 48 finished in 332.35s
+
+==================== EPOCH 49/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 2: generated 3300 L1 samples from 113 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5734
+Edge 1: generated 2550 L1 samples from 75 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7229
+Edge 4: generated 4300 L1 samples from 190 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.5839
+Edge 3: generated 4200 L1 samples from 209 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6203
+Edge 0: generated 3800 L1 samples from 156 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5755
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 680 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.3263
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 49 finished in 338.31s
+
+==================== EPOCH 50/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 2600 L1 samples from 72 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7411
+Edge 4: generated 4100 L1 samples from 198 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6453
+Edge 0: generated 4000 L1 samples from 181 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6113
+Edge 2: generated 4300 L1 samples from 245 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6527
+Edge 3: generated 3600 L1 samples from 121 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6770
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 689 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.3567
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 50 with Acc: 15.12 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 15.12%)
+Epoch 50 finished in 380.76s
+
+==================== EPOCH 51/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3500 L1 samples from 133 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6610
+Edge 1: generated 4300 L1 samples from 206 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6394
+Edge 4: generated 3350 L1 samples from 133 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6920
+Edge 3: generated 3350 L1 samples from 122 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6675
+Edge 2: generated 3000 L1 samples from 95 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7413
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 649 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.3932
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 51 finished in 328.16s
+
+==================== EPOCH 52/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 3350 L1 samples from 119 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6846
+Edge 0: generated 4850 L1 samples from 351 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6355
+Edge 2: generated 3650 L1 samples from 132 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6110
+Edge 3: generated 2700 L1 samples from 74 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6709
+Edge 1: generated 3300 L1 samples from 112 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.7244
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 629 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.4006
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 52 finished in 364.23s
+
+==================== EPOCH 53/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4350 L1 samples from 237 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5930
+Edge 2: generated 4550 L1 samples from 259 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6474
+Edge 1: generated 2950 L1 samples from 87 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6767
+Edge 4: generated 2800 L1 samples from 73 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7081
+Edge 3: generated 3900 L1 samples from 151 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.5761
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 661 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.3685
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 53 finished in 357.75s
+
+==================== EPOCH 54/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 4400 L1 samples from 287 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5975
+Edge 4: generated 3150 L1 samples from 117 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7451
+Edge 1: generated 3750 L1 samples from 146 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6870
+Edge 2: generated 4750 L1 samples from 203 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.5568
+Edge 3: generated 2750 L1 samples from 77 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.7693
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 705 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.3710
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 54 finished in 385.90s
+
+==================== EPOCH 55/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 3800 L1 samples from 179 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6526
+Edge 2: generated 4200 L1 samples from 201 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6654
+Edge 3: generated 3450 L1 samples from 112 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6713
+Edge 1: generated 4550 L1 samples from 223 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5551
+Edge 0: generated 1300 L1 samples from 35 components. Starting SSL...
+Edge 0: SSL done, final loss: 1.2240
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 649 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.5469
+Edge Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 55 finished in 326.53s
+
+==================== EPOCH 56/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 3500 L1 samples from 123 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6562
+Edge 1: generated 3800 L1 samples from 138 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.6645
+Edge 4: generated 4300 L1 samples from 196 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.7181
+Edge 2: generated 3300 L1 samples from 114 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.7010
+Edge 0: generated 3550 L1 samples from 153 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6634
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 687 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.5640
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 56 finished in 329.87s
+
+==================== EPOCH 57/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 1: generated 2400 L1 samples from 76 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.9593
+Edge 3: generated 4350 L1 samples from 237 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6691
+Edge 2: generated 4700 L1 samples from 268 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6109
+Edge 0: generated 3950 L1 samples from 147 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.5726
+Edge 4: generated 1500 L1 samples from 41 components. Starting SSL...
+Edge 4: SSL done, final loss: 1.1002
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 4950 L2 samples from 626 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.5285
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (98 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 57 finished in 338.44s
+
+==================== EPOCH 58/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4650 L1 samples from 262 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6497
+Edge 1: generated 4300 L1 samples from 185 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5946
+Edge 4: generated 4450 L1 samples from 208 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6366
+Edge 2: generated 1600 L1 samples from 44 components. Starting SSL...
+Edge 2: SSL done, final loss: 1.0609
+Edge 0: generated 1300 L1 samples from 33 components. Starting SSL...
+Edge 0: SSL done, final loss: 1.1725
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 613 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.5644
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 58 finished in 319.79s
+
+==================== EPOCH 59/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 3850 L1 samples from 173 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.6819
+Edge 3: generated 4650 L1 samples from 263 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6462
+Edge 1: generated 1550 L1 samples from 44 components. Starting SSL...
+Edge 1: SSL done, final loss: 1.1005
+Edge 2: generated 2300 L1 samples from 67 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.8217
+Edge 4: generated 3550 L1 samples from 137 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6600
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 587 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.6390
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (99 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Saved best model at epoch 59 with Acc: 15.18 %
+*** Checkpoint saved: /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/checkpoint.pt (Acc: 15.18%)
+Epoch 59 finished in 329.94s
+
+==================== EPOCH 60/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 3: generated 4250 L1 samples from 188 components. Starting SSL...
+Edge 3: SSL done, final loss: 0.6788
+Edge 4: generated 3850 L1 samples from 138 components. Starting SSL...
+Edge 4: SSL done, final loss: 0.6851
+Edge 1: generated 4250 L1 samples from 169 components. Starting SSL...
+Edge 1: SSL done, final loss: 0.5796
+Edge 2: generated 4400 L1 samples from 189 components. Starting SSL...
+Edge 2: SSL done, final loss: 0.6100
+Edge 0: generated 2450 L1 samples from 81 components. Starting SSL...
+Edge 0: SSL done, final loss: 0.7542
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 5000 L2 samples from 729 components. Starting supervised...
+Cloud 0: supervised done, final loss: 2.6493
+Edge Aggregation Started
+Cloud Aggregation Started
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (5000,)
+Targets - Unique values: [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
+ 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47
+ 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70 71
+ 72 73 74 75 76 77 78 79 80 81 82 83 84 85 86 87 88 89 90 91 92 93 94 95
+ 96 97 98 99]
+Targets - Min: 0, Max: 99
+Predictions - Type: int64, Shape: (5000,)
+Predictions - Unique values (first 20): [ 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19]
+  ... (100 total unique predictions)
+Predictions - Min: 0, Max: 99
+--- End Validation Debug Info ---
+Epoch 60 finished in 346.40s
+
+==================================================
+TRAINING FINISHED. Loading best model for testing...
+Loaded best model from epoch 59
+
+=== Communication Report ===
+client_to_server_MB: 0.00 MB
+server_to_client_MB: 0.00 MB
+client_to_edge_MB: 665.57 MB
+edge_to_client_MB: 620.11 MB
+edge_to_cloud_MB: 101.28 MB
+cloud_to_edge_MB: 22.66 MB
+total_comm_MB: 1409.61 MB
+[MiSFP] MiSFP-K2: final-round test acc=16.11% macro-F1=14.21%  total_comm=1409.614 MB
+[MiSFP] summary -> /workspace/campaign/outputs_journal_v1/misfp_dir0.1_k2_budget2.0x_s1/2682f389b9b1/bda6fdaf01e400d32e6526decacc103875eee58728f4e7f02286e53033f96ed7/misfp_summary.json
