@@ -144,6 +144,20 @@ def load_run(eid):
         r["hist_round"] = [int(x["round"]) for x in h]
         r["hist_val"] = [100 * float(x["validation_metric_value"]) for x in h]
         r["hist_cum_GiB"] = list(np.cumsum([float(x["comm_total_delta_MB"] or 0) for x in h]) / 1024)
+    # Model synchronization traffic (MiB; the tracker's MB are 2**20 bytes). Each tier's uplink counter is
+    # model upload + prototype payload, so for MiSFP runs the uplink model bytes are exact once the exact
+    # serialized packet bytes are subtracted; the runs show upload == download per tier. H-SFP does not
+    # serialize its (mean, std) payload separately, so its model traffic is taken as twice the downlink,
+    # the identity verified on every MiSFP run (model_sync_check).
+    if all(comm.get(k) is not None for k in ("client_to_edge_MB", "edge_to_client_MB", "edge_to_cloud_MB",
+                                             "cloud_to_edge_MB")) and not tot.get("snapshot_broadcast_MB"):
+        down = comm["edge_to_client_MB"] + comm["cloud_to_edge_MB"]
+        if variant == "hsfp":
+            r["model_sync_MB"] = 2 * down
+        elif r["ce_bytes"] is not None and r["ec_bytes"] is not None:
+            up = (comm["client_to_edge_MB"] - r["ce_bytes"] / 2 ** 20) + (comm["edge_to_cloud_MB"] - r["ec_bytes"] / 2 ** 20)
+            r["model_sync_MB"] = up + down
+            r["model_sync_check"] = up - down   # ~0 when upload == download
     r.update(fidelity(rd))
     if variant == "hsfp":
         r["components_per_class"] = 1.0
@@ -151,7 +165,7 @@ def load_run(eid):
 
 
 UNITS = {"accuracy": "%", "macro_f1": "%", "worst10": "%", "ce_bytes": "byte", "ec_bytes": "byte",
-         "total_comm_MB": "MB", "runtime": "s", "peak_memory": "MiB", "components_per_class": "count",
+         "total_comm_MB": "MB", "model_sync_MB": "MiB", "runtime": "s", "peak_memory": "MiB", "components_per_class": "count",
          "between_source_ratio": "ratio", "nll_mixture": "nat/dim", "nll_single": "nat/dim",
          "swd_mixture": "feature_unit", "swd_single": "feature_unit", "mmd_mixture": "unitless",
          "mmd_single": "unitless"}
@@ -229,7 +243,8 @@ def tables(runs):
                        ("adaptive", "$8C+R(8+2pd)$ B")):
         ce = cell(nat, "ce_bytes", 1 / 2 ** 20, 2, split=P, variant=v)[0] if v != "hsfp" else r"n/a$^\ast$"
         ec = cell(nat, "ec_bytes", 1 / 2 ** 20, 2, split=P, variant=v)[0] if v != "hsfp" else r"n/a$^\ast$"
-        L.append(f"{LABEL[v]} & {ce} & {ec} & {MISSING} & {cell(nat, 'total_comm_MB', 1, 1, split=P, variant=v)[0]} & "
+        ms = cell(nat, "model_sync_MB", 1, 1, split=P, variant=v)[0] + (r"$^\dagger$" if v == "hsfp" else "")
+        L.append(f"{LABEL[v]} & {ce} & {ec} & {ms} & {cell(nat, 'total_comm_MB', 1, 1, split=P, variant=v)[0]} & "
                  f"{cell(nat, 'runtime', 1, 0, split=P, variant=v)[0]} & {cell(nat, 'peak_memory', 1, 0, split=P, variant=v)[0]} & {formula}" + r" \\")
     write_rows("misfp_resources_rows", L)
 

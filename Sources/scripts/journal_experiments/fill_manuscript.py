@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 from collections import defaultdict
 from pathlib import Path
@@ -85,11 +86,31 @@ def legacy_host(prefix):
     return any("legacy_ledger" in (RUNS.get(f"{prefix}_s{s}") or {}).get("notes", "") for s in ACTIVE_SEEDS)
 
 
+_PP = Path(__file__).resolve().parents[2] / "results" / "journal_v1" / "partial_runs.json"
+PARTIAL = json.load(open(_PP)) if _PP.exists() else {}   # runs stopped at the deadline (deadline_cutoff.sh)
+
+
+def partial(prefix, key):
+    """(value, round) for a run stopped at the deadline, when the cell has no completed run."""
+    if len(ACTIVE_SEEDS) != 1 or key not in ("final_acc", "final_f1"):
+        return None
+    p = PARTIAL.get(f"{prefix}_s{ACTIVE_SEEDS[0]}")
+    return (p[key], p["round"]) if p else None
+
+
 def cell(prefix, key, scale=1.0, nd=2):
     if prefix is None:
         return PENDING
     v = vals(prefix, key)
+    if not v and partial(prefix, key):
+        x, k = partial(prefix, key)
+        return f"{x * scale:.{nd}f}" + r"$^{r=" + str(k) + "}$"
     if not v:
+        # a completed run that never met the convergence rule is a measured outcome, not a missing value
+        done = [RUNS.get(f"{prefix}_s{s}") for s in ACTIVE_SEEDS]
+        done = [r for r in done if r and r["status"].startswith("completed-")]
+        if key == "conv_rounds" and done and all("not_converged" in r.get("notes", "") for r in done):
+            return "n.c."
         return PENDING
     if key in TIMING_KEYS and legacy_host(prefix):
         # wall-clock from the previous host (RTX 3080 Ti, 4 concurrent lanes): not comparable with
@@ -188,6 +209,22 @@ def main():
     for mm in (0, 1, 5, 10, 20):
         rows.append(row(str(mm), f"{JP}_memM_cifar100_M{mm}", [ACC, F1, DRIFT, CONV, ("mem_overhead_MB", 1, 2)]))
     write("memory_size_ablation", rows, a.dry_run)
+    # Values quoted in the prose (sections/experiments.tex) for runs that may finish after the text was
+    # written; the macros expand to \pending until the run is collected.
+    def pv(prefix):
+        if not vals(prefix, "final_acc") and partial(prefix, "final_acc"):
+            x, k = partial(prefix, "final_acc")
+            return f"{100 * x:.2f}\\% (round {k} of 60; run stopped at the deadline)"
+        c = cell(prefix, *ACC)
+        return c if c == PENDING else c + r"\%"
+    write("prose_values", [
+        r"\providecommand{\PVcHundredMildEhsfp}{" + pv(f"{JP}_noniid_a0p7_cifar100_ehsfp") + "}",
+        r"\providecommand{\PVcHundredSevereEhsfp}{" + pv(f"{JP}_noniid_a0p3_cifar100_ehsfp") + "}",
+        r"\providecommand{\PVmemTwentyAcc}{" + pv(f"{JP}_memM_cifar100_M20") + "}",
+        r"\providecommand{\PVpartialNote}{" + (r" $^{r=k}$: run stopped at the submission deadline; accuracy and F1"
+                                               r" at round $k$ of 60, other metrics not reported." if any(
+            e not in RUNS or not RUNS[e]["status"].startswith("completed-") for e in PARTIAL) else "") + "}",
+    ], a.dry_run)
 
     rows = []
     for label, k in (("Average", "average"), ("Sample-count weighted", "sample_count_weighted"),

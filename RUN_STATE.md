@@ -5,20 +5,20 @@ container disk. `/workspace` is **not** a persistent volume: recycling or destro
 everything that is not committed and copied off-box.
 
 <!-- AUTO-STATUS:BEGIN -->
-_Auto-updated 2026-10-19T08:00:46+09:00 (KST) by scripts/campaign/campaign_status.py_
+_Auto-updated 2026-10-19T10:05:47+09:00 (KST) by scripts/campaign/campaign_status.py_
 
 | Paper | validated done | running | queued | failed | remaining P1/P2/P3/P4 |
 |---|---|---|---|---|---|
 | E-HSFP | 99 | 3 | 0 | 0 | 3/0/0/0 |
 | MiSFP | 93 | 0 | 0 | 0 | 0/0/0/0 |
 
-- Lanes alive: 3 / 12; running: `j3_memM_cifar100_M20_s0` (49/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (48/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (48/60)
+- Lanes alive: 3 / 12; running: `j3_memM_cifar100_M20_s0` (54/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (53/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (53/60)
 - Failed (need review): none
-- Resources: [{'index': '0', 'util_pct': '95', 'mem_used_MiB': '3374', 'mem_total_MiB': '49140'}]; RAM avail 409.2 GiB; disk free 9.5 GiB; pressure: none
+- Resources: [{'index': '0', 'util_pct': '16', 'mem_used_MiB': '4716', 'mem_total_MiB': '49140'}]; RAM avail 413.5 GiB; disk free 2.3 GiB; pressure: ['disk<5GiB']
 - Measured hours/run on this machine: {'misfp': 6.02, 'cifar100_ehsfp': 8.36, 'cifar10': 5.32, 'cifar100_hsfp': 7.62, 'ham10000': 3.74}
-- ETA all queued work: 2026-10-19T16:22+09:00 KST (by tier: {'P1': '2026-10-19T16:22+09:00'}); fits deadline: True
-- Last collection: 2026-10-19T08:00:46+09:00 (rc 0); next: 2026-10-19T10:00:00+09:00
-- LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 14, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 9, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
+- ETA all queued work: 2026-10-19T18:27+09:00 KST (by tier: {'P1': '2026-10-19T18:27+09:00'}); fits deadline: True
+- Last collection: 2026-10-19T10:05:47+09:00 (rc 0); next: 2026-10-19T12:00:00+09:00
+- LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 16, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 9, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
 <!-- AUTO-STATUS:END -->
 
 ## Where things are
@@ -184,3 +184,7 @@ billed). The 2-hourly cron collection re-checks the same preconditions as a safe
 - 2026-10-17 20:27 KST: fixed `scripts/campaign/collect_misfp.py` EID regex (`\w+?` -> `[\w.]+?`); runs with a dot in the variant (`budget1.5x`, `budget2.0x`) had been silently skipped. Unmatched IDs are now reported as collector errors. Backup: `/workspace/campaign/backups/misfp/collect_misfp.py.20261017`.
 
 - 2026-10-18 KST: MiSFP campaign complete (93/93 runs). Result prose added to the MiSFP paper (user request "update result of MiSFP paper"): abstract, intro contribution (v), experiments setup paragraph (200 clients/5 edges/frac 0.1/60 rounds/Adam 1e-4/bs16 from resolved config; was "10 edges"), new `\subsection{Results}` (sec:results), discussion "Scope of the empirical evidence", conclusion, setup-table CIFAR-100 row, main-table footnote. Every number is copied from generated/*.tex or results/measurements.csv (seed means of validated runs). Backups: `/workspace/campaign/backups/misfp/*.20261018`. Prose numbers are static: if MiSFP runs are ever re-collected with different values, re-check sec:results.
+- 2026-10-19 08:59 KST E-HSFP prose updated with collected results (abstract, intro contribution 4, experiments setup/implementation/convergence/main/robustness/ablation/scalability, discussion, conclusion); backups /workspace/campaign/backups/ehsfp/*.20261019. Pending in prose: CIFAR-100 E-HSFP dir(0.7)/dir(0.3) and memory M=20 (slow runs). Auto-stop hold request was denied by the permission classifier; autostop.sh unchanged.
+- 2026-10-19 09:33 KST Completeness pass: MiSFP tab:resources model-sync column now computed (collect_misfp.py: tracker totals minus exact packet bytes; upload==download verified exactly on 75 runs; H-SFP = 2x downlink, dagger note in caption) -> +4 cells. E-HSFP fill_manuscript.py: completed runs that never meet the convergence rule show 'n.c.' instead of \pending (3 HAM H-SFP cells); caption updated. Backups *.20261019 in /workspace/campaign/backups/{misfp,ehsfp}.
+- 2026-10-19 09:36 KST User: no more runs; finish current work. fill_manuscript.py now writes generated/prose_values.tex (CIFAR-100 dir0.7/dir0.3 E-HSFP acc, memory M=20 acc) used by experiments.tex prose, so the final collection fills those sentences before autostop. No further scope changes.
+- 2026-10-19 09:42 KST User: stop at 13:00 KST if not finished. scripts/campaign/deadline_cutoff.sh (new) scheduled 13:00 KST (session background task): records last-round val acc/F1 of unfinished runs to results/journal_v1/partial_runs.json, SIGTERMs them (lane marks .failed, then final collection + autostop). fill_manuscript.py prints such cells as value^{r=k} with caption note (\PVpartialNote) and prose 'round k of 60; run stopped at the deadline'. Runs past round 60 are left to finish.
