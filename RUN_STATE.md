@@ -5,19 +5,19 @@ container disk. `/workspace` is **not** a persistent volume: recycling or destro
 everything that is not committed and copied off-box.
 
 <!-- AUTO-STATUS:BEGIN -->
-_Auto-updated 2026-10-19T10:05:47+09:00 (KST) by scripts/campaign/campaign_status.py_
+_Auto-updated 2026-10-19T12:45:39+09:00 (KST) by scripts/campaign/campaign_status.py_
 
 | Paper | validated done | running | queued | failed | remaining P1/P2/P3/P4 |
 |---|---|---|---|---|---|
-| E-HSFP | 99 | 3 | 0 | 0 | 3/0/0/0 |
+| E-HSFP | 99 | 0 | 0 | 3 | 0/0/0/0 |
 | MiSFP | 93 | 0 | 0 | 0 | 0/0/0/0 |
 
-- Lanes alive: 3 / 12; running: `j3_memM_cifar100_M20_s0` (54/60), `j3_noniid_a0p7_cifar100_ehsfp_s0` (53/60), `j3_noniid_a0p3_cifar100_ehsfp_s0` (53/60)
-- Failed (need review): none
-- Resources: [{'index': '0', 'util_pct': '16', 'mem_used_MiB': '4716', 'mem_total_MiB': '49140'}]; RAM avail 413.5 GiB; disk free 2.3 GiB; pressure: ['disk<5GiB']
+- Lanes alive: 1 / 12; running: none
+- Failed (need review): j3_memM_cifar100_M20_s0, j3_noniid_a0p3_cifar100_ehsfp_s0, j3_noniid_a0p7_cifar100_ehsfp_s0
+- Resources: [{'index': '0', 'util_pct': '0', 'mem_used_MiB': '1', 'mem_total_MiB': '49140'}]; RAM avail 421.0 GiB; disk free 0.6 GiB; pressure: ['disk<5GiB']
 - Measured hours/run on this machine: {'misfp': 6.02, 'cifar100_ehsfp': 8.36, 'cifar10': 5.32, 'cifar100_hsfp': 7.62, 'ham10000': 3.74}
-- ETA all queued work: 2026-10-19T18:27+09:00 KST (by tier: {'P1': '2026-10-19T18:27+09:00'}); fits deadline: True
-- Last collection: 2026-10-19T10:05:47+09:00 (rc 0); next: 2026-10-19T12:00:00+09:00
+- ETA all queued work: 2026-10-19T12:45+09:00 KST (by tier: {}); fits deadline: True
+- Last collection: 2026-10-19T12:45:39+09:00 (rc 0); next: 2026-10-19T14:00:00+09:00
 - LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 16, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 9, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
 <!-- AUTO-STATUS:END -->
 
@@ -188,3 +188,5 @@ billed). The 2-hourly cron collection re-checks the same preconditions as a safe
 - 2026-10-19 09:33 KST Completeness pass: MiSFP tab:resources model-sync column now computed (collect_misfp.py: tracker totals minus exact packet bytes; upload==download verified exactly on 75 runs; H-SFP = 2x downlink, dagger note in caption) -> +4 cells. E-HSFP fill_manuscript.py: completed runs that never meet the convergence rule show 'n.c.' instead of \pending (3 HAM H-SFP cells); caption updated. Backups *.20261019 in /workspace/campaign/backups/{misfp,ehsfp}.
 - 2026-10-19 09:36 KST User: no more runs; finish current work. fill_manuscript.py now writes generated/prose_values.tex (CIFAR-100 dir0.7/dir0.3 E-HSFP acc, memory M=20 acc) used by experiments.tex prose, so the final collection fills those sentences before autostop. No further scope changes.
 - 2026-10-19 09:42 KST User: stop at 13:00 KST if not finished. scripts/campaign/deadline_cutoff.sh (new) scheduled 13:00 KST (session background task): records last-round val acc/F1 of unfinished runs to results/journal_v1/partial_runs.json, SIGTERMs them (lane marks .failed, then final collection + autostop). fill_manuscript.py prints such cells as value^{r=k} with caption note (\PVpartialNote) and prose 'round k of 60; run stopped at the deadline'. Runs past round 60 are left to finish.
+- 2026-10-19 10:06 KST (review): disk<5GiB alert, 2.3 GiB free on 32 GB overlay. Remaining 3 runs (round 53-54/60, ~50 MB outputs each) fit; nothing deleted. 3/12 lanes alive is expected (queue empty). No failures; no action.
+- 2026-10-19 12:05 KST (review): disk<5GiB alert, 0.7 GiB free. The drop from 2.3 GiB comes from new non-campaign venvs /venv/ML (6.6G) and /venv/DS (2.4G), created 09:24-10:17 KST. Disk is stable now. The 3 runs (57-58/60) are already at final output size, so they fit. Nothing deleted. Free space before starting any new work.
