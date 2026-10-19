@@ -5,7 +5,7 @@ container disk. `/workspace` is **not** a persistent volume: recycling or destro
 everything that is not committed and copied off-box.
 
 <!-- AUTO-STATUS:BEGIN -->
-_Auto-updated 2026-10-19T12:45:39+09:00 (KST) by scripts/campaign/campaign_status.py_
+_Auto-updated 2026-10-19T14:00:44+09:00 (KST) by scripts/campaign/campaign_status.py_
 
 | Paper | validated done | running | queued | failed | remaining P1/P2/P3/P4 |
 |---|---|---|---|---|---|
@@ -14,10 +14,10 @@ _Auto-updated 2026-10-19T12:45:39+09:00 (KST) by scripts/campaign/campaign_statu
 
 - Lanes alive: 1 / 12; running: none
 - Failed (need review): j3_memM_cifar100_M20_s0, j3_noniid_a0p3_cifar100_ehsfp_s0, j3_noniid_a0p7_cifar100_ehsfp_s0
-- Resources: [{'index': '0', 'util_pct': '0', 'mem_used_MiB': '1', 'mem_total_MiB': '49140'}]; RAM avail 421.0 GiB; disk free 0.6 GiB; pressure: ['disk<5GiB']
+- Resources: [{'index': '0', 'util_pct': '0', 'mem_used_MiB': '1', 'mem_total_MiB': '49140'}]; RAM avail 423.3 GiB; disk free 0.6 GiB; pressure: ['disk<5GiB']
 - Measured hours/run on this machine: {'misfp': 6.02, 'cifar100_ehsfp': 8.36, 'cifar10': 5.32, 'cifar100_hsfp': 7.62, 'ham10000': 3.74}
-- ETA all queued work: 2026-10-19T12:45+09:00 KST (by tier: {}); fits deadline: True
-- Last collection: 2026-10-19T12:45:39+09:00 (rc 0); next: 2026-10-19T14:00:00+09:00
+- ETA all queued work: 2026-10-19T14:00+09:00 KST (by tier: {}); fits deadline: True
+- Last collection: 2026-10-19T14:00:44+09:00 (rc 0); next: 2026-10-19T16:00:00+09:00
 - LaTeX builds: {"E-HSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/E-HSFP Journal/main_autofilled.pdf", "pages": 16, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}, "MiSFP Journal": {"pdf": "/workspace/Split-Federated-Merging-Learning/Submissions/MiSFP Journal/main_autofilled.pdf", "pages": 9, "latex_errors": 0, "undefined_citations": [], "undefined_references": [], "bibtex_errors": 0}}
 <!-- AUTO-STATUS:END -->
 
