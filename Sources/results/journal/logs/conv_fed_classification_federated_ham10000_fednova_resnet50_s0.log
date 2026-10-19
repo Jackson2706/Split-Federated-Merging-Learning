@@ -1,0 +1,20 @@
+[Runner] Seed: 0
+[Runner] task=classification  method=federated
+[Runner] cfg=configs/classification/federated/exp_8t1hy7pq.yaml
+
+Method: fednova
+Train len: 8012
+  0%|          | 0/60 [00:00<?, ?it/s]  0%|          | 0/60 [00:46<?, ?it/s]
+Round 1: time=2.23s  cpu=31.6%  ram=31.6MB  gpu=676.2MB
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 315, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 305, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 247, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Federated/runner.py", line 107, in run
+    global_weights, _ = strategy.aggregate(local_updates, global_weights, local_weights)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/Federated/server/FedNovaAggregator.py", line 49, in aggregate
+    new_global_weights[k] = new_global_weights[k].float() + agg_delta[k]
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

@@ -1,0 +1,160 @@
+\documentclass[10pt,twocolumn,letterpaper]{article}
+\usepackage[rebuttal]{cvpr}
+
+% Include other packages here, before hyperref.
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{makecell}
+% Import additional packages in the preamble file, before hyperref
+\input{preamble}
+
+% If you comment hyperref and then uncomment it, you should delete
+% egpaper.aux before re-running latex.  (Or just hit 'q' on the first latex
+% run, let it finish, and you should be clear).
+\definecolor{cvprblue}{rgb}{0.21,0.49,0.74}
+\usepackage[pagebackref,breaklinks,colorlinks,allcolors=cvprblue]{hyperref}
+
+% \newcommand{\TODO}[1]{\textbf{\color{red}[TODO: #1]}}
+% \newcommand{\NMD}[1]{\textbf{\color{blue}[NMD: #1]}}
+\newcommand{\tb}[1]{\textcolor{blue}{#1}}
+
+% If you wish to avoid re-using figure, table, and equation numbers from
+% the main paper, please uncomment the following and change the numbers
+% appropriately.
+%\setcounter{figure}{2}
+%\setcounter{table}{1}
+%\setcounter{equation}{2}
+
+% If you wish to avoid re-using reference numbers from the main paper,
+% please uncomment the following and change the counter value to the
+% number of references you have in the main paper (here, 100).
+%\makeatletter
+%\apptocmd{\thebibliography}{\global\c@NAT@ctr 100\relax}{}{}
+%\makeatother
+
+%%%%%%%%% PAPER ID  - PLEASE UPDATE
+\def\paperID{36308} % *** Enter the Paper ID here
+\def\confName{CVPR}
+\def\confYear{2026}
+
+\begin{document}
+
+%%%%%%%%% TITLE - PLEASE UPDATE
+\title{Rebuttal for H-SFP: Lightweight Federated Learning via Hierarchical Split Prototyping}
+\maketitle
+\thispagestyle{empty}
+\appendix
+We thank the reviewers for constructive feedback. More experiments conducted immediately after submission allow us to directly address the concerns raised and rigorously define our method's limitations. We present these below.
+%%%%%%%%% BODY TEXT - ENTER YOUR RESPONSE BELOW
+\noindent\textbf{===========Reply to Reviewer \#1 fi8r============}
+\noindent\textbf{Q1: Generalization to Other CV Tasks.}~We extended the segmentation task on the ISIC-2018 dataset using ResNet50-UNet and added to the revised manuscript. 
+% Unlike FL (full model on clients) or split baselines (encoder on clients, decoder on server), ours partitions the encoder into two parts, processed by the clients and edges, respectively, with the cloud handling the decoder.
+\begin{table}[h]
+\centering
+\label{tab:segmentation_results}
+\begin{tabular}{l|ccc}
+\toprule
+\textbf{Method} & \textbf{IoU (\%)} & \textbf{DICE (\%)} & \textbf{\makecell{Training\\time (h)}} \\ \midrule
+FedAvg          & $13.7 \pm 1.2$          & $23.4 \pm 1.5$          & $42.5 \pm 0.8$   \\ 
+SplitFed        & $15.3 \pm 0.9$          & $24.5 \pm 1.1$          & $38.2 \pm 0.6$   \\
+HeteroSFL       & $16.3 \pm 0.7$          & $24.9 \pm 0.8$          & $22.8 \pm 0.4$   \\
+HierFL          & $15.9 \pm 1.1$          & $25.1 \pm 1.3$          & $48.3 \pm 0.7$   \\
+HSFL (A)        & $24.5 \pm 0.6$          & $32.2 \pm 0.7$          & $12.4 \pm 0.3$   \\
+\textbf{Ours (A)} & $\mathbf{28.3 \pm 0.3}$ & $\mathbf{35.1 \pm 0.4}$ & $\mathbf{3.8 \pm 0.1}$   \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\noindent\textbf{Q2: Scalability and Architectural Robustness.}~We run experiments with 2 different backbones and ImageNet-1K under IID conditions. We will update in the revised version.
+
+\begin{table}[h]
+\centering
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{l|ccc}
+\toprule
+\textbf{Method} & \textbf{\makecell{Training\\time (h)}} & \textbf{Accuracy (\%)} & \textbf{Backbone} \\ \midrule
+FedAvg          & $185.2 \pm 4.5$ & $23.1 \pm 1.4$ & ResNet-50 \\
+SplitFed        & $162.8 \pm 3.1$ & $25.5 \pm 1.1$ & ResNet-50 \\
+HeteroSFL       & $94.5 \pm 2.2$  & $26.3 \pm 0.8$ & ResNet-50 \\
+HierFL          & $198.4 \pm 5.1$ & $22.8 \pm 1.6$ & ResNet-50 \\
+HSFL (A)        & $54.1 \pm 1.4$  & $24.6 \pm 0.9$ & ResNet-50 \\
+\textbf{Ours (A)} & $\mathbf{14.2 \pm 0.4}$ & $\mathbf{27.9 \pm 0.3}$ & \textbf{ResNet-50} \\ \midrule
+FedAvg          & $164.5 \pm 3.8$ & $21.4 \pm 1.5$ & VGG-16 \\
+SplitFed        & $148.2 \pm 2.9$ & $23.4 \pm 1.2$ & VGG-16 \\
+HeteroSFL       & $82.3 \pm 1.8$  & $24.2 \pm 0.9$ & VGG-16 \\
+HierFL          & $175.6 \pm 4.2$ & $21.0 \pm 1.7$ & VGG-16 \\
+HSFL (A)        & $48.6 \pm 1.1$  & $22.5 \pm 1.0$ & VGG-16 \\
+\textbf{Ours (A)} & $\mathbf{12.1 \pm 0.3}$ & $\mathbf{25.3 \pm 0.4}$ & \textbf{VGG-16} \\ \bottomrule
+\end{tabular}
+\label{tab:imagenet_scalability}
+\end{table}
+
+\noindent\textbf{Q3: Organization.}~We agree and will update the revision.
+
+\noindent\textbf{Q4: Metrics.}~We will add the training time to the result.
+
+\noindent\textbf{Q5: Measure of statistical significance.}~We will update the result with a measure of standard deviation over 5 runs.
+
+\noindent\textbf{Q6: Missing References.}~We will cite the momentum-based works and add a discussion on integrating correction-based methods (e.g., SCAFFOLD, FedDyn) into H-FSP.
+
+\noindent\textbf{===========Reply to Reviewer \#2 qwEX==========}
+\noindent\textbf{Q1: Justification of NT-Xent Loss \& Computational Efficiency.}~We use NT-Xent to ensure robustness in non-IID settings and will add validation against supervised baselines in the revision. We clarify that ``lightweight" refers to the reduced client RAM achieved via model partitioning, which compensates for the larger batch sizes required by NT-Xent, ensuring the total memory usage remains feasible on clients.
+
+\noindent\textbf{Q2: Clarification on Edge Server Assignment.}~While assignment can be optimized for communication, computation, privacy, or latency, we employ random assignment to isolate our learning strategy's contribution and establish a performance lower bound.
+
+\noindent\textbf{Q3: Choice of Evaluation Metrics (F1 Score vs. Accuracy).}~We agree that accuracy is essential for standard benchmarking. We will add accuracy to our results. 
+
+
+\noindent\textbf{Q4: Source of Performance Gains \& Training Strategy Analysis.}~Gains stem from our Split Learning framework, which utilizes feature-level augmentation derived solely from global prototypes and statistics. This synthesizes representations populating class-conditional feature manifolds~\cite{tan2022fedproto}, acting as generative regularization. Unlike FL parameter aggregation, this strategy enriches the latent space with diverse semantic variations~\cite{Zhu2021Prototype}, improving generalization even in IID settings.
+
+\noindent\textbf{Q5: Comparison with HeteroSFL.}~We will incorporate HeteroSFL as a direct baseline and add a detailed architectural breakdown table to the revision (see Q1 and Q2 of Reviewer \#1 for the reported results).
+
+\noindent\textbf{Q6: Network Architecture \& Model Partitioning Details}~
+% While ours primarily focuses on the learning strategy, we agree that clarity is essential. 
+We will add a detailed architectural breakdown and partition criteria for the revision.
+
+\noindent\textbf{Q7: Empirical Evaluation.}~Refer to Q2 of Reviewer \#1.
+
+\noindent\textbf{Q8: Revision of Figure 1.}~We will redesign Figure 1 to clearly distinguish the roles and adjust text scaling.
+
+\noindent\textbf{Q9: Open-Source Availability.}~Due to the rebuttal policy, we cannot include external links here. We will release the repository and provide the link in the final version.
+
+\noindent\textbf{===========Reply to Reviewer \#3 qg5d==========}
+\noindent\textbf{Q1: Validity of Gaussian-based Feature Synthesis.}~Approximating deep features via statistics is well-established in~\cite{tan2022fedproto} and~\cite{Zhu2021Prototype}, proving that $\mu$ \& $\sigma$ sufficiently captures semantic information. Ours advances this by modeling elliptical geometry rather than assuming naive spherical clusters.
+
+\noindent\textbf{Q2: Empirical Evaluation.}~Refer to Q2 of Reviewer \#1.
+
+\noindent\textbf{Q3: Privacy \& Reconstruction Risks.}~Our current scope prioritizes communication efficiency, but we recognize the importance of defense against inversion. This can be addressed by applying encryption to the shared statistics. We will explicitly list it as a promising direction.
+
+
+%%%%%%%%% REFERENCES
+{
+    \small
+    % --- FIX: Tắt số "1" màu xanh (back-references) ---
+    \makeatletter
+    \providecommand{\backref}[1]{} % Đảm bảo lệnh tồn tại để không lỗi
+    \renewcommand{\backref}[1]{}   % Gán về rỗng để không in ra số trang
+    \makeatother
+    % --------------------------------------------------
+
+    \begin{thebibliography}{7}
+
+    % \bibitem[Mu and Shen(2026)]{Mu2026FSL}
+    % ``Federated Split Learning With Improved Communication and Storage Efficiency'', \textit{IEEE TMC}, 2026.
+
+    % \bibitem[Shin et al.(2023)]{shin2023fedsplitx}
+    % ``FedSplitX: Federated split learning for computationally-constrained heterogeneous clients'', \textit{arXiv:2310.14579}, 2023.
+
+    % \bibitem[Xu et al.(2024)]{Xu2024Accelerating}
+    % ``Accelerating Split Federated Learning Over Wireless Communication Networks'', \textit{IEEE TWC}, 2024.
+
+    \bibitem[Tan et al.(2022)]{tan2022fedproto}
+    ``FedProto: Federated Prototype Learning Across Heterogeneous Clients'', \textit{AAAI}, pp. 8432–8440, 2022.
+
+    \bibitem[Zhu et al.(2021)]{Zhu2021Prototype}
+    F. Zhu \textit{et al.}, ``Prototype Augmentation and Self-Supervision for Incremental Learning'', \textit{CVPR}, pp. 5867–5876, 2021.
+
+    \end{thebibliography}
+}
+\end{document}

@@ -1,0 +1,517 @@
+import copy
+import logging
+import os
+import time
+from collections import deque
+
+import numpy as np
+import psutil
+import torch
+from ehsfp.communication import add_communication, mb_of, new_communication_tracker
+from segmentation.HeteroSFL.clients import DiceFocalLoss
+from segmentation.training_metrics import compute_iou_and_dice
+from torch import nn
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class FullPipelineModel(nn.Module):
+    def __init__(self, client_model, edge_model, cloud_model):
+        super().__init__()
+        self.client = client_model
+        self.edge = edge_model
+        self.cloud = cloud_model
+
+    def forward(self, x):
+        x = self.client(x)
+        x = self.edge(x)
+        x = self.cloud(x)
+        return x
+
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = [int(i) for i in idxs]
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, index):
+        image, label = self.dataset[self.idxs[index]]
+        return image.clone(), label.clone()
+
+
+def estimate_gradient_size_MB(model, input_shape, device="cpu"):
+    """Estimate the size of the gradient sent back (i.e. the model's output size)."""
+    model = model.to(device).eval()
+    dummy_input = torch.randn(*input_shape).to(device)
+    with torch.no_grad():
+        output = model(dummy_input)
+    return (output.numel() * output.element_size()) / (1024**2)
+
+
+class HierarchicalFL:
+    def __init__(
+        self,
+        args,
+        client_model,
+        client_weights,
+        edge_model,
+        edge_weights,
+        cloud_model,
+        cloud_weight,
+        test_dataset=None,
+    ):
+        self.args = args
+        self.client_model = client_model
+        self.edge_model = edge_model
+        self.cloud_model = cloud_model
+
+        self.client_weight = client_weights
+        self.edge_weight = edge_weights
+        self.cloud_weight = cloud_weight
+
+        self.structure, self.connectivity = self._build_hierarchy()
+        self.total_layers = len(args["mid_server"]) + 1
+        self.test_dataset = test_dataset
+
+        self.comm_tracker = new_communication_tracker()
+        self.client_cache = deque(maxlen=20)
+
+    def _build_hierarchy(self):
+        structure = {}
+        connectivity = {}
+
+        def build_layer(layer_idx):
+            layer_dict = {}
+            conn_dict = {}
+
+            if layer_idx == -1:
+                num_clients = self.args["num_users"]
+                num_edges = self.args["mid_server"][0]
+                clients_per_edge = num_clients // num_edges
+                all_clients = list(range(num_clients))
+
+                for edge_id in range(num_edges):
+                    assigned = (
+                        all_clients
+                        if edge_id == num_edges - 1
+                        else list(
+                            np.random.choice(
+                                all_clients, clients_per_edge, replace=False
+                            )
+                        )
+                    )
+                    for cid in assigned:
+                        layer_dict[cid] = copy.deepcopy(self.client_model)
+                        conn_dict[cid] = edge_id
+                    all_clients = list(set(all_clients) - set(assigned))
+
+            elif layer_idx == len(self.args["mid_server"]):
+                layer_dict[0] = copy.deepcopy(self.cloud_model)
+                for mid_id in range(self.args["mid_server"][-1]):
+                    conn_dict[mid_id] = 0
+
+            else:
+                num_servers = self.args["mid_server"][layer_idx]
+                prev_layer_count = (
+                    self.args["num_users"]
+                    if layer_idx == 0
+                    else self.args["mid_server"][layer_idx - 1]
+                )
+                servers_per_layer = prev_layer_count // num_servers
+                all_prev = list(range(prev_layer_count))
+
+                for sid in range(num_servers):
+                    assigned = (
+                        all_prev
+                        if sid == num_servers - 1
+                        else list(
+                            np.random.choice(
+                                all_prev, servers_per_layer, replace=False
+                            )
+                        )
+                    )
+                    for nid in assigned:
+                        conn_dict[nid] = sid
+                    all_prev = list(set(all_prev) - set(assigned))
+                    layer_dict[sid] = copy.deepcopy(self.edge_model)
+
+            structure[layer_idx] = layer_dict
+            if layer_idx > -1:
+                connectivity[layer_idx - 1] = conn_dict
+
+            if layer_idx < len(self.args["mid_server"]):
+                build_layer(layer_idx + 1)
+
+        build_layer(-1)
+        return structure, connectivity
+
+    def print_structure(self):
+        for layer_idx in sorted(self.structure.keys()):
+            layer_nodes = self.structure[layer_idx]
+            layer_type = (
+                "Client Layer"
+                if layer_idx == -1
+                else (
+                    "Cloud Layer"
+                    if layer_idx == len(self.args["mid_server"])
+                    else f"Edge Layer {layer_idx}"
+                )
+            )
+            logging.info(f"\n=== {layer_type} (Layer {layer_idx}) ===")
+            for node_id, model in layer_nodes.items():
+                model_type = (
+                    "Client Model"
+                    if model.__class__ == self.client_model.__class__
+                    else (
+                        "Edge Model"
+                        if model.__class__ == self.edge_model.__class__
+                        else "Cloud Model"
+                    )
+                )
+                logging.info(f"  Node ID {node_id}: {model_type}")
+
+    def get_model_size(self, state_dict):
+        return mb_of(state_dict)
+
+    def average_state_dicts(self, state_dicts):
+        avg_dict = {}
+        device = next(iter(state_dicts[0].values())).device
+        for key in state_dicts[0].keys():
+            tensors = [d[key].to(device) for d in state_dicts]
+            avg_dict[key] = sum(tensors) / len(tensors)
+        return avg_dict
+
+    def edge_server_aggregation(self):
+        client_layer = self.structure[-1]
+        edge_layer = self.structure[0]
+        client_to_edge = self.connectivity[-1]
+
+        edge_to_clients = {}
+        for cid in self.client_cache:
+            eid = client_to_edge[cid]
+            edge_to_clients.setdefault(eid, []).append(cid)
+
+        self.edge_cache = {}  # Reset edge cache
+
+        for eid, cids in edge_to_clients.items():
+            client_models = [client_layer[cid].state_dict() for cid in cids]
+            avg_client_model = self.average_state_dicts(client_models)
+
+            self.edge_cache[eid] = {"edge_model": edge_layer[eid].state_dict()}
+
+            size_MB = self.get_model_size(avg_client_model)
+            add_communication(self.comm_tracker, "client_to_edge_MB", mb=size_MB, copies=len(cids))
+
+            for cid in cids:
+                client_layer[cid].load_state_dict(avg_client_model)
+            add_communication(self.comm_tracker, "edge_to_client_MB", mb=size_MB, copies=len(cids))
+
+    def cloud_aggregation(self):
+        edge_layer = self.structure[0]
+        edge_to_cloud = self.connectivity[0]
+
+        cloud_to_edges = {}
+        for eid, cid in edge_to_cloud.items():
+            cloud_to_edges.setdefault(cid, []).append(eid)
+
+        for cid, edge_ids in cloud_to_edges.items():
+            edge_models = []
+            for eid in edge_ids:
+                cache = getattr(self, "edge_cache", {}).get(eid)
+                if cache:
+                    edge_models.append(cache["edge_model"])
+                else:
+                    edge_models.append(edge_layer[eid].state_dict())
+
+            if not edge_models:
+                continue
+
+            avg_edge_model = self.average_state_dicts(edge_models)
+
+            size_edge_MB = self.get_model_size(avg_edge_model)
+            add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=size_edge_MB, copies=len(edge_ids))
+            add_communication(self.comm_tracker, "cloud_to_edge_MB", mb=size_edge_MB, copies=len(edge_ids))
+
+            for eid in edge_ids:
+                edge_layer[eid].load_state_dict(avg_edge_model)
+
+    def print_comm_report(self):
+        print("\n=== Communication Report ===")
+        for k, v in self.comm_tracker.items():
+            print(f"{k}: {v:.2f} MB")
+
+    def _make_optimizer(self, model):
+        lr = self.args["lr"]
+        wd = self.args.get("weight_decay", 0.0)
+        if self.args.get("optimizer", "adam") == "adam":
+            return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+        return torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=self.args.get("momentum", 0.9)
+        )
+
+    def _snapshot_pipeline(self):
+        client_model = self.structure[-1][0]
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid]
+        cloud_model = self.structure[len(self.args["mid_server"])][0]
+        return FullPipelineModel(
+            copy.deepcopy(client_model).cpu(),
+            copy.deepcopy(edge_model).cpu(),
+            copy.deepcopy(cloud_model).cpu(),
+        )
+
+    def _validate(self, valid_dataset, device, best_dice, epoch):
+        client_model = self.structure[-1][0].to(device).eval()
+        eid = self.connectivity[-1][0]
+        edge_model = self.structure[0][eid].to(device).eval()
+        cloud_model = self.structure[len(self.args["mid_server"])][0].to(device).eval()
+
+        loader = DataLoader(
+            valid_dataset, batch_size=self.args.get("local_bs", 1), shuffle=False
+        )
+        total_iou, total_dice, total_samples = 0.0, 0.0, 0
+        with torch.no_grad():
+            for data, target in loader:
+                data, target = data.to(device), target.to(device)
+                prediction = cloud_model(edge_model(client_model(data)))
+                iou, dice = compute_iou_and_dice(prediction, target)
+                size = data.size(0)
+                total_iou += iou * size
+                total_dice += dice * size
+                total_samples += size
+
+        iou = total_iou / total_samples
+        dice = total_dice / total_samples
+        snap = None
+        if dice >= best_dice:
+            best_dice = dice
+            snap = FullPipelineModel(
+                copy.deepcopy(client_model).cpu(),
+                copy.deepcopy(edge_model).cpu(),
+                copy.deepcopy(cloud_model).cpu(),
+            )
+            print(
+                f"Save best weight at epoch {epoch} with IoU: {iou * 100:.2f} %, "
+                f"Dice: {dice * 100:.2f} %"
+            )
+
+        client_model.train()
+        edge_model.train()
+        cloud_model.train()
+        return iou, dice, best_dice, snap
+
+    def train_end_to_end(
+        self,
+        train_dataset,
+        valid_dataset,
+        test_dataset,
+        user_groups,
+        config,
+        epochs,
+    ):
+        """Hierarchical Split FL with connected client -> edge -> cloud training.
+
+        All three tiers receive gradients via split-learning backprop (the previous
+        implementation detached every tier and only trained the cloud). Client models
+        are FedAvg-aggregated at the edge every t1 rounds; edge models at the cloud
+        every t2 rounds.
+        """
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        criterion = DiceFocalLoss().to(device)
+
+        num_users = config["num_users"]
+        frac = config["frac"]
+        local_bs = config["local_bs"]
+        local_ep = int(config.get("local_ep", 1))
+        cloud_layer = len(self.args["mid_server"])
+
+        cloud_model = self.structure[cloud_layer][0].to(device)
+        cloud_opt = self._make_optimizer(cloud_model)
+        edge_opts = {}
+        for eid, edge_model in self.structure[0].items():
+            edge_model.to(device)
+            edge_opts[eid] = self._make_optimizer(edge_model)
+
+        train_iou, train_dice, train_loss = [], [], []
+        client_cpu_list, client_ram_list, client_gpu_ram_list = [], [], []
+        edge_cpu_list, edge_ram_list, edge_gpu_ram_list = [], [], []
+        cloud_cpu_list, cloud_ram_list, cloud_gpu_ram_list = [], [], []
+        client_compute_times = []
+        best_dice = -1.0
+        best_pipeline_model = None
+        best_validation_result = None
+        last_round_result = None
+
+        for epoch in tqdm(range(1, epochs + 1)):
+            start_time = time.time()
+            m = max(int(frac * num_users), 1)
+            idxs_users = np.random.choice(range(num_users), m, replace=False)
+
+            cloud_model.train()
+            client_cpu_usages, client_ram_usages, client_gpu_ram_usages = [], [], []
+            epoch_losses = []
+
+            for cid in idxs_users:
+                self.client_cache.append(cid)
+                eid = self.connectivity[-1][cid]
+
+                cpu_before = psutil.cpu_percent(interval=None)
+                mem_before = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+                torch.cuda.reset_peak_memory_stats()
+                torch.cuda.empty_cache()
+
+                client_model = self.structure[-1][cid].to(device).train()
+                edge_model = self.structure[0][eid].to(device).train()
+                client_opt = self._make_optimizer(client_model)
+                edge_opt = edge_opts[eid]
+
+                loader = DataLoader(
+                    DatasetSplit(train_dataset, user_groups[cid]),
+                    batch_size=local_bs,
+                    shuffle=True,
+                )
+
+                client_losses = []
+                for _ in range(local_ep):
+                    for data, target in loader:
+                        data, target = data.to(device), target.to(device)
+                        client_opt.zero_grad(set_to_none=True)
+                        edge_opt.zero_grad(set_to_none=True)
+                        cloud_opt.zero_grad(set_to_none=True)
+
+                        smashed_c = client_model(data)
+                        edge_input = smashed_c.detach().requires_grad_(True)
+                        smashed_e = edge_model(edge_input)
+                        cloud_input = smashed_e.detach().requires_grad_(True)
+                        prediction = cloud_model(cloud_input)
+                        loss = criterion(prediction, target)
+                        loss.backward()
+                        smashed_e.backward(cloud_input.grad)
+                        smashed_c.backward(edge_input.grad)
+
+                        client_opt.step()
+                        edge_opt.step()
+                        cloud_opt.step()
+                        client_losses.append(loss.item())
+
+                        add_communication(self.comm_tracker, "client_to_edge_MB", payload=(smashed_c, target))
+                        add_communication(self.comm_tracker, "edge_to_cloud_MB", payload=(smashed_e, target))
+                        add_communication(self.comm_tracker, "cloud_to_edge_MB", payload=cloud_input.grad)
+                        add_communication(self.comm_tracker, "edge_to_client_MB", payload=edge_input.grad)
+
+                epoch_losses.append(
+                    float(np.mean(client_losses)) if client_losses else 0.0
+                )
+                client_model.cpu()
+
+                cpu_after = psutil.cpu_percent(interval=None)
+                mem_after = psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+                client_cpu_usages.append((cpu_before + cpu_after) / 2)
+                client_ram_usages.append(max(mem_after - mem_before, 0))
+                client_gpu_ram_usages.append(
+                    torch.cuda.max_memory_allocated(device) / (1024**2)
+                    if device.type == "cuda"
+                    else 0.0
+                )
+                torch.cuda.empty_cache()
+
+            train_loss.append(float(np.mean(epoch_losses)) if epoch_losses else 0.0)
+            client_cpu_list.append(float(np.mean(client_cpu_usages)))
+            client_ram_list.append(float(np.mean(client_ram_usages)))
+            client_gpu_ram_list.append(float(np.mean(client_gpu_ram_usages)))
+            edge_cpu_list.append(client_cpu_list[-1])
+            edge_ram_list.append(client_ram_list[-1])
+            edge_gpu_ram_list.append(client_gpu_ram_list[-1])
+            cloud_cpu_list.append(psutil.cpu_percent(interval=None))
+            cloud_ram_list.append(
+                psutil.Process(os.getpid()).memory_info().rss / (1024**2)
+            )
+            cloud_gpu_ram_list.append(
+                torch.cuda.max_memory_allocated(device) / (1024**2)
+                if device.type == "cuda"
+                else 0.0
+            )
+            client_compute_times.append(time.time() - start_time)
+
+            if epoch % int(config["t1"]) == 0:
+                print("Edge server aggregation...")
+                self.edge_server_aggregation()
+            if epoch % int(config["t2"]) == 0:
+                print("Cloud aggregation...")
+                self.cloud_aggregation()
+
+            if epoch % int(config["t2"]) == 0 or epoch == epochs:
+                iou, dice, best_dice, snap = self._validate(
+                    valid_dataset, device, best_dice, epoch
+                )
+                current_result = {"round": epoch, "iou": iou, "dice": dice}
+                if epoch == epochs:
+                    last_round_result = current_result
+                if snap is not None:
+                    best_pipeline_model = snap
+                    best_validation_result = current_result
+                train_iou.append(iou)
+                train_dice.append(dice)
+
+                print(
+                    f"\n=== Epoch {epoch} | IoU: {iou * 100:.2f} % | "
+                    f"Dice: {dice * 100:.2f} % ==="
+                )
+                for k, v in self.comm_tracker.items():
+                    print(f"{k}: {v:.2f} MB")
+
+                if wandb is not None and wandb.run is not None:
+                    wandb.log({
+                        "epoch": epoch,
+                        "iou": iou,
+                        "dice": dice,
+                        "best_dice": best_dice,
+                        "train_loss": train_loss[-1],
+                        "avg_client_cpu_pct": client_cpu_list[-1],
+                        "avg_client_ram_MB": client_ram_list[-1],
+                        "avg_client_gpu_ram_MB": client_gpu_ram_list[-1],
+                        **{k: v for k, v in self.comm_tracker.items()},
+                    })
+
+            torch.cuda.empty_cache()
+
+        if best_pipeline_model is None:
+            best_pipeline_model = self._snapshot_pipeline()
+        if not train_dice:
+            train_iou.append(0.0)
+            train_dice.append(0.0)
+
+        print("\n=== Communication Summary ===")
+        for k, v in self.comm_tracker.items():
+            print(f"{k}: {v:.2f} MB")
+
+        return {
+            "train_iou": train_iou,
+            "train_dice": train_dice,
+            "last_round_validation": last_round_result,
+            "best_validation": best_validation_result,
+            "selected_checkpoint": (
+                {"source": "best_validation", **best_validation_result}
+                if best_validation_result is not None else None
+            ),
+            "train_loss": train_loss,
+            "client_cpu": client_cpu_list,
+            "client_ram": client_ram_list,
+            "client_gpu_ram": client_gpu_ram_list,
+            "edge_cpu": edge_cpu_list,
+            "edge_ram": edge_ram_list,
+            "edge_gpu_ram": edge_gpu_ram_list,
+            "cloud_cpu": cloud_cpu_list,
+            "cloud_ram": cloud_ram_list,
+            "cloud_gpu_ram": cloud_gpu_ram_list,
+            "client_time_list": client_compute_times,
+            "best_weight": best_pipeline_model,
+        }

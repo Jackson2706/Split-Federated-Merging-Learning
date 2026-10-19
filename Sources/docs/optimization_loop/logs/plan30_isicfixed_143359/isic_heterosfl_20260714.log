@@ -1,0 +1,23 @@
+START isic_heterosfl_20260714 2026-07-18T17:35:29+07:00
+[Runner] Seed: 20260714
+[Runner] Overrides: {'output_dir': 'outputs/isic2018/heterosfl_seed20260714_v2'}
+[Runner] task=segmentation  method=hetero-sfl
+[Runner] cfg=configs/proxy/exp_1u8jbxxg.yaml
+
+HeteroSFL (Seg): Wide=76, Narrow=4, Ratio=0.3
+Number of training images: 2594
+  0%|          | 0/10 [00:00<?, ?it/s]  0%|          | 0/10 [02:29<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 246, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 205, in run
+    aggregate_hetero(client_model_wide.state_dict(), local_weights, NARROW_CHANNELS)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py", line 78, in aggregate_hetero
+    avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    ~~~~~~~~~~~~~~^^^^^^
+RuntimeError: Index put requires the source and destination dtypes match, got Long for the destination and Float for the source.
+EXIT isic_heterosfl_20260714 code=1 runtime_s=152

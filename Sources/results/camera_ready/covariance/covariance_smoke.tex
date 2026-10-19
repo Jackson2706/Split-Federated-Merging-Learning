@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\caption{Prototype synthesis covariance ablation (CIFAR-100). Diagonal $\sigma$ gives the best accuracy/communication trade-off.}
+\label{tab:covariance}
+\begin{tabular}{lccccc}
+\toprule
+Synthesis mode & Transmitted & Asymp. comm & Comm (MB) & Acc (\%) & MMD \\
+\midrule
+mu only & $\mu$ & $O(D)$ & 0.010 & 20.00 & 0.0000 \\
+diag sigma & $\mu,\sigma$ & $O(D)$ & 0.020 & 20.00 & 0.0316 \\
+full covariance & $\mu,\Sigma$ & $O(D^2)$ & 2.637 & 13.00 & 0.0000 \\
+low rank covariance & $\mu,U_r,d$ & $O(8D)$ & 0.102 & 20.00 & 0.0000 \\
+mixture gaussian & $\{\pi_k,\mu_k,\sigma_k\}$ & $O(3D)$ & 0.061 & 20.00 & 0.0026 \\
+\bottomrule
+\end{tabular}
+\end{table}

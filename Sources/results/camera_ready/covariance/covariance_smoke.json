@@ -1,0 +1,80 @@
+{
+  "args": {
+    "cfg": "configs/camera_ready/smoke/hsfp_smoke.yaml",
+    "ckpt": null,
+    "modes": [
+      "mu_only",
+      "diag_sigma",
+      "full_covariance",
+      "low_rank_covariance",
+      "mixture_gaussian"
+    ],
+    "rank": 8,
+    "k": 3,
+    "max_classes": 5,
+    "probe_per_class": 20,
+    "test_per_class": 20,
+    "syn_per_class": 20,
+    "clf_epochs": 2,
+    "seed": 0,
+    "device": "cuda",
+    "tag": "smoke"
+  },
+  "rows": [
+    {
+      "mode": "mu_only",
+      "transmitted": "$\\mu$",
+      "asymptotic_comm": "$O(D)$",
+      "comm_MB": 0.01024,
+      "accuracy": 0.2,
+      "mmd": 0.0,
+      "runtime_s": 0.012894236017018557,
+      "dim": 512,
+      "num_classes": 5
+    },
+    {
+      "mode": "diag_sigma",
+      "transmitted": "$\\mu,\\sigma$",
+      "asymptotic_comm": "$O(D)$",
+      "comm_MB": 0.02048,
+      "accuracy": 0.2,
+      "mmd": 0.03162321113049984,
+      "runtime_s": 0.17148032400291413,
+      "dim": 512,
+      "num_classes": 5
+    },
+    {
+      "mode": "full_covariance",
+      "transmitted": "$\\mu,\\Sigma$",
+      "asymptotic_comm": "$O(D^2)$",
+      "comm_MB": 2.6368,
+      "accuracy": 0.13,
+      "mmd": 0.0,
+      "runtime_s": 0.0851494780217763,
+      "dim": 512,
+      "num_classes": 5
+    },
+    {
+      "mode": "low_rank_covariance",
+      "transmitted": "$\\mu,U_r,d$",
+      "asymptotic_comm": "$O(8D)$",
+      "comm_MB": 0.1024,
+      "accuracy": 0.2,
+      "mmd": 0.0,
+      "runtime_s": 0.055836765008280054,
+      "dim": 512,
+      "num_classes": 5
+    },
+    {
+      "mode": "mixture_gaussian",
+      "transmitted": "$\\{\\pi_k,\\mu_k,\\sigma_k\\}$",
+      "asymptotic_comm": "$O(3D)$",
+      "comm_MB": 0.0615,
+      "accuracy": 0.2,
+      "mmd": 0.0025950515642762183,
+      "runtime_s": 0.8117099789960776,
+      "dim": 512,
+      "num_classes": 5
+    }
+  ]
+}

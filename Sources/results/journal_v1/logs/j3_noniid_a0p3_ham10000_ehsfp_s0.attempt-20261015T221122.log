@@ -1,0 +1,34 @@
+[E-HSFP] Ablation mode: full_e_hsfp
+[Runner] Seed: 0
+[Runner] Overrides: {'epochs': 60, 'output_dir': '/workspace/campaign/outputs_journal_v1/j3_noniid_a0p3_ham10000_ehsfp_s0', 'client_split_depth': 4, 'client_sync': True, 't1': 1, 'edge_residual': True, 'client_objective': 'supervised', 'client_objective_weight': 1.0, 'edge_extract_samples_per_class': 500, 'cloud_samples_per_class': 200, 'client_global_sync': True, 'cloud_head': 'linear', 'memory_mode': 'statistics', 'synthesis': 'shared_cov', 'partition': 'dirichlet', 'dirichlet_alpha': 0.3, 'client_bn_eval': True, 'ssl_epochs_client': 5, 'diagnostics_dir': '/workspace/campaign/outputs_journal_v1/j3_noniid_a0p3_ham10000_ehsfp_s0/diagnostics'}
+[Runner] task=classification  method=h-sfp
+[Runner] cfg=configs/classification/h-sfp/exp_eg0o9qq3.yaml
+
+/workspace/venvs/sfml/lib/python3.12/site-packages/torch/jit/_script.py:1491: FutureWarning: `torch.jit.script` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+Method: hier_fedavg
+[Device] training_device=cuda
+Train len: 8012
+[Integrity] resolved_config_hash=9ed428a6338e2df821a0a756799588577100464a642be723a7623d42a7e8ace0
+[Integrity] architecture_id=fbb3443983fe run_dir=/workspace/campaign/outputs_journal_v1/j3_noniid_a0p3_ham10000_ehsfp_s0/fbb3443983fe/9ed428a6338e2df821a0a756799588577100464a642be723a7623d42a7e8ace0
+Using 2 workers for the DataLoader.
+
+==================== EPOCH 1/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+Traceback (most recent call last):
+  File "/workspace/Split-Federated-Merging-Learning/Sources/main.py", line 315, in <module>
+    main()
+  File "/workspace/Split-Federated-Merging-Learning/Sources/main.py", line 305, in main
+    run(args.task, args.method, args.cfg,
+  File "/workspace/Split-Federated-Merging-Learning/Sources/main.py", line 247, in run
+    runner.run(cfg_path)
+  File "/workspace/Split-Federated-Merging-Learning/Sources/classification/H-SFP/runner.py", line 133, in run
+    output = hierarchical_fl.train_end_to_end(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/Split-Federated-Merging-Learning/Sources/classification/H-SFP/hierarchy.py", line 1696, in train_end_to_end
+    client_outputs[cid], support_counts = self._client_ssl_extraction_phase(
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/Split-Federated-Merging-Learning/Sources/classification/H-SFP/hierarchy.py", line 980, in _client_ssl_extraction_phase
+    mb=scatter_payload_MB(self._client_scatter[cid][0].shape[0]))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'shape'

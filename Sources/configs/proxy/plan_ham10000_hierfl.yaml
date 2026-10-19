@@ -1,0 +1,15 @@
+# Fair-comparison HAM10000 proxy; preserves HierFL local work.
+base: ../classification/hierfl/ham10000_hierfl_resnet50.yaml
+
+proxy_id: plan_ham10000_hierfl_seed20260714
+output_dir: outputs/proxy/plan_ham10000_hierfl_seed20260714
+seed: 20260714
+require_cuda: true
+epochs: 10
+iid: true
+partition: iid
+num_users: 200
+frac: 0.1
+local_ep: 5
+evaluation_metrics: [top1, macro_f1]
+primary_metric: top1

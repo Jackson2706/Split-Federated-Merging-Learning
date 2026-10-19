@@ -1,0 +1,23 @@
+\section{Implementation and Reproducibility Details}\label{app:repro}
+\subsection{Packet semantics}
+Packets use magic bytes \texttt{MSFP}; a JSON header stores feature-space metadata, source, round, and precision. Each class record stores int32 class id and component count. Each component stores int32 local id, float32 mass, and two length-$d$ moment vectors in float16 or float32. Internally, fitting and pooling use float64. Serialization/de-serialization is executed in the training path so the receiver observes quantization. Component ids are reassigned after canonical ordering and never establish identity across clients.
+
+\subsection{Default controls}
+Defaults are $s_{\min}=3$, three k-means initializations, 50 Lloyd iterations, center reservoir 4096, adaptive cap four, validation fraction 0.3, minimum four validation samples, and improvement threshold 0.02 nat/dimension. The NLL variance floor is $\max(10^{-6},0.01\bar v_c)$ and the sampling floor is $10^{-12}$. Propagate mode uses 50 transformation samples per component; refit mode uses 200 per class. These values describe code defaults, not optimized choices.
+
+\subsection{Proof detail for \cref{prop:moments}}
+For scalar coordinate $j$, let $s_x=v_x+\mu_x^2$. Expanding the numerator of \cref{eq:poolvar} gives
+\begin{align*}
+m(v+\mu^2)&=a v_a+b v_b+a(\mu_a-\mu)^2\\
+&\quad+b(\mu_b-\mu)^2+m\mu^2\\
+&=a(v_a+\mu_a^2)+b(v_b+\mu_b^2)\\
+&\quad-2\mu(a\mu_a+b\mu_b)+2m\mu^2\\
+&=a s_a+b s_b.
+\end{align*}
+The vector result follows coordinate-wise. Floating-point serialization can perturb this algebra, which is why empirical audits compare both pre-wire float64 and received values.
+
+\subsection{Result records and validation}
+The canonical scalar record contains method, dataset, partition, seed, round/checkpoint, extraction mode, budgets, metric, value, unit, and source-run id. Component summaries and visualization features have separate schemas. The generator rejects duplicate scalar keys, mixed units, incomparable configuration hashes within an aggregate, and seeds outside the manifest. Missing values remain missing; failed runs are not silently dropped. With one completed seed, a mean may be shown but SD stays unavailable and completion is reported as $1/3$.
+
+\section{Additional Empirical Templates}\label{app:templates}
+\Cref{fig:empirical,fig:diagnostics} are regenerated from validated run records only (\texttt{Sources/scripts/campaign/collect\_misfp.py}); each series states its number of completed seeds $n$, and a panel without any completed run is rendered as results pending. The exact required records are enumerated in \texttt{RESULTS\_TO\_FILL.md}.

@@ -1,0 +1,19 @@
+base: default.yaml
+
+strategy: "Splitfedavg"
+dataset: "isic-2018"
+train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+# No separate held-out test split exists locally (only Training/Validation folders
+# are downloaded). Pointing val and test at the same Validation folder matches the
+# existing protocol already used by Federated/HierFL/HeteroSFL/H-SFP's ISIC configs
+# (test-as-validation, a known, separately-tracked limitation - see
+# docs/JOURNAL_SIMULATION_RESULTS.md Section 3.9/10.4) rather than introducing a new,
+# non-comparable split just for this method.
+val_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+val_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+
+model: "resnet50"
+num_classes: 2

@@ -1,0 +1,1231 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.3
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f65da-2a94-77f2-8462-9d2ab7a3e3ab
+--------
+user
+You are Codex. The E-HSFP full_e/PRC DEADLOCK is now precisely diagnosed via a faulthandler stack dump. It is NOT in PRC math. It is a tensorboardX-writer-thread x torch-autograd deadlock: the MAIN thread hangs in .backward() at classification/H-SFP/hierarchy.py:908 (_edge_ssl_extraction_phase) inside torch.autograd _engine_run_backward (futex_wait), while a SECOND thread is the tensorboardX EventFileWriter background writer stuck in multiprocessing/queues.py get (event_file_writer.py:199 run). PRC just increases edge-phase autograd+logging so it reliably triggers this race; lighter ablations got lucky. FIX: eliminate the tensorboardX background-writer-thread deadlock. Inspect ehsfp/metrics_logger.py (EHSFPMetricsLogger) and anywhere a tensorboardX SummaryWriter/FileWriter is created (grep tensorboardX / SummaryWriter across the repo). Preferred fix: make E-HSFP logging NOT use the tensorboardX async writer during training (JSONL logging in append_jsonl already captures all metrics) — either disable the tensorboardX writer by default (guard behind a config flag defaulting off), or force synchronous/flush_secs=0 + ensure the writer thread cannot contend with autograd (e.g., write tensorboard events only at end-of-run, or close the writer before backward). Keep JSONL metrics intact. Do NOT remove any metric from JSONL. NO GPU (Claude verifies on GPU by re-running hsfp_memory_reliability_prc epochs=2 and full_e). Preserve uncommitted changes; local only. Run unit tests. FINAL: file:line diffs, where tensorboardX was instantiated, the exact mechanism disabled, and confirmation JSONL logging is unchanged.
+codex
+I’ll trace every TensorBoard writer creation and the E-HSFP logger lifecycle, then make the smallest default-off change while preserving the JSONL path. I’ll also inspect repository guidance and existing uncommitted changes before editing.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!**/.git/**'"' -g 'ehsfp/metrics_logger.py' -g '*.py' | head -200 && git status --short && rg -n \"tensorboardX|SummaryWriter|FileWriter|append_jsonl|EHSFPMetricsLogger\" . --glob '"'!**/.git/**'"'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+/home/jackson/Desktop/Split-Federated-Merging-Learning
+main.py
+ehsfp/metrics_logger.py
+ehsfp/memory.py
+ehsfp/dropout.py
+ehsfp/losses.py
+ehsfp/reliability.py
+ehsfp/generator.py
+ehsfp/config.py
+ehsfp/client_objective.py
+ehsfp/integrity.py
+ehsfp/__init__.py
+ehsfp/serverless_sim.py
+ehsfp/prototype_space.py
+ehsfp/aggregation.py
+scripts/journal_experiments/collect_results.py
+scripts/camera_ready/gen_fairness.py
+scripts/camera_ready/collect_camera_ready.py
+scripts/camera_ready/make_tables.py
+scripts/camera_ready/run_partition_diagnostics.py
+scripts/camera_ready/run_inversion.py
+scripts/camera_ready/run_lstat.py
+scripts/camera_ready/run_covariance.py
+scripts/camera_ready/_hsfp_common.py
+tools/fair_compare/aggregate.py
+tools/plot_communication.py
+camera_ready/inversion.py
+camera_ready/profiling.py
+camera_ready/partition.py
+camera_ready/latex.py
+camera_ready/io_utils.py
+camera_ready/__init__.py
+camera_ready/synthesis.py
+camera_ready/lstat.py
+camera_ready/feature_distance.py
+tools/diag/oracle_probe.py
+tools/diag/normalize_probe.py
+tools/diag/encoder_linear_probe.py
+serverless/adapters/local.py
+serverless/adapters/__init__.py
+serverless/interfaces/__init__.py
+serverless/interfaces/aggregator.py
+serverless/interfaces/communication.py
+serverless/__init__.py
+segmentation/HSFL/models/VGG_HAM10000.py
+segmentation/HSFL/models/constant.py
+segmentation/HSFL/models/CNN_ham10000_ResNet50.py
+segmentation/HSFL/models/Alexnet_cifar.py
+segmentation/HSFL/models/__init__.py
+segmentation/HSFL/models/CNN_Cifar.py
+segmentation/HSFL/hierarchy.py
+segmentation/HSFL/data/utils/__init__.py
+segmentation/HSFL/data/utils/ISIC.py
+segmentation/HSFL/data/sampling.py
+segmentation/HSFL/data/__init__.py
+segmentation/HSFL/data/get_data.py
+segmentation/H-SFP/models/ISIC_ResNet50.py
+segmentation/H-SFP/models/constant.py
+segmentation/H-SFP/models/__init__.py
+segmentation/H-SFP/hierarchy.py
+segmentation/HSFL/config/config_loader.py
+segmentation/HSFL/config/__init__.py
+segmentation/HSFL/runner.py
+segmentation/Figure/draw_iid_cifar100.py
+segmentation/Figure/draw_ram.py
+segmentation/Figure/draw_iid_cifar10.py
+segmentation/Figure/draw_iid_ham10000.py
+segmentation/Figure/draw_noniid_ham10000.py
+segmentation/Figure/draw_ours.py
+segmentation/Figure/draw_noniid_cifar10.py
+segmentation/Figure/draw_noniid_cifar100.py
+segmentation/H-SFP/data/utils/__init__.py
+segmentation/H-SFP/data/utils/ISIC.py
+segmentation/H-SFP/data/sampling.py
+segmentation/H-SFP/data/__init__.py
+segmentation/H-SFP/data/get_data.py
+segmentation/HeteroSFL/models/ISIC_ResNet50.py
+segmentation/HeteroSFL/models/constant.py
+segmentation/HeteroSFL/models/__init__.py
+classification/HSFL/models/VGG_HAM10000.py
+classification/HSFL/models/constant.py
+classification/HSFL/models/CNN_ham10000_ResNet50.py
+classification/HSFL/models/Alexnet_cifar.py
+classification/HSFL/models/__init__.py
+classification/HSFL/models/CNN_Cifar.py
+classification/HSFL/hierarchy.py
+segmentation/H-SFP/clients/test.py
+segmentation/H-SFP/clients/DiceFocalLoss.py
+segmentation/H-SFP/clients/__init__.py
+segmentation/H-SFP/config/config_loader.py
+segmentation/H-SFP/runner.py
+segmentation/HeteroSFL/data/utils/__init__.py
+segmentation/HeteroSFL/data/utils/ISIC.py
+segmentation/HeteroSFL/data/sampling.py
+classification/SplitFL/models/VGG_HAM10000.py
+segmentation/HeteroSFL/data/__init__.py
+classification/SplitFL/models/constant.py
+segmentation/HeteroSFL/data/get_data.py
+classification/SplitFL/models/CNN_HAM10000_ResNet50.py
+classification/SplitFL/models/Alexnet_Cifar.py
+classification/SplitFL/models/__init__.py
+classification/SplitFL/models/CNN_Cifar.py
+segmentation/HeteroSFL/clients/test.py
+segmentation/HeteroSFL/clients/DiceFocalLoss.py
+segmentation/HeteroSFL/clients/__init__.py
+classification/HSFL/data/utils/ham10000.py
+classification/HSFL/data/utils/__init__.py
+classification/HSFL/data/sampling.py
+classification/HSFL/data/__init__.py
+classification/HSFL/data/get_data.py
+segmentation/Federated/models/CNN_ISIC.py
+segmentation/Federated/models/constant.py
+segmentation/Federated/models/__init__.py
+segmentation/HeteroSFL/config/config_loader.py
+segmentation/HeteroSFL/runner.py
+classification/HSFL/config/config_loader.py
+classification/HSFL/config/__init__.py
+classification/HSFL/runner.py
+segmentation/Federated/data/utils/__init__.py
+segmentation/Federated/data/utils/ISIC.py
+segmentation/Federated/data/sampling.py
+segmentation/Federated/data/__init__.py
+segmentation/Federated/data/get_data.py
+classification/Figure/draw_iid_cifar100.py
+classification/Figure/draw_ram.py
+classification/Figure/draw_iid_cifar10.py
+classification/Figure/draw_iid_ham10000.py
+classification/Figure/draw_noniid_ham10000.py
+classification/Figure/draw_ours.py
+classification/Figure/draw_noniid_cifar10.py
+classification/Figure/draw_noniid_cifar100.py
+segmentation/SplitFL/models/VGG_HAM10000.py
+classification/SplitFL/data/utils/ham10000.py
+classification/SplitFL/data/utils/__init__.py
+segmentation/SplitFL/models/constant.py
+segmentation/SplitFL/models/CNN_HAM10000_ResNet50.py
+segmentation/SplitFL/models/Alexnet_Cifar.py
+classification/SplitFL/data/sampling.py
+segmentation/SplitFL/models/__init__.py
+classification/SplitFL/data/__init__.py
+segmentation/SplitFL/models/CNN_Cifar.py
+classification/SplitFL/data/get_data.py
+segmentation/Federated/clients/FedNovaClient.py
+segmentation/Federated/clients/test.py
+segmentation/Federated/clients/FedSGDClient.py
+segmentation/Federated/clients/constant.py
+segmentation/Federated/clients/Client.py
+segmentation/Federated/clients/DiceFocalLoss.py
+segmentation/Federated/clients/FedAvgClient.py
+segmentation/Federated/clients/__init__.py
+segmentation/Federated/clients/FedProxClient.py
+segmentation/Federated/server/FedProxAggregator.py
+segmentation/Federated/server/FedSGDAggregator.py
+segmentation/Federated/server/FedNovaAggregator.py
+segmentation/Federated/server/constant.py
+segmentation/Federated/server/FedAvgAggregator.py
+segmentation/Federated/server/__init__.py
+segmentation/Federated/server/Aggregator.py
+segmentation/Federated/config/config_loader.py
+segmentation/Federated/config/__init__.py
+segmentation/Federated/runner.py
+classification/HeteroSFL/models/VGG_HAM10000.py
+classification/HeteroSFL/models/constant.py
+classification/HeteroSFL/models/CNN_HAM10000_ResNet50.py
+classification/HeteroSFL/models/Alexnet_Cifar.py
+classification/HeteroSFL/models/__init__.py
+classification/HeteroSFL/models/CNN_Cifar.py
+segmentation/SplitFL/data/utils/__init__.py
+segmentation/SplitFL/data/utils/ISIC.py
+segmentation/SplitFL/data/sampling.py
+segmentation/SplitFL/data/__init__.py
+segmentation/SplitFL/data/get_data.py
+segmentation/SplitFL/config/config_loader.py
+segmentation/SplitFL/config/__init__.py
+segmentation/HierFL/models/CNN_ISIC.py
+segmentation/HierFL/models/constant.py
+segmentation/HierFL/models/__init__.py
+segmentation/HierFL/hierarchy.py
+classification/SplitFL/config/config_loader.py
+classification/HeteroSFL/data/utils/ham10000.py
+classification/SplitFL/config/__init__.py
+classification/HeteroSFL/data/utils/__init__.py
+classification/HeteroSFL/data/sampling.py
+classification/HeteroSFL/data/__init__.py
+classification/HeteroSFL/data/get_data.py
+segmentation/SplitFL/FedServer/constant.py
+segmentation/SplitFL/FedServer/FedAvgAggregator.py
+segmentation/SplitFL/FedServer/__init__.py
+segmentation/SplitFL/FedServer/Aggregator.py
+segmentation/SplitFL/runner.py
+segmentation/HierFL/config/config_loader.py
+segmentation/HierFL/config/__init__.py
+segmentation/HierFL/runner.py
+segmentation/HierFL/data/get_data.py
+classification/HeteroSFL/config/config_loader.py
+classification/HeteroSFL/config/__init__.py
+classification/HeteroSFL/runner.py
+classification/H-SFP/models/vgg_ham10000.py
+classification/H-SFP/models/alexnet_cifar.py
+classification/H-SFP/models/pipeline.py
+classification/H-SFP/models/constant.py
+ M .gitignore
+ M classification/Federated/runner.py
+ M classification/Federated/server/FedNovaAggregator.py
+ M classification/H-SFP/hierarchy.py
+ M classification/H-SFP/models/alexnet_cifar.py
+ M classification/H-SFP/models/cnn_cifar.py
+ M classification/H-SFP/models/resnet50_ham10000.py
+ M classification/H-SFP/models/vgg_ham10000.py
+ M classification/H-SFP/runner.py
+ M classification/HSFL/models/CNN_Cifar.py
+ M classification/HSFL/runner.py
+ M classification/HeteroSFL/models/CNN_Cifar.py
+ M classification/HeteroSFL/runner.py
+ M classification/HierFL/runner.py
+ M classification/HierFL/servers/FedAvgAggregator.py
+ M classification/SplitFL/models/CNN_Cifar.py
+ M classification/SplitFL/runner.py
+ M configs/classification/federated/default.yaml
+ M configs/classification/h-sfp/default.yaml
+ M configs/classification/hetero-sfl/default.yaml
+ M configs/classification/hierfl/default.yaml
+ M configs/classification/hsfl/default.yaml
+ M configs/classification/splitfl/default.yaml
+ M configs/segmentation/federated/default.yaml
+ M configs/segmentation/h-sfp/default.yaml
+ M configs/segmentation/hetero-sfl/default.yaml
+ M configs/segmentation/hierfl/default.yaml
+ M configs/segmentation/hsfl/default.yaml
+ M configs/segmentation/splitfl/default.yaml
+ M ehsfp/__init__.py
+ M ehsfp/aggregation.py
+ M ehsfp/config.py
+ M ehsfp/dropout.py
+ M ehsfp/losses.py
+ M ehsfp/memory.py
+ M ehsfp/metrics_logger.py
+ M ehsfp/reliability.py
+ M main.py
+ M scripts/journal_experiments/common.sh
+ M segmentation/H-SFP/hierarchy.py
+ M segmentation/H-SFP/runner.py
+?? configs/proxy/
+?? configs/smoke/
+?? ehsfp/client_objective.py
+?? ehsfp/integrity.py
+?? ehsfp/prototype_space.py
+?? tools/diag/
+?? tools/fair_compare/
+./ehsfp/metrics_logger.py:18:class EHSFPMetricsLogger:
+./ehsfp/metrics_logger.py:94:    def append_jsonl(self, path: str, extra: Optional[Dict] = None) -> None:
+./pyproject.toml:33:    "tensorboardX>=2.5",
+./ehsfp/__init__.py:42:from ehsfp.metrics_logger import EHSFPMetricsLogger
+./ehsfp/__init__.py:91:    "EHSFPMetricsLogger",
+./requirements.txt:18:tensorboardX>=2.5
+./segmentation/H-SFP/hierarchy.py:34:    EHSFPMetricsLogger,
+./segmentation/H-SFP/hierarchy.py:285:        self.ehsfp_logger = EHSFPMetricsLogger()
+./segmentation/H-SFP/hierarchy.py:1059:            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+./segmentation/HierFL/runner.py:15:from tensorboardX import SummaryWriter
+./segmentation/HierFL/runner.py:32:    logger = SummaryWriter("./logs")
+./segmentation/Federated/runner.py:15:from tensorboardX import SummaryWriter
+./segmentation/Federated/runner.py:36:    logger = SummaryWriter("./logs")
+./segmentation/SplitFL/runner.py:16:from tensorboardX import SummaryWriter
+./segmentation/SplitFL/runner.py:57:    logger = SummaryWriter("./logs")
+./segmentation/HSFL/runner.py:11:from tensorboardX import SummaryWriter
+./segmentation/HSFL/runner.py:21:    logger = SummaryWriter("./logs")
+./classification/HSFL/runner.py:11:from tensorboardX import SummaryWriter
+./classification/HSFL/runner.py:31:    logger = SummaryWriter("./logs")
+./classification/H-SFP/hierarchy.py:36:    EHSFPMetricsLogger,
+./classification/H-SFP/hierarchy.py:417:        self.ehsfp_logger = EHSFPMetricsLogger()
+./classification/H-SFP/hierarchy.py:1532:            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+./classification/HeteroSFL/runner.py:14:from tensorboardX import SummaryWriter
+./classification/Federated/runner.py:15:from tensorboardX import SummaryWriter
+./classification/Federated/runner.py:46:    logger = SummaryWriter("./logs")
+./classification/HierFL/runner.py:15:from tensorboardX import SummaryWriter
+./classification/HierFL/runner.py:42:    logger = SummaryWriter("./logs")
+./classification/SplitFL/runner.py:16:from tensorboardX import SummaryWriter
+./classification/SplitFL/runner.py:67:    logger = SummaryWriter("./logs")
+./classification/H-SFP/runner.py:13:from tensorboardX import SummaryWriter
+./classification/H-SFP/runner.py:26:    logger = SummaryWriter("./logs")
+
+codex
+The E-HSFP metrics class itself is JSONL-only; the async writer is instantiated in `classification/H-SFP/runner.py` (and the segmentation counterpart/runners elsewhere). I’m narrowing the change to H-SFP’s training runner and checking how its logger is passed and closed so the default-off behavior doesn’t disturb existing metrics.
+exec
+/bin/bash -lc "sed -n '1,190p' classification/H-SFP/runner.py; sed -n '1,150p' ehsfp/metrics_logger.py; rg -n \"logger\\.|logger[),]|SummaryWriter|runtime_metrics_path|tensorboard\" classification/H-SFP segmentation/H-SFP configs/classification/h-sfp configs/segmentation/h-sfp main.py --glob '*.py' --glob '*.yaml'; git diff -- classification/H-SFP/runner.py segmentation/H-SFP/runner.py ehsfp/metrics_logger.py configs/classification/h-sfp/default.yaml configs/segmentation/h-sfp/default.yaml" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+import json
+import os
+import time
+
+import torch
+from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
+from ehsfp.integrity import git_commit
+from config import ConfigLoader
+from data import get_dataset
+from hierarchy import HierarchicalFL
+from models import get_model
+from sklearn.metrics import accuracy_score
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader
+
+
+def run(cfg_path: str):
+    start_time = time.time()
+    config_loader = ConfigLoader(cfg_path)
+    config = config_loader.get_config()
+    effective_ehsfp = get_ehsfp_config(config)
+    config_hash = resolved_config_hash(config, effective_ehsfp)
+    config["resolved_config_hash"] = config_hash
+    print("Method: {}".format(config["strategy"]))
+
+    logger = SummaryWriter("./logs")
+    use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+    if config.get("require_cuda", False) and not use_cuda:
+        raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+    if config.get("is_gpu", False) and not torch.cuda.is_available():
+        print("[Device] CUDA requested but unavailable; falling back to CPU.")
+    if use_cuda:
+        torch.cuda.set_device(config["gpu"])
+        torch.cuda.reset_peak_memory_stats()
+    device = torch.device("cuda") if use_cuda else torch.device("cpu")
+    config["is_gpu"] = use_cuda
+    print(f"[Device] training_device={device}")
+
+    train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
+    client_model, edge_model, cloud_model = get_model(config["model"], config["dataset"])
+    client_model, edge_model, cloud_model = (
+        client_model(), edge_model(), cloud_model(config)
+    )
+    arch = architecture_manifest((client_model, edge_model, cloud_model))
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_base = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+    else:
+        out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
+    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
+    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
+    config["runtime_counters_path"] = os.path.join(run_dir, "runtime_counters.jsonl")
+    metadata = {
+        "resolved_config": config,
+        "effective_ehsfp": effective_ehsfp,
+        "resolved_config_hash": config_hash,
+        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
+        "partition_hash": partition_hash(user_groups),
+        "architecture": arch,
+        "run_dir": run_dir,
+    }
+    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+    print(f"[Integrity] resolved_config_hash={config_hash}")
+    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
+
+    hierarchical_fl = HierarchicalFL(
+        args=config,
+        client_model=client_model,
+        client_weights=client_model.state_dict(),
+        edge_model=edge_model,
+        edge_weights=edge_model.state_dict(),
+        cloud_model=cloud_model,
+        cloud_weight=cloud_model.state_dict(),
+        test_dataset=test_dataset,
+    )
+    hierarchical_fl.print_structure()
+
+    output = hierarchical_fl.train_end_to_end(
+        train_dataset=train_dataset,
+        valid_dataset=valid_dataset,
+        test_dataset=test_dataset,
+        user_groups=user_groups,
+        config=config,
+        epochs=config["epochs"],
+        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
+    )
+    output["device"] = str(device)
+    output["peak_vram_bytes"] = torch.cuda.max_memory_allocated() if use_cuda else 0
+    metadata["device"] = str(device)
+    metadata["peak_vram_bytes"] = output["peak_vram_bytes"]
+    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2, sort_keys=True)
+
+    # Save metrics (exclude non-serializable model)
+    filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
+    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+        json.dump(filtered_output, f, indent=4)
+
+    # Test best model
+    best_model = output.get("best_weight")
+    if best_model is not None:
+        best_model = best_model.to(device).eval()
+        test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, drop_last=False)
+
+        all_preds, all_targets = [], []
+        with torch.no_grad():
+            for data, target in test_loader:
+                data, target = data.to(device), target.to(device)
+                pred = best_model(data).argmax(dim=1)
+                all_preds.extend(pred.cpu().numpy())
+                all_targets.extend(target.cpu().numpy())
+
+        acc = accuracy_score(all_targets, all_preds)
+        print(f"\nResults after {config['epochs']} global rounds:")
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
+        print("|---- Test Acc: {:.2f}%".format(100 * acc))
+    else:
+        print("\nNo best model was saved during training.")
+        print("|---- Best Validation Acc: {:.2f}%".format(100 * output["best_f1"]))
+
+    print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+"""
+E-HSFP Metrics Logger.
+
+Collects all E-HSFP-specific metrics into a structured dict,
+compatible with wandb.log() and JSON output.
+"""
+
+import json
+import os
+from typing import Dict, Any, Optional
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class EHSFPMetricsLogger:
+    """Collects E-HSFP metrics per epoch and supports wandb + JSON output."""
+
+    def __init__(self):
+        self.history: list = []
+        self._current: Dict[str, Any] = {}
+
+    def reset_epoch(self) -> None:
+        """Start collecting metrics for a new epoch."""
+        if self._current:
+            self.history.append(self._current)
+        self._current = {}
+
+    def log(self, key: str, value: Any) -> None:
+        self._current[key] = value
+
+    def log_dict(self, d: Dict[str, Any]) -> None:
+        self._current.update(d)
+
+    def log_memory_stats(
+        self,
+        num_current: int,
+        num_memory: int,
+        replay_ratio: float,
+        avg_age: float,
+        avg_reliability: float,
+    ) -> None:
+        self.log("ehsfp/num_current_prototypes", num_current)
+        self.log("ehsfp/num_memory_prototypes", num_memory)
+        self.log("ehsfp/memory_replay_ratio", replay_ratio)
+        self.log("ehsfp/avg_prototype_age", avg_age)
+        self.log("ehsfp/avg_reliability_weight", avg_reliability)
+
+    def log_losses(
+        self,
+        task_loss: Optional[float] = None,
+        prc_loss: Optional[float] = None,
+        dropout_loss: Optional[float] = None,
+        contrastive_loss: Optional[float] = None,
+    ) -> None:
+        if task_loss is not None:
+            self.log("ehsfp/task_loss", task_loss)
+        if prc_loss is not None:
+            self.log("ehsfp/prc_loss", prc_loss)
+        if dropout_loss is not None:
+            self.log("ehsfp/dropout_consistency_loss", dropout_loss)
+        if contrastive_loss is not None:
+            self.log("ehsfp/contrastive_loss", contrastive_loss)
+
+    def log_dropout_stats(
+        self,
+        dropout_rate: float,
+        dropped_count: int,
+    ) -> None:
+        self.log("ehsfp/prototype_dropout_rate", dropout_rate)
+        self.log("ehsfp/dropped_prototype_count", dropped_count)
+
+    def log_communication(
+        self,
+        prototype_payload_MB: float,
+        total_comm_MB: float,
+    ) -> None:
+        self.log("ehsfp/prototype_payload_MB", prototype_payload_MB)
+        self.log("ehsfp/total_comm_MB", total_comm_MB)
+
+    def flush_to_wandb(self, extra: Optional[Dict] = None) -> None:
+        """Send current epoch metrics to wandb."""
+        if wandb is not None and wandb.run is not None:
+            data = dict(self._current)
+            if extra:
+                data.update(extra)
+            wandb.log(data)
+
+    def get_current(self) -> Dict[str, Any]:
+        return dict(self._current)
+
+    def append_jsonl(self, path: str, extra: Optional[Dict] = None) -> None:
+        """Persist an epoch record without display rounding.
+
+        Diagnostic metrics can occasionally be NaN/Inf (e.g. a degenerate
+        per-class reliability variance); sanitize to null so a single non-finite
+        diagnostic never aborts the whole run's logging (and final test/metrics
+        write). This keeps runs robust without hiding real training divergence,
+        which is already tracked via the finite loss/accuracy fields.
+        """
+        import math
+
+        def _sanitize(o):
+            if isinstance(o, float):
+                return o if math.isfinite(o) else None
+            if isinstance(o, dict):
+                return {k: _sanitize(v) for k, v in o.items()}
+            if isinstance(o, (list, tuple)):
+                return [_sanitize(v) for v in o]
+            return o
+
+        data = _sanitize(dict(self._current))
+        if extra:
+            data.update(_sanitize(dict(extra)))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a") as handle:
+            handle.write(json.dumps(data, sort_keys=True, allow_nan=False) + "\n")
+
+    def finalize(self) -> list:
+        """Flush remaining metrics and return full history."""
+        if self._current:
+            self.history.append(self._current)
+            self._current = {}
+        return self.history
+classification/H-SFP/hierarchy.py:1224:            self.ehsfp_logger.reset_epoch()
+classification/H-SFP/hierarchy.py:1434:                self.ehsfp_logger.log("ehsfp/reliability_train_loss", rel_loss)
+classification/H-SFP/hierarchy.py:1481:                self.ehsfp_logger.log_memory_stats(
+classification/H-SFP/hierarchy.py:1488:                self.ehsfp_logger.log_dropout_stats(
+classification/H-SFP/hierarchy.py:1491:                self.ehsfp_logger.log_dict({
+classification/H-SFP/hierarchy.py:1505:            self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
+classification/H-SFP/hierarchy.py:1506:            self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
+classification/H-SFP/hierarchy.py:1507:            self.ehsfp_logger.log_communication(
+classification/H-SFP/hierarchy.py:1526:            log_data.update(self.ehsfp_logger.get_current())
+classification/H-SFP/hierarchy.py:1532:            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+classification/H-SFP/hierarchy.py:1559:            "ehsfp_metrics": self.ehsfp_logger.finalize(),
+classification/H-SFP/runner.py:13:from tensorboardX import SummaryWriter
+classification/H-SFP/runner.py:26:    logger = SummaryWriter("./logs")
+classification/H-SFP/runner.py:53:    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
+segmentation/H-SFP/hierarchy.py:824:            self.ehsfp_logger.reset_epoch()
+segmentation/H-SFP/hierarchy.py:972:                self.ehsfp_logger.log("ehsfp/reliability_train_loss", rel_loss)
+segmentation/H-SFP/hierarchy.py:1016:                self.ehsfp_logger.log_memory_stats(
+segmentation/H-SFP/hierarchy.py:1023:                self.ehsfp_logger.log_dropout_stats(
+segmentation/H-SFP/hierarchy.py:1026:                self.ehsfp_logger.log_dict({
+segmentation/H-SFP/hierarchy.py:1031:            self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
+segmentation/H-SFP/hierarchy.py:1032:            self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
+segmentation/H-SFP/hierarchy.py:1033:            self.ehsfp_logger.log("ehsfp/decoder_loss", decoder_loss)
+segmentation/H-SFP/hierarchy.py:1034:            self.ehsfp_logger.log_communication(
+segmentation/H-SFP/hierarchy.py:1053:            log_data.update(self.ehsfp_logger.get_current())
+segmentation/H-SFP/hierarchy.py:1059:            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+segmentation/H-SFP/hierarchy.py:1074:            "ehsfp_metrics": self.ehsfp_logger.finalize(),
+segmentation/H-SFP/runner.py:43:    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index e5fa86e..7f76baf 100644
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -3,6 +3,8 @@ import os
+ import time
+ 
+ import torch
++from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
++from ehsfp.integrity import git_commit
+ from config import ConfigLoader
+ from data import get_dataset
+ from hierarchy import HierarchicalFL
+@@ -16,18 +18,53 @@ def run(cfg_path: str):
+     start_time = time.time()
+     config_loader = ConfigLoader(cfg_path)
+     config = config_loader.get_config()
++    effective_ehsfp = get_ehsfp_config(config)
++    config_hash = resolved_config_hash(config, effective_ehsfp)
++    config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+     logger = SummaryWriter("./logs")
+-    if config["is_gpu"]:
++    use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
++    if config.get("require_cuda", False) and not use_cuda:
++        raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
++    if config.get("is_gpu", False) and not torch.cuda.is_available():
++        print("[Device] CUDA requested but unavailable; falling back to CPU.")
++    if use_cuda:
+         torch.cuda.set_device(config["gpu"])
+-    device = torch.device("cuda") if config["is_gpu"] else torch.device("cpu")
++        torch.cuda.reset_peak_memory_stats()
++    device = torch.device("cuda") if use_cuda else torch.device("cpu")
++    config["is_gpu"] = use_cuda
++    print(f"[Device] training_device={device}")
+ 
+     train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
+     client_model, edge_model, cloud_model = get_model(config["model"], config["dataset"])
+     client_model, edge_model, cloud_model = (
+         client_model(), edge_model(), cloud_model(config)
+     )
++    arch = architecture_manifest((client_model, edge_model, cloud_model))
++    configured_out_dir = config.get("output_dir")
++    if configured_out_dir:
++        out_base = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
++            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
++        )
++    else:
++        out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
++    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
++    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
++    config["runtime_counters_path"] = os.path.join(run_dir, "runtime_counters.jsonl")
++    metadata = {
++        "resolved_config": config,
++        "effective_ehsfp": effective_ehsfp,
++        "resolved_config_hash": config_hash,
++        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
++        "partition_hash": partition_hash(user_groups),
++        "architecture": arch,
++        "run_dir": run_dir,
++    }
++    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
++        json.dump(metadata, f, indent=2, sort_keys=True)
++    print(f"[Integrity] resolved_config_hash={config_hash}")
++    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
+ 
+     hierarchical_fl = HierarchicalFL(
+         args=config,
+@@ -48,17 +85,18 @@ def run(cfg_path: str):
+         user_groups=user_groups,
+         config=config,
+         epochs=config["epochs"],
++        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
+     )
++    output["device"] = str(device)
++    output["peak_vram_bytes"] = torch.cuda.max_memory_allocated() if use_cuda else 0
++    metadata["device"] = str(device)
++    metadata["peak_vram_bytes"] = output["peak_vram_bytes"]
++    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
++        json.dump(metadata, f, indent=2, sort_keys=True)
+ 
+     # Save metrics (exclude non-serializable model)
+     filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
+-    filename = (
+-        f"HSFP_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
+-        f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
+-    )
+-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+-    os.makedirs(out_dir, exist_ok=True)
+-    with open(os.path.join(out_dir, filename), "w") as f:
++    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+         json.dump(filtered_output, f, indent=4)
+ 
+     # Test best model
+diff --git a/configs/classification/h-sfp/default.yaml b/configs/classification/h-sfp/default.yaml
+index 6177b7e..48d77bf 100644
+--- a/configs/classification/h-sfp/default.yaml
++++ b/configs/classification/h-sfp/default.yaml
+@@ -2,7 +2,7 @@ is_gpu: true
+ gpu: 0
+ iid: true
+ num_users: 200
+-epochs: 200
++epochs: 60
+ frac: 0.1
+ local_bs: 16
+ optimizer: "adam"
+diff --git a/configs/segmentation/h-sfp/default.yaml b/configs/segmentation/h-sfp/default.yaml
+index b0a91c6..29cbdeb 100644
+--- a/configs/segmentation/h-sfp/default.yaml
++++ b/configs/segmentation/h-sfp/default.yaml
+@@ -2,7 +2,7 @@ is_gpu: true
+ gpu: 0
+ iid: true
+ num_users: 50
+-epochs: 200
++epochs: 60
+ frac: 0.1
+ local_bs: 16
+ optimizer: "adam"
+diff --git a/ehsfp/metrics_logger.py b/ehsfp/metrics_logger.py
+index 36f08be..8163cc0 100644
+--- a/ehsfp/metrics_logger.py
++++ b/ehsfp/metrics_logger.py
+@@ -5,6 +5,8 @@ Collects all E-HSFP-specific metrics into a structured dict,
+ compatible with wandb.log() and JSON output.
+ """
+ 
++import json
++import os
+ from typing import Dict, Any, Optional
+ 
+ try:
+@@ -89,6 +91,33 @@ class EHSFPMetricsLogger:
+     def get_current(self) -> Dict[str, Any]:
+         return dict(self._current)
+ 
++    def append_jsonl(self, path: str, extra: Optional[Dict] = None) -> None:
++        """Persist an epoch record without display rounding.
++
++        Diagnostic metrics can occasionally be NaN/Inf (e.g. a degenerate
++        per-class reliability variance); sanitize to null so a single non-finite
++        diagnostic never aborts the whole run's logging (and final test/metrics
++        write). This keeps runs robust without hiding real training divergence,
++        which is already tracked via the finite loss/accuracy fields.
++        """
++        import math
++
++        def _sanitize(o):
++            if isinstance(o, float):
++                return o if math.isfinite(o) else None
++            if isinstance(o, dict):
++                return {k: _sanitize(v) for k, v in o.items()}
++            if isinstance(o, (list, tuple)):
++                return [_sanitize(v) for v in o]
++            return o
++
++        data = _sanitize(dict(self._current))
++        if extra:
++            data.update(_sanitize(dict(extra)))
++        os.makedirs(os.path.dirname(path), exist_ok=True)
++        with open(path, "a") as handle:
++            handle.write(json.dumps(data, sort_keys=True, allow_nan=False) + "\n")
++
+     def finalize(self) -> list:
+         """Flush remaining metrics and return full history."""
+         if self._current:
+diff --git a/segmentation/H-SFP/runner.py b/segmentation/H-SFP/runner.py
+index 9123edf..4e445d3 100644
+--- a/segmentation/H-SFP/runner.py
++++ b/segmentation/H-SFP/runner.py
+@@ -3,6 +3,8 @@ import os
+ import time
+ 
+ import torch
++from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
++from ehsfp.integrity import git_commit
+ from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from hierarchy import HierarchicalFL
+@@ -15,6 +17,9 @@ def run(cfg_path: str):
+     start_time = time.time()
+     config_loader = ConfigLoader(cfg_path)
+     config = config_loader.get_config()
++    effective_ehsfp = get_ehsfp_config(config)
++    config_hash = resolved_config_hash(config, effective_ehsfp)
++    config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+     if config["is_gpu"]:
+@@ -32,6 +37,23 @@ def run(cfg_path: str):
+     # Decoder for full-pipeline inference (spatial segmentation)
+     decoder_cls = get_decoder(config["model"], config["dataset"])
+     cloud_decoder = decoder_cls()
++    arch = architecture_manifest((client_model, edge_model, cloud_model, cloud_decoder))
++    out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
++    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
++    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
++    metadata = {
++        "resolved_config": config,
++        "effective_ehsfp": effective_ehsfp,
++        "resolved_config_hash": config_hash,
++        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
++        "partition_hash": partition_hash(user_groups),
++        "architecture": arch,
++        "run_dir": run_dir,
++    }
++    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
++        json.dump(metadata, f, indent=2, sort_keys=True)
++    print(f"[Integrity] resolved_config_hash={config_hash}")
++    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
+ 
+     hierarchical_fl = HierarchicalFL(
+         args=config,
+@@ -53,17 +75,12 @@ def run(cfg_path: str):
+         user_groups=user_groups,
+         config=config,
+         epochs=config["epochs"],
++        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
+     )
+ 
+     # Save metrics
+     filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
+-    filename = (
+-        f"HSFP_seg_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
+-        f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
+-    )
+-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+-    os.makedirs(out_dir, exist_ok=True)
+-    with open(os.path.join(out_dir, filename), "w") as f:
++    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+         json.dump(filtered_output, f, indent=4)
+ 
+     # Test best model
+
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+codex
+The offending writer was entirely unused: constructing `SummaryWriter("./logs")` only launched tensorboardX’s `EventFileWriter` background thread; no scalar or event was ever submitted through it. I’ve removed that import and construction from classification H-SFP, leaving `EHSFPMetricsLogger.append_jsonl()` and every metric assembly call untouched. Next I’m running the available unit suite plus focused static checks.
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)(test[''^/]*'"\\.py|tests?/)' | head -200; rg -n \"tensorboardX|SummaryWriter|FileWriter\" classification/H-SFP ehsfp; python -m compileall -q classification/H-SFP/runner.py ehsfp/metrics_logger.py; git diff --check" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/HierFL/clients/test.py
+segmentation/Federated/clients/test.py
+segmentation/H-SFP/clients/test.py
+segmentation/HeteroSFL/clients/test.py
+classification/Federated/clients/test.py
+classification/HierFL/clients/test.py
+
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+exec
+/bin/bash -lc 'pytest -q' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ exited 127 in 0ms:
+/bin/bash: line 1: pytest: command not found
+
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+codex
+The repository’s environment does not have the `pytest` executable installed, so that test command cannot start. The compile check and whitespace validation pass; I’m using the standard-library test runner as the available fallback and adding a focused behavioral check that JSONL still writes all current and extra metrics.
+exec
+/bin/bash -lc "python -m unittest discover -v; python - <<'PY'
+import json
+import tempfile
+from pathlib import Path
+from ehsfp.metrics_logger import EHSFPMetricsLogger
+
+logger = EHSFPMetricsLogger()
+metrics = {
+    \"ehsfp/task_loss\": 1.25,
+    \"ehsfp/prc_loss\": 0.5,
+    \"ehsfp/dropout_consistency_loss\": 0.125,
+    \"ehsfp/contrastive_loss\": 0.25,
+}
+logger.log_dict(metrics)
+with tempfile.TemporaryDirectory() as directory:
+    path = Path(directory) / \"metrics.jsonl\"
+    logger.append_jsonl(str(path), {\"epoch\": 1})
+    written = json.loads(path.read_text())
+    assert written == {**metrics, \"epoch\": 1}, written
+print(\"JSONL preservation check passed\")
+PY
+python - <<'PY'
+import ast
+from pathlib import Path
+path = Path('classification/H-SFP/runner.py')
+tree = ast.parse(path.read_text())
+assert all(not (isinstance(node, ast.ImportFrom) and node.module == 'tensorboardX') for node in ast.walk(tree))
+assert all(not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {'SummaryWriter', 'FileWriter'}) for node in ast.walk(tree))
+print('H-SFP async-writer absence check passed')
+PY
+git diff --check; git diff --unified=3 -- classification/H-SFP/runner.py; nl -ba classification/H-SFP/runner.py | sed -n '1,36p'; nl -ba ehsfp/metrics_logger.py | sed -n '88,125p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+ succeeded in 2522ms:
+
+----------------------------------------------------------------------
+Ran 0 tests in 0.000s
+
+NO TESTS RAN
+JSONL preservation check passed
+H-SFP async-writer absence check passed
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index e5fa86e..8545325 100644
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -3,12 +3,13 @@ import os
+ import time
+ 
+ import torch
++from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
++from ehsfp.integrity import git_commit
+ from config import ConfigLoader
+ from data import get_dataset
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -16,18 +17,52 @@ def run(cfg_path: str):
+     start_time = time.time()
+     config_loader = ConfigLoader(cfg_path)
+     config = config_loader.get_config()
++    effective_ehsfp = get_ehsfp_config(config)
++    config_hash = resolved_config_hash(config, effective_ehsfp)
++    config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+-    if config["is_gpu"]:
++    use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
++    if config.get("require_cuda", False) and not use_cuda:
++        raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
++    if config.get("is_gpu", False) and not torch.cuda.is_available():
++        print("[Device] CUDA requested but unavailable; falling back to CPU.")
++    if use_cuda:
+         torch.cuda.set_device(config["gpu"])
+-    device = torch.device("cuda") if config["is_gpu"] else torch.device("cpu")
++        torch.cuda.reset_peak_memory_stats()
++    device = torch.device("cuda") if use_cuda else torch.device("cpu")
++    config["is_gpu"] = use_cuda
++    print(f"[Device] training_device={device}")
+ 
+     train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
+     client_model, edge_model, cloud_model = get_model(config["model"], config["dataset"])
+     client_model, edge_model, cloud_model = (
+         client_model(), edge_model(), cloud_model(config)
+     )
++    arch = architecture_manifest((client_model, edge_model, cloud_model))
++    configured_out_dir = config.get("output_dir")
++    if configured_out_dir:
++        out_base = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
++            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
++        )
++    else:
++        out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
++    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
++    config["runtime_metrics_path"] = os.path.join(run_dir, "metrics_unrounded.jsonl")
++    config["runtime_counters_path"] = os.path.join(run_dir, "runtime_counters.jsonl")
++    metadata = {
++        "resolved_config": config,
++        "effective_ehsfp": effective_ehsfp,
++        "resolved_config_hash": config_hash,
++        "git_commit": git_commit(os.path.join(os.path.dirname(__file__), "..", "..")),
++        "partition_hash": partition_hash(user_groups),
++        "architecture": arch,
++        "run_dir": run_dir,
++    }
++    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
++        json.dump(metadata, f, indent=2, sort_keys=True)
++    print(f"[Integrity] resolved_config_hash={config_hash}")
++    print(f"[Integrity] architecture_id={arch['architecture_id']} run_dir={run_dir}")
+ 
+     hierarchical_fl = HierarchicalFL(
+         args=config,
+@@ -48,17 +83,18 @@ def run(cfg_path: str):
+         user_groups=user_groups,
+         config=config,
+         epochs=config["epochs"],
++        checkpoint_path=os.path.join(run_dir, "checkpoint.pt"),
+     )
++    output["device"] = str(device)
++    output["peak_vram_bytes"] = torch.cuda.max_memory_allocated() if use_cuda else 0
++    metadata["device"] = str(device)
++    metadata["peak_vram_bytes"] = output["peak_vram_bytes"]
++    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
++        json.dump(metadata, f, indent=2, sort_keys=True)
+ 
+     # Save metrics (exclude non-serializable model)
+     filtered_output = {k: v for k, v in output.items() if k not in ("best_weight",)}
+-    filename = (
+-        f"HSFP_{config['dataset']}_iid:{config['iid']}_{config['model']}_"
+-        f"{config['num_users']}users_t1:{config['t1']}_t2:{config['t2']}.json"
+-    )
+-    out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+-    os.makedirs(out_dir, exist_ok=True)
+-    with open(os.path.join(out_dir, filename), "w") as f:
++    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
+         json.dump(filtered_output, f, indent=4)
+ 
+     # Test best model
+     1	import json
+     2	import os
+     3	import time
+     4	
+     5	import torch
+     6	from ehsfp import architecture_manifest, get_ehsfp_config, partition_hash, prepare_run_dir, resolved_config_hash
+     7	from ehsfp.integrity import git_commit
+     8	from config import ConfigLoader
+     9	from data import get_dataset
+    10	from hierarchy import HierarchicalFL
+    11	from models import get_model
+    12	from sklearn.metrics import accuracy_score
+    13	from torch.utils.data import DataLoader
+    14	
+    15	
+    16	def run(cfg_path: str):
+    17	    start_time = time.time()
+    18	    config_loader = ConfigLoader(cfg_path)
+    19	    config = config_loader.get_config()
+    20	    effective_ehsfp = get_ehsfp_config(config)
+    21	    config_hash = resolved_config_hash(config, effective_ehsfp)
+    22	    config["resolved_config_hash"] = config_hash
+    23	    print("Method: {}".format(config["strategy"]))
+    24	
+    25	    use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+    26	    if config.get("require_cuda", False) and not use_cuda:
+    27	        raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+    28	    if config.get("is_gpu", False) and not torch.cuda.is_available():
+    29	        print("[Device] CUDA requested but unavailable; falling back to CPU.")
+    30	    if use_cuda:
+    31	        torch.cuda.set_device(config["gpu"])
+    32	        torch.cuda.reset_peak_memory_stats()
+    33	    device = torch.device("cuda") if use_cuda else torch.device("cpu")
+    34	    config["is_gpu"] = use_cuda
+    35	    print(f"[Device] training_device={device}")
+    36	
+    88	                data.update(extra)
+    89	            wandb.log(data)
+    90	
+    91	    def get_current(self) -> Dict[str, Any]:
+    92	        return dict(self._current)
+    93	
+    94	    def append_jsonl(self, path: str, extra: Optional[Dict] = None) -> None:
+    95	        """Persist an epoch record without display rounding.
+    96	
+    97	        Diagnostic metrics can occasionally be NaN/Inf (e.g. a degenerate
+    98	        per-class reliability variance); sanitize to null so a single non-finite
+    99	        diagnostic never aborts the whole run's logging (and final test/metrics
+   100	        write). This keeps runs robust without hiding real training divergence,
+   101	        which is already tracked via the finite loss/accuracy fields.
+   102	        """
+   103	        import math
+   104	
+   105	        def _sanitize(o):
+   106	            if isinstance(o, float):
+   107	                return o if math.isfinite(o) else None
+   108	            if isinstance(o, dict):
+   109	                return {k: _sanitize(v) for k, v in o.items()}
+   110	            if isinstance(o, (list, tuple)):
+   111	                return [_sanitize(v) for v in o]
+   112	            return o
+   113	
+   114	        data = _sanitize(dict(self._current))
+   115	        if extra:
+   116	            data.update(_sanitize(dict(extra)))
+   117	        os.makedirs(os.path.dirname(path), exist_ok=True)
+   118	        with open(path, "a") as handle:
+   119	            handle.write(json.dumps(data, sort_keys=True, allow_nan=False) + "\n")
+   120	
+   121	    def finalize(self) -> list:
+   122	        """Flush remaining metrics and return full history."""
+   123	        if self._current:
+   124	            self.history.append(self._current)
+   125	            self._current = {}
+
+codex
+Eliminated the E-HSFP TensorBoard deadlock source.
+
+- [classification/H-SFP/runner.py:13](/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py:13): removed `tensorboardX.SummaryWriter` import.
+- [classification/H-SFP/runner.py:25](/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py:25): removed the former `SummaryWriter("./logs")` construction before training.
+
+That unused construction was the only TensorBoard writer in classification H-SFP. Although no events were logged through it, initialization launched tensorboardX’s asynchronous `EventFileWriter` thread, allowing it to contend with PyTorch autograd. H-SFP training now creates no TensorBoard writer or background writer thread.
+
+JSONL logging is unchanged:
+
+- [ehsfp/metrics_logger.py:94](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/metrics_logger.py:94) still combines every current E-HSFP metric with the epoch’s extra metrics.
+- [ehsfp/metrics_logger.py:118](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/metrics_logger.py:118) still appends the complete record to `metrics_unrounded.jsonl`.
+- No metric collection or `append_jsonl` call was modified.
+
+Validation:
+
+- Python compilation passed.
+- JSONL round-trip preservation check passed, including task, PRC, dropout, contrastive, and extra epoch fields.
+- AST check confirmed classification H-SFP contains no `tensorboardX`, `SummaryWriter`, or `FileWriter`.
+- `git diff --check` passed.
+- `pytest` is unavailable in the environment.
+- `unittest discover` completed but found no registered tests.
+- No GPU run was performed, as requested.
+- Existing uncommitted changes were preserved.
+diff --git a/classification/H-SFP/runner.py b/classification/H-SFP/runner.py
+index 7f76baf0cc55829fe3ef4c7a141233cbfeac5a14..8545325257a568a8b168411ae7e5adeca15fcd84
+--- a/classification/H-SFP/runner.py
++++ b/classification/H-SFP/runner.py
+@@ -10,7 +10,6 @@
+ from hierarchy import HierarchicalFL
+ from models import get_model
+ from sklearn.metrics import accuracy_score
+-from tensorboardX import SummaryWriter
+ from torch.utils.data import DataLoader
+ 
+ 
+@@ -23,7 +22,6 @@
+     config["resolved_config_hash"] = config_hash
+     print("Method: {}".format(config["strategy"]))
+ 
+-    logger = SummaryWriter("./logs")
+     use_cuda = bool(config.get("is_gpu", False)) and torch.cuda.is_available()
+     if config.get("require_cuda", False) and not use_cuda:
+         raise RuntimeError("CUDA is required by this config, but no CUDA device is available")
+
+tokens used
+24,287
+Eliminated the E-HSFP TensorBoard deadlock source.
+
+- [classification/H-SFP/runner.py:13](/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py:13): removed `tensorboardX.SummaryWriter` import.
+- [classification/H-SFP/runner.py:25](/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py:25): removed the former `SummaryWriter("./logs")` construction before training.
+
+That unused construction was the only TensorBoard writer in classification H-SFP. Although no events were logged through it, initialization launched tensorboardX’s asynchronous `EventFileWriter` thread, allowing it to contend with PyTorch autograd. H-SFP training now creates no TensorBoard writer or background writer thread.
+
+JSONL logging is unchanged:
+
+- [ehsfp/metrics_logger.py:94](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/metrics_logger.py:94) still combines every current E-HSFP metric with the epoch’s extra metrics.
+- [ehsfp/metrics_logger.py:118](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/metrics_logger.py:118) still appends the complete record to `metrics_unrounded.jsonl`.
+- No metric collection or `append_jsonl` call was modified.
+
+Validation:
+
+- Python compilation passed.
+- JSONL round-trip preservation check passed, including task, PRC, dropout, contrastive, and extra epoch fields.
+- AST check confirmed classification H-SFP contains no `tensorboardX`, `SummaryWriter`, or `FileWriter`.
+- `git diff --check` passed.
+- `pytest` is unavailable in the environment.
+- `unittest discover` completed but found no registered tests.
+- No GPU run was performed, as requested.
+- Existing uncommitted changes were preserved.

@@ -1,0 +1,11 @@
+\section{Related Work}\label{sec:related}
+\paragraph{Federated, hierarchical, and split learning.}
+FedAvg communicates model parameters and weights aggregation by local sample count \cite{mcmahan2017communication}. Hierarchical FL uses intermediate aggregators to exploit network topology, whereas SplitFed combines split execution with federated synchronization \cite{thapa2022splitfed}. These approaches differ from H-SFP and \method{} because the latter train upper segments from generated feature distributions rather than maintaining sample-wise forward/backward exchanges. This decoupling changes the optimization problem: the upper tier sees an approximation to a moving feature distribution.
+
+\paragraph{Prototype and feature transfer.}
+FedProto exchanges class prototypes to accommodate heterogeneous models \cite{tan2022fedproto}. FedPFT fits parametric models, including Gaussian mixtures, to features from frozen foundation models for one-shot classifier training \cite{beitollahi2025fedpft}; FedGMKD uses client-side Gaussian-mixture prototype features and soft predictions for personalized distillation \cite{zhang2024fedgmkd}. These are close representation precedents and rule out any claim that using GMMs is itself novel. They assume different encoders, communication schedules, and receivers from the repeatedly transformed client--edge--cloud path studied here. We categorize a baseline as direct only when its communicated objects and upper-tier training can be executed in the same hierarchy; otherwise it is adapted or contextual, and no published number is inserted into our tables.
+
+\paragraph{Mixture representations and compression.}
+Gaussian mixture models represent density using latent components \cite{mclachlan2000finite}. A mixture is not novel by itself. The methodological issue here is how component support, coordinate compatibility, nonlinear boundary transformation, and two communication budgets interact in hierarchical split training. Optimal transport offers distances between probability measures \cite{villani2009optimal}; our pair score equals the squared $W_2$ expression for two diagonal Gaussians, multiplied by a support factor, but greedy use of that score is neither an exact distance between arbitrary mixtures nor a globally optimal coreset construction.
+
+\input{tables/extension}

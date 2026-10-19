@@ -1,0 +1,57 @@
+[E-HSFP] Ablation mode: baseline_hsfp
+[Runner] Seed: 20260713
+[Runner] task=classification  method=h-sfp
+[Runner] cfg=configs/smoke/exp_i438tgo0.yaml
+
+Method: hier_fedavg
+Train len: 50000
+[Integrity] resolved_config_hash=64ed61e13fa99deb68a2c79741772a4a1aa3d1e2be24abf8d1978c59b2d8e37b
+[Integrity] architecture_id=10abc078df3f run_dir=/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/Figure/data/runs/10abc078df3f/64ed61e13fa99deb68a2c79741772a4a1aa3d1e2be24abf8d1978c59b2d8e37b
+Using 2 workers for the DataLoader.
+
+==================== EPOCH 1/2 ====================
+-> Phase 1: Clients Processing (8 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 1216 L1 samples (original labels). Starting SSL...
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/docs/optimization_loop/logs/plan1_smoke_20260713/run_smoke_wrapper.py", line 55, in <module>
+    runpy.run_path(os.path.join(ROOT, "main.py"), run_name="__main__")
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/runpy.py", line 288, in run_path
+    return _run_module_code(code, init_globals, run_name,
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/runpy.py", line 97, in _run_module_code
+    _run_code(code, mod_globals, init_globals,
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 246, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py", line 66, in run
+    output = hierarchical_fl.train_end_to_end(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/hierarchy.py", line 1159, in train_end_to_end
+    edge_outputs[eid], edge_support = self._edge_ssl_extraction_phase(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/hierarchy.py", line 781, in _edge_ssl_extraction_phase
+    z1 = model(view_1)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/models/cnn_cifar.py", line 122, in forward
+    return self.part(x)  # [B, 256, 1, 1]
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/container.py", line 244, in forward
+    input = module(input)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 548, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+  File "/home/jackson/miniconda3/envs/FCL/lib/python3.9/site-packages/torch/nn/modules/conv.py", line 543, in _conv_forward
+    return F.conv2d(
+RuntimeError: Input type (c10::BFloat16) and bias type (float) should be the same

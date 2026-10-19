@@ -1,0 +1,417 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.3
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f65d1-17f5-75d0-8502-aaddf28344ce
+--------
+user
+You are Codex. Build a fair-comparison config set for ISIC-2018 SEGMENTATION analogous to the CIFAR-100/HAM10000 classification ones. First CHECK the ISIC-2018 data is present locally (look for data/ISIC2018 or the path referenced in configs/segmentation/*/default.yaml); if MISSING, say so clearly and stop. If present: create matched ISIC-2018 proxy configs (same partition scheme+seed, ~10 rounds, metric = Dice + IoU) under configs/proxy/ for the segmentation methods available (h-sfp = segmentation/H-SFP, plus whichever baselines exist under segmentation/: federated, hierfl, splitfl, hsfl, heterosfl — check which segmentation runners exist). Verify each resolves + shares an identical partition_hash. Extend tools/fair_compare/aggregate.py with a --dataset isic2018 mode writing results/fair_comparison_isic2018.csv capturing best Dice + IoU + total_comm_MB + peak_vram_MB + runtime_s. Emit the EXACT host-GPU launch commands (task=segmentation) for all available methods x 3 seeds (20260714/15/16); H-SFP seg uses its centered/freeze config if applicable (check segmentation H-SFP supports prototype_space). NO GPU/training. Preserve uncommitted changes; local only. FINAL: data-availability verdict, which seg methods exist, config paths + partition_hash match, aggregator changes, and the exact command list.
+codex
+I’ll first inspect the segmentation data/configs and repository guidance. If the required ISIC-2018 data is absent, I’ll stop without making changes, exactly as requested.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g 'configs/segmentation/**/default.yaml' -g 'segmentation/**' -g 'data/ISIC2018/**' | sed -n '1,160p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+/home/jackson/Desktop/Split-Federated-Merging-Learning
+configs/segmentation/federated/default.yaml
+configs/segmentation/h-sfp/default.yaml
+configs/segmentation/hetero-sfl/default.yaml
+configs/segmentation/splitfl/default.yaml
+configs/segmentation/hsfl/default.yaml
+configs/segmentation/hierfl/default.yaml
+segmentation/.gitignore
+segmentation/Federated/models/CNN_ISIC.py
+segmentation/Federated/models/constant.py
+segmentation/HeteroSFL/models/ISIC_ResNet50.py
+segmentation/HeteroSFL/models/constant.py
+segmentation/HeteroSFL/models/__init__.py
+segmentation/Federated/config/config_loader.py
+segmentation/Federated/runner.py
+segmentation/Federated/config/__pycache__/__init__.cpython-39.pyc
+segmentation/Federated/config/__pycache__/config_loader.cpython-39.pyc
+segmentation/Federated/config/__init__.py
+segmentation/Federated/server/FedProxAggregator.py
+segmentation/Federated/server/FedSGDAggregator.py
+segmentation/Federated/server/FedNovaAggregator.py
+segmentation/Federated/server/constant.py
+segmentation/Federated/server/FedAvgAggregator.py
+segmentation/HeteroSFL/data/utils/__init__.py
+segmentation/HeteroSFL/data/utils/ISIC.py
+segmentation/Federated/__pycache__/runner.cpython-39.pyc
+segmentation/HeteroSFL/data/sampling.py
+segmentation/HeteroSFL/data/__init__.py
+segmentation/HeteroSFL/data/get_data.py
+segmentation/Federated/data/sampling.py
+segmentation/Federated/data/__init__.py
+segmentation/Federated/data/get_data.py
+segmentation/Federated/server/Aggregator.py
+segmentation/Federated/server/__init__.py
+segmentation/Federated/data/utils/ISIC.py
+segmentation/Federated/server/__pycache__/__init__.cpython-39.pyc
+segmentation/Federated/server/__pycache__/FedAvgAggregator.cpython-39.pyc
+segmentation/Federated/server/__pycache__/Aggregator.cpython-39.pyc
+segmentation/Federated/server/__pycache__/FedNovaAggregator.cpython-39.pyc
+segmentation/Federated/server/__pycache__/FedSGDAggregator.cpython-39.pyc
+segmentation/Federated/server/__pycache__/constant.cpython-39.pyc
+segmentation/Federated/server/__pycache__/FedProxAggregator.cpython-39.pyc
+segmentation/Federated/data/utils/__init__.py
+segmentation/Federated/models/__init__.py
+segmentation/run.sh
+segmentation/Federated/clients/FedNovaClient.py
+segmentation/Federated/clients/test.py
+segmentation/Federated/clients/FedSGDClient.py
+segmentation/Federated/clients/constant.py
+segmentation/Federated/clients/Client.py
+segmentation/Federated/clients/DiceFocalLoss.py
+segmentation/Federated/clients/FedAvgClient.py
+segmentation/Federated/clients/__init__.py
+segmentation/Federated/clients/FedProxClient.py
+segmentation/HeteroSFL/clients/test.py
+segmentation/HeteroSFL/clients/DiceFocalLoss.py
+segmentation/HeteroSFL/clients/__init__.py
+segmentation/Federated/data/__pycache__/get_data.cpython-39.pyc
+segmentation/Federated/data/__pycache__/__init__.cpython-39.pyc
+segmentation/Federated/data/__pycache__/sampling.cpython-39.pyc
+segmentation/HierFL/README.md
+segmentation/HeteroSFL/config/config_loader.py
+segmentation/Federated/clients/__pycache__/FedAvgClient.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/__init__.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/test.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/FedNovaClient.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/FedProxClient.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/Client.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/DiceFocalLoss.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/FedSGDClient.cpython-39.pyc
+segmentation/Federated/clients/__pycache__/constant.cpython-39.pyc
+segmentation/HeteroSFL/runner.py
+segmentation/HierFL/models/CNN_ISIC.py
+segmentation/HierFL/models/constant.py
+segmentation/HierFL/models/__init__.py
+segmentation/HierFL/servers/FedAvgAggregator.py
+segmentation/HierFL/servers/__init__.py
+segmentation/HierFL/servers/Aggregator.py
+segmentation/HierFL/hierarchy.py
+segmentation/HSFL/config/config_loader.py
+segmentation/HSFL/config/__init__.py
+segmentation/HSFL/runner.py
+segmentation/SplitFL/models/VGG_HAM10000.py
+segmentation/SplitFL/models/constant.py
+segmentation/SplitFL/models/CNN_HAM10000_ResNet50.py
+segmentation/SplitFL/models/Alexnet_Cifar.py
+segmentation/SplitFL/models/__init__.py
+segmentation/SplitFL/models/CNN_Cifar.py
+segmentation/SplitFL/config/config_loader.py
+segmentation/Figure/draw_iid_cifar100.py
+segmentation/SplitFL/config/__init__.py
+segmentation/Figure/draw_ram.py
+segmentation/Figure/draw_iid_cifar10.py
+segmentation/Figure/draw_iid_ham10000.py
+segmentation/Figure/draw_noniid_ham10000.py
+segmentation/Figure/draw_ours.py
+segmentation/Figure/draw_noniid_cifar10.py
+segmentation/Figure/draw_noniid_cifar100.py
+segmentation/HSFL/README.md
+segmentation/HSFL/hierarchy.py
+segmentation/HierFL/runner.py
+segmentation/HierFL/config/__init__.py
+segmentation/H-SFP/models/ISIC_ResNet50.py
+segmentation/H-SFP/models/constant.py
+segmentation/HierFL/config/config_loader.py
+segmentation/H-SFP/hierarchy.py
+segmentation/H-SFP/models/__init__.py
+segmentation/HierFL/data/get_data.py
+segmentation/Federated/data/utils/__pycache__/__init__.cpython-39.pyc
+segmentation/Federated/data/utils/__pycache__/ISIC.cpython-39.pyc
+segmentation/HSFL/data/__init__.py
+segmentation/HSFL/data/get_data.py
+segmentation/HSFL/data/sampling.py
+segmentation/HierFL/data/__init__.py
+segmentation/HierFL/data/sampling.py
+segmentation/SplitFL/runner.py
+segmentation/SplitFL/data/get_data.py
+segmentation/SplitFL/README.md
+segmentation/SplitFL/data/__init__.py
+segmentation/SplitFL/data/sampling.py
+segmentation/SplitFL/data/utils/__init__.py
+segmentation/SplitFL/data/utils/ISIC.py
+segmentation/H-SFP/data/__init__.py
+segmentation/H-SFP/data/get_data.py
+segmentation/SplitFL/FedServer/constant.py
+segmentation/SplitFL/FedServer/FedAvgAggregator.py
+segmentation/SplitFL/FedServer/__init__.py
+segmentation/SplitFL/FedServer/Aggregator.py
+segmentation/HierFL/data/utils/__init__.py
+segmentation/HierFL/data/utils/ISIC.py
+segmentation/H-SFP/data/sampling.py
+segmentation/HierFL/clients/test.py
+segmentation/HierFL/clients/Client.py
+segmentation/HierFL/clients/DiceFocalLoss.py
+segmentation/HierFL/clients/FedAvgClient.py
+segmentation/HierFL/clients/__init__.py
+segmentation/H-SFP/runner.py
+segmentation/Federated/models/__pycache__/constant.cpython-39.pyc
+segmentation/Federated/models/__pycache__/CNN_ISIC.cpython-39.pyc
+segmentation/Federated/models/__pycache__/__init__.cpython-39.pyc
+segmentation/HSFL/data/utils/ISIC.py
+segmentation/HSFL/data/utils/__init__.py
+segmentation/H-SFP/clients/test.py
+segmentation/H-SFP/clients/DiceFocalLoss.py
+segmentation/H-SFP/config/config_loader.py
+segmentation/HSFL/models/VGG_HAM10000.py
+segmentation/HSFL/models/constant.py
+segmentation/HSFL/models/CNN_ham10000_ResNet50.py
+segmentation/HSFL/models/Alexnet_cifar.py
+segmentation/HSFL/models/__init__.py
+segmentation/HSFL/models/CNN_Cifar.py
+segmentation/H-SFP/clients/__init__.py
+segmentation/H-SFP/data/utils/ISIC.py
+segmentation/H-SFP/data/utils/__init__.py
+segmentation/H-SFP/models/__pycache__/constant.cpython-39.pyc
+segmentation/H-SFP/models/__pycache__/constant.cpython-312.pyc
+segmentation/H-SFP/models/__pycache__/ISIC_ResNet50.cpython-312.pyc
+segmentation/H-SFP/models/__pycache__/__init__.cpython-312.pyc
+segmentation/H-SFP/models/__pycache__/__init__.cpython-39.pyc
+segmentation/H-SFP/models/__pycache__/ISIC_ResNet50.cpython-39.pyc
+segmentation/H-SFP/data/__pycache__/get_data.cpython-39.pyc
+
+exec
+/bin/bash -lc 'for f in configs/segmentation/*/default.yaml; do echo "$f"; rg -n '"'data|path|root|dataset' \""'$f"; done
+find data/ISIC2018 -maxdepth 2 -type f 2>/dev/null | sed -n '"'1,20p'
+find data/ISIC2018 -maxdepth 2 -type f 2>/dev/null | wc -l
+git status --short" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+configs/segmentation/federated/default.yaml
+configs/segmentation/h-sfp/default.yaml
+configs/segmentation/hetero-sfl/default.yaml
+configs/segmentation/hierfl/default.yaml
+configs/segmentation/hsfl/default.yaml
+configs/segmentation/splitfl/default.yaml
+0
+ M .gitignore
+ M classification/Federated/runner.py
+ M classification/Federated/server/FedNovaAggregator.py
+ M classification/H-SFP/hierarchy.py
+ M classification/H-SFP/models/alexnet_cifar.py
+ M classification/H-SFP/models/cnn_cifar.py
+ M classification/H-SFP/models/resnet50_ham10000.py
+ M classification/H-SFP/models/vgg_ham10000.py
+ M classification/H-SFP/runner.py
+ M classification/HSFL/models/CNN_Cifar.py
+ M classification/HSFL/runner.py
+ M classification/HeteroSFL/models/CNN_Cifar.py
+ M classification/HeteroSFL/runner.py
+ M classification/HierFL/runner.py
+ M classification/HierFL/servers/FedAvgAggregator.py
+ M classification/SplitFL/models/CNN_Cifar.py
+ M classification/SplitFL/runner.py
+ M configs/classification/federated/default.yaml
+ M configs/classification/h-sfp/default.yaml
+ M configs/classification/hetero-sfl/default.yaml
+ M configs/classification/hierfl/default.yaml
+ M configs/classification/hsfl/default.yaml
+ M configs/classification/splitfl/default.yaml
+ M configs/segmentation/federated/default.yaml
+ M configs/segmentation/h-sfp/default.yaml
+ M configs/segmentation/hetero-sfl/default.yaml
+ M configs/segmentation/hierfl/default.yaml
+ M configs/segmentation/hsfl/default.yaml
+ M configs/segmentation/splitfl/default.yaml
+ M ehsfp/__init__.py
+ M ehsfp/aggregation.py
+ M ehsfp/config.py
+ M ehsfp/dropout.py
+ M ehsfp/losses.py
+ M ehsfp/memory.py
+ M ehsfp/metrics_logger.py
+ M ehsfp/reliability.py
+ M main.py
+ M scripts/journal_experiments/common.sh
+ M segmentation/H-SFP/hierarchy.py
+ M segmentation/H-SFP/runner.py
+?? configs/proxy/
+?? configs/smoke/
+?? ehsfp/client_objective.py
+?? ehsfp/integrity.py
+?? ehsfp/prototype_space.py
+?? tools/diag/
+?? tools/fair_compare/
+
+exec
+/bin/bash -lc "sed -n '1,240p' configs/segmentation/h-sfp/default.yaml
+sed -n '1,180p' configs/segmentation/federated/default.yaml
+find data -maxdepth 3 -type d 2>/dev/null | sort | sed -n '1,160p'
+rg -n 'ISIC2018|ISIC_2018|ISIC' configs segmentation/*/data/get_data.py | sed -n '1,200p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+input_size: 224
+
+mid_server: [5]
+
+ssl_epochs_client: 10
+ssl_epochs_edge: 10
+syn_epochs_cloud: 10
+syn_samples_per_class: 50
+decoder_epochs: 5
+
+# SupCon temperature for the client/edge contrastive tiers (Khosla et al. 2020
+# optimum ~0.1). Lower -> tighter, more separable clusters. Applied identically
+# to H-SFP and E-HSFP, so the comparison stays fair.
+supcon_temperature: !!float 0.1
+
+# --- E-HSFP extensions (all disabled by default = baseline H-SFP) ---
+# Episodic Prototype Memory
+use_episodic_memory: false
+memory_size: 500
+memory_replay_ratio: 0.3
+memory_top_k: 5
+max_prototype_age: 20
+
+# Learnable Reliability-Aware Aggregation
+aggregation_mode: "average"           # "average" | "learnable_reliability"
+reliability_hidden_dim: 32
+reliability_lr: !!float 1e-3
+reliability_weight_decay: !!float 1e-4
+
+# Prototype Replay Consistency Loss
+use_prc_loss: false
+lambda_prc: 0.1
+prc_num_samples: 16
+
+# Serverless Prototype Dropout
+use_prototype_dropout: false
+prototype_dropout_rate: 0.2
+dropout_mode: "client_prototype"      # "client_prototype" | "edge_prototype" | "both"
+use_dropout_consistency: false
+lambda_dropout: 0.1
+
+# Serverless Episode Simulator
+use_serverless_simulation: false
+cold_start_probability: 0.15
+function_timeout_probability: 0.05
+max_episode_duration: 30.0
+latency_mean: 0.5
+latency_std: 0.2
+
+# Residual Prototype Generator
+use_residual_generator: false
+generator_hidden_dim: 64
+generator_scale: 0.1
+
+# Ablation mode (overrides individual flags when set)
+# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+is_gpu: true
+gpu: 0
+iid: true
+num_users: 50
+epochs: 60
+local_ep: 5
+frac: 0.1
+local_bs: 16
+optimizer: "adam"
+lr: !!float 1e-4
+momentum: 0.9
+weight_decay: !!float 1e-4
+verbose: false
+print_every: 1
+data
+segmentation/SplitFL/data/get_data.py:11:from .utils import ISICSegmentationDataset
+segmentation/SplitFL/data/get_data.py:21:        train_dataset = ISICSegmentationDataset(
+segmentation/SplitFL/data/get_data.py:27:        val_dataset = ISICSegmentationDataset(
+segmentation/SplitFL/data/get_data.py:32:        test_dataset = ISICSegmentationDataset(
+segmentation/HierFL/data/get_data.py:11:from .utils import ISICSegmentationDataset
+segmentation/HierFL/data/get_data.py:21:        train_dataset = ISICSegmentationDataset(
+segmentation/HierFL/data/get_data.py:27:        test_dataset = ISICSegmentationDataset(
+segmentation/HSFL/data/get_data.py:11:from .utils import ISICSegmentationDataset
+segmentation/HSFL/data/get_data.py:21:        train_dataset = ISICSegmentationDataset(
+segmentation/HSFL/data/get_data.py:27:        val_dataset = ISICSegmentationDataset(
+segmentation/HSFL/data/get_data.py:32:        test_dataset = ISICSegmentationDataset(
+segmentation/Federated/data/get_data.py:11:from .utils import ISICSegmentationDataset
+segmentation/Federated/data/get_data.py:21:        train_dataset = ISICSegmentationDataset(
+segmentation/Federated/data/get_data.py:27:        test_dataset = ISICSegmentationDataset(
+segmentation/H-SFP/data/get_data.py:6:from .utils import ISICSegmentationDataset
+segmentation/H-SFP/data/get_data.py:12:        train_dataset = ISICSegmentationDataset(
+segmentation/H-SFP/data/get_data.py:18:        test_dataset = ISICSegmentationDataset(
+segmentation/HeteroSFL/data/get_data.py:6:from .utils import ISICSegmentationDataset
+segmentation/HeteroSFL/data/get_data.py:12:        train_dataset = ISICSegmentationDataset(
+segmentation/HeteroSFL/data/get_data.py:18:        test_dataset = ISICSegmentationDataset(
+configs/segmentation/hierfl/isic_hierfl_resnet50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/hierfl/isic_hierfl_resnet50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/hierfl/isic_hierfl_resnet50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/hierfl/isic_hierfl_resnet50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/federated/isic_fedprox_resnet50.yaml:7:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/federated/isic_fedprox_resnet50.yaml:8:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/federated/isic_fedprox_resnet50.yaml:9:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/federated/isic_fedprox_resnet50.yaml:10:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/federated/isic_fednova_resnet50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/federated/isic_fednova_resnet50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/federated/isic_fednova_resnet50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/federated/isic_fednova_resnet50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/federated/isic_fedavg_resnet50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/federated/isic_fedavg_resnet50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/federated/isic_fedavg_resnet50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/federated/isic_fedavg_resnet50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/federated/isic_fedsgd_resnet50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/federated/isic_fedsgd_resnet50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/federated/isic_fedsgd_resnet50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/federated/isic_fedsgd_resnet50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/hetero-sfl/isic_heteroSFL_resnet50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_10_20.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_10_20.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_10_20.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_10_20.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_5_10.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_25_50.yaml:5:train_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Training_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_25_50.yaml:6:train_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Training_GroundTruth"
+configs/segmentation/h-sfp/isic_our_resnet50_25_50.yaml:7:test_image_data_folder_path: "data/ISIC2018/ISIC2018_Task1-2_Validation_Input"
+configs/segmentation/h-sfp/isic_our_resnet50_25_50.yaml:8:test_mask_data_folder_path: "data/ISIC2018/ISIC2018_Task1_Validation_GroundTruth"
+
+codex
+ISIC-2018 data is **missing**.
+
+Expected paths under `data/ISIC2018/`, including:
+
+- `ISIC2018_Task1-2_Training_Input`
+- `ISIC2018_Task1_Training_GroundTruth`
+- `ISIC2018_Task1-2_Validation_Input`
+- `ISIC2018_Task1_Validation_GroundTruth`
+
+The repository has segmentation runners for H-SFP, Federated, HierFL, SplitFL, HSFL, and HeteroSFL.
+
+Per your instruction, I stopped immediately: no configs or aggregator files were changed, no commands were generated, and no training was run. Existing uncommitted changes were preserved.
+tokens used
+19,406
+ISIC-2018 data is **missing**.
+
+Expected paths under `data/ISIC2018/`, including:
+
+- `ISIC2018_Task1-2_Training_Input`
+- `ISIC2018_Task1_Training_GroundTruth`
+- `ISIC2018_Task1-2_Validation_Input`
+- `ISIC2018_Task1_Validation_GroundTruth`
+
+The repository has segmentation runners for H-SFP, Federated, HierFL, SplitFL, HSFL, and HeteroSFL.
+
+Per your instruction, I stopped immediately: no configs or aggregator files were changed, no commands were generated, and no training was run. Existing uncommitted changes were preserved.

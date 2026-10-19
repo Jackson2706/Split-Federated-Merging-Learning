@@ -1,0 +1,46 @@
+\begin{table}[t]
+\centering
+\caption{Shared experimental protocol for all methods (CIFAR-100).}
+\label{tab:fairness}
+\begin{tabular}{ll}
+\toprule
+Hyperparameter & Value \\
+\midrule
+dataset & cifar100 \\
+num classes & 100 \\
+dataset root & data/cifar/ \\
+num clients & 200 \\
+num edges & 5 \\
+client sampling ratio & 0.1 \\
+local epochs & 5 \\
+global rounds & 200 \\
+aggregation intervals / t1 & 5 \\
+aggregation intervals / t2 & 10 \\
+optimizer & adam \\
+learning rate & 0.0001 \\
+lr search space & 0.001, 0.0005, 0.0001, 5e-05 \\
+batch size & 16 \\
+weight decay & 0.0001 \\
+momentum & 0.9 \\
+model & resnet50 \\
+split points / client & stem + layer1 \\
+split points / edge & layer2 - layer4 + GAP \\
+split points / cloud & linear classifier head \\
+synthesis mode & diag\_sigma \\
+syn samples per class & 50 \\
+ssl epochs client & 10 \\
+ssl epochs edge & 10 \\
+syn epochs cloud & 10 \\
+seeds & 0, 1, 2, 3, 4 \\
+determinism & random/numpy/torch seeded; cudnn.deterministic=True, benchmark=False (main.\_set\_seed) \\
+hardware & 1x NVIDIA GeForce RTX 3080 Ti (12 GB), CUDA 12.8, PyTorch 2.7 \\
+comm accounting / prototype payload MB & sum\_t numel(t)*element\_size(t) / 1024^2 over (proto\_dict, dist\_dict) \\
+comm accounting / model payload MB & sum\_p numel(p)*4 / 1e6 over state\_dict (float32) \\
+comm accounting / covariance modes & per-class float counts: mu\_only=D, diag=2D, full=D+D(D+1)/2, low\_rank=D(r+2), mixture=K(2D)+K \\
+methods & h-sfp, hsfl, splitfl, hierfl, federated \\
+federated strategies & fedavg, fedprox, fednova, fedsgd \\
+sanity checks / centralized oracle & single-node supervised upper bound on CIFAR-100 ResNet50 \\
+sanity checks / tuned fedavg & FedAvg with LR swept over lr\_search\_space, IID, 200 clients \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,31 @@
+\section{Preliminaries and Problem Formulation}\label{sec:problem}
+Let clients $i\in\mathcal C_e$ attach to edge $e\in\mathcal E$. The split network is $f=g_{\theta_g}\circ h_{\theta_e}\circ u_{\theta_i}$: client encoder $u$, edge segment $h$, and cloud head $g$. Client $i$ owns $\mathcal D_i=\{(x_j,y_j)\}$ and never transmits $x_j$. At round $t$, $z=u_{\theta_i^t}(x)\in\mathcal Z_{ce}\subseteq\R^{d_{ce}}$ is a client--edge feature and $s=h_{\theta_e^t}(z)\in\mathcal Z_{ec}\subseteq\R^{d_{ec}}$ is an edge--cloud feature. Distances from these different spaces are never added without an explicit map.
+
+For class $c$, source $i$ sends
+\begin{equation}\label{eq:mixture}
+ Q_{ic}=\sum_{r=1}^{R_{ic}}\pi_{icr}\mathcal N(\bm\mu_{icr},\mathrm{diag}(\bm v_{icr})),\quad
+ \pi_{icr}=n_{icr}/n_{ic},
+\end{equation}
+where $n_{icr}$ is an integer empirical assignment count at the client, $n_{ic}=\sum_rn_{icr}$, and $\bm v$ is population variance. After the optional refit boundary mode, output component masses are effective (possibly noninteger) estimates: assignment fraction times incoming class support. The class sampling prior at an upper tier is balanced in the implementation and is separate from within-class $\pi_{icr}$.
+
+The packet records boundary, flattened dimension, feature shape, extraction regime, and model version. Equality of these metadata is necessary for pooling, but cannot prove semantic coordinate alignment. The default extracts raw, unnormalized post-pooling features using locally updated encoders. A shared-snapshot diagnostic broadcasts one averaged encoder and extracts all packets with it; this improves coordinate comparability while no longer representing each client's just-updated encoder. Gaussian statements always refer to the raw extraction space. Cloud-side normalization, when applied by the inherited model, occurs after synthesis.
+
+We distinguish a per-packet client--edge budget $B_{ce}$ from an edge--cloud budget $B_{ec}$. Inherited model synchronization is accounted separately and then added to total communication. The goal is not ``maximum $K$,'' but an allocation and compression policy that improves representation fidelity or downstream utility at controlled $B_{ce},B_{ec}$.
+
+\begin{table}[t]
+\caption{Notation used throughout the paper.}\label{tab:notation}
+\centering\small
+\begin{tabularx}{\columnwidth}{@{}lX@{}}
+\toprule Symbol & Meaning\\\midrule
+$i,e,c,r$ & client, edge, class, local component\\
+$u,h,g$ & client encoder, edge segment, cloud head\\
+$\mathcal Z_{ce},\mathcal Z_{ec}$ & feature spaces at the two boundaries\\
+$n_{icr},\pi_{icr}$ & component mass and within-class weight\\
+$\bm\mu,\bm v$ & mean and unfloored population diagonal variance\\
+$R_c,K_{\max}$ & retained components and selection cap\\
+$M_c$ & synthetic samples for class $c$\\
+$B_{ce},B_{ec}$ & serialized-byte budgets per packet\\
+$Q,P$ & represented and target feature distributions\\
+\bottomrule
+\end{tabularx}
+\end{table}

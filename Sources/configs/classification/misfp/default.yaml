@@ -1,0 +1,32 @@
+# MiSFP: Mixture-Preserving Prototyping for Hierarchical Split-Federated Learning.
+# Inherits the H-SFP classification defaults (identical training setup), then
+# adds misfp_* keys. Variant presets live in misfp/config.py; explicit keys here
+# or via --set override them. E-HSFP mechanisms stay OFF (enforced).
+base: ../h-sfp/default.yaml
+
+misfp_variant: "k1"                 # hsfp | k1 | edge | k2 | k4 | adaptive
+misfp_min_component_support: 3
+misfp_kmeans_iters: 50
+misfp_kmeans_n_init: 3
+misfp_reservoir_size: 4096
+misfp_adaptive_val_fraction: 0.3
+misfp_adaptive_min_val: 4
+misfp_adaptive_min_improvement: 0.02   # nats/dim on held-out local train split
+misfp_adaptive_penalty_per_component: 0.0
+misfp_nll_rel_var_floor: 0.01
+misfp_nll_abs_var_floor: !!float 1e-6
+misfp_sample_var_floor: !!float 1e-12
+misfp_pooling: "moment"             # moment | baseline_average (K=1 regression only)
+misfp_boundary_mode: "propagate"    # propagate | refit
+misfp_boundary_samples_per_component: 50
+misfp_boundary_samples_per_class: 200
+misfp_precision: "float32"          # float32 | float16
+misfp_client_budget: null           # null | <bytes> | "match_k1_fp32[:ratio]"
+misfp_edge_budget: null
+misfp_on_infeasible: "warn"
+misfp_extraction: "local"           # local | shared_snapshot (diagnostic control)
+misfp_heldout_diagnostic: true
+
+# Never select checkpoints on the test split.
+val_from_train: 0.1
+output_dir: "results/misfp/runs"

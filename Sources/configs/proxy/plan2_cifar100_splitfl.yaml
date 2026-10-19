@@ -1,0 +1,15 @@
+# PLAN-2 bounded proxy only; not a paper-number configuration.
+base: ../classification/splitfl/cifar_splitfed_resnet50.yaml
+
+proxy_id: plan2_cifar100_splitfl_seed20260714
+output_dir: outputs/proxy/plan2_cifar100_splitfl_seed20260714
+seed: 20260714
+require_cuda: true
+
+# Reduced rounds only; retain the current full-data/default client budget.
+epochs: 10
+iid: true
+partition: iid
+num_users: 200
+frac: 0.1
+local_ep: 5

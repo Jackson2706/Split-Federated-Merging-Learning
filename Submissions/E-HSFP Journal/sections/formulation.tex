@@ -1,0 +1,61 @@
+\section{Problem Formulation}
+\label{sec:formulation}
+
+We formulate \ehsfp as hierarchical split-federated optimization over time-varying prototype-induced feature distributions. The client set is $\clients=\bigcup_{\edgeidx=1}^{M}\clients_{\edgeidx}$, where $\clients_{\edgeidx}$ denotes the clients associated with edge server $\edgeidx$. Client $k$ has local data $\mathcal{D}_k=\{(x_i,y_i)\}$ and produces, for class $j$, a prototype packet $P_{k,t}^{(j)}=(\pmu_{k,t}^{(j)},\psigma_{k,t}^{(j)},n_{k,t}^{(j)})$ at round or event index $t$.
+
+\begin{definition}[Episodic prototype learning]
+A stateless learning episode is an invocation of an edge or cloud learner that starts from the current available model state and receives a subset of prototype packets rather than a guaranteed complete synchronized round. Let $\mathcal{E}_t$ denote the episode at index $t$, and let $\mathcal{P}_t$ be the packets available to that episode. Episodic prototype learning optimizes upper-tier models using the synthetic distribution induced by $\mathcal{P}_t$ and, optionally, by an episodic prototype memory $\mem_t$.
+\end{definition}
+
+\begin{definition}[Partial prototype updates]
+At episode $t$, only a participating subset $\clients_t\subseteq\clients$ contributes packets. The participation rate is $\rho_t=|\clients_t|/|\clients|$. For edge $\edgeidx$, the local participating set is $\clients_{\edgeidx,t}=\clients_t\cap\clients_{\edgeidx}$. Partial prototype updates occur whenever $\rho_t<1$ or when only a subset of classes is represented among participating clients.
+\end{definition}
+
+\begin{definition}[Stale prototype updates]
+A packet from client $k$ used in episode $t$ may have been generated at an earlier episode index $s\leq t$. Its staleness is $\stale_{k,t}=t-s$, with $\stale_{k,t}\leq \stale_{\max}$. Stale prototype updates therefore train upper tiers using $(\pmu_{k,s}^{(j)},\psigma_{k,s}^{(j)},n_{k,s}^{(j)})$ while the current reference client distribution may be indexed by $t$.
+\end{definition}
+
+\begin{definition}[Missing prototype packets]
+For each expected packet, let $B_{k,t}^{(j)}\sim\mathrm{Bernoulli}(1-\dropoutp)$ indicate whether the packet is available to episode $t$. A missing prototype packet occurs when $B_{k,t}^{(j)}=0$. This models missing events, timeouts, and partial execution in event-driven or serverless-style deployments, but the contribution remains the learning formulation rather than the deployment substrate.
+\end{definition}
+
+\begin{definition}[Asynchronous edge/cloud aggregation]
+Each edge server aggregates available client packets whenever its local episode is triggered. The cloud aggregates edge-level packets every $H$ edge rounds or when an event-driven trigger condition is satisfied. Thus, edge updates and cloud updates need not share a single synchronized clock.
+\end{definition}
+
+Given available packets and memory, an upper tier constructs class-wise synthetic distributions
+\begin{equation}
+    Q_{t}^{(j)}=\mathcal{N}\left(\widehat{\pmu}_{t}^{(j)},
+    \mathrm{diag}\left((\widehat{\psigma}_{t}^{(j)})^2\right)\right),
+\end{equation}
+where $\widehat{\pmu}_{t}^{(j)}$ and $\widehat{\psigma}_{t}^{(j)}$ are aggregated from partial, stale, and memory-replayed prototype statistics. Let $Q_{*,t}^{(j)}$ denote the current reference feature distribution that would be induced by complete, fresh class-wise statistics at episode $t$.
+
+\begin{definition}[Prototype-induced distributional drift]\label{def:proto_drift}
+For class $j$, the prototype-induced distributional drift is the squared 2-Wasserstein distance between the synthesized distribution used by an upper tier and the current reference feature distribution:
+\begin{equation}
+    \drift_t^{(j)}
+    = W_2^2\left(Q_t^{(j)},Q_{*,t}^{(j)}\right).
+\end{equation}
+Under diagonal Gaussian prototype models, if $Q_t^{(j)}=\mathcal{N}(\widehat{\pmu}_t^{(j)},\mathrm{diag}((\widehat{\psigma}_t^{(j)})^2))$ and $Q_{*,t}^{(j)}=\mathcal{N}(\pmu_{*,t}^{(j)},\mathrm{diag}((\psigma_{*,t}^{(j)})^2))$, then
+\begin{equation}
+    \drift_t^{(j)}
+    = \left\|\widehat{\pmu}_t^{(j)}-\pmu_{*,t}^{(j)}\right\|_2^2
+    + \left\|\widehat{\psigma}_t^{(j)}-\psigma_{*,t}^{(j)}\right\|_2^2.
+\end{equation}
+The aggregate drift is $\drift_t=\sum_{j=1}^{J}\pi_t^{(j)}\drift_t^{(j)}$, where $\pi_t^{(j)}$ is a class weight such as the normalized support count.
+\end{definition}
+
+Let $W_c$, $W_e$, and $W_g$ denote client, edge, and cloud model components. The ideal hierarchical empirical risk is
+\begin{equation}
+    \begin{split}
+    &\min_{W_c,W_e,W_g}
+    F(W_c,W_e,W_g)
+    \\
+    &\;\;=
+    \sum_{k\in\clients}\frac{|\mathcal{D}_k|}{|\mathcal{D}|}\,
+    \mathbb{E}_{(x,y)\sim\mathcal{D}_k}
+    \bigl[\ell\bigl(W_g\circ W_e\circ W_c(x),y\bigr)\bigr].
+    \end{split}
+    \label{eq:global_objective}
+\end{equation}
+\ehsfp minimizes this objective under the constraints that upper-tier gradients are computed from $Q_t^{(j)}$ rather than raw lower-tier activations, packet availability is partial and random, packet ages satisfy $\stale_{k,t}\leq\stale_{\max}$, and edge/cloud aggregation is asynchronous. The analysis in later sections will bound the resulting stationarity gap in terms of stochastic optimization error, aggregation interval error, stale prototype updates, partial prototype updates, memory replay error, and the aggregate drift $\drift_t$.

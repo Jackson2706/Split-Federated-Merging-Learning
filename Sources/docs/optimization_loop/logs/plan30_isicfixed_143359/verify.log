@@ -1,0 +1,29 @@
+START verify 2026-07-18T14:33:59+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[Runner] Seed: 20260714
+[Runner] Overrides: {'epochs': 3, 'output_dir': 'outputs/isic2018_verify3/federated'}
+[Runner] task=segmentation  method=federated
+[Runner] cfg=configs/proxy/exp_yqef2_bb.yaml
+
+Method: fedavg
+Number of training images: 2594
+  0%|          | 0/3 [00:00<?, ?it/s] 33%|███▎      | 1/3 [02:00<04:00, 120.07s/it] 67%|██████▋   | 2/3 [04:14<02:08, 128.38s/it]100%|██████████| 3/3 [06:15<00:00, 125.28s/it]100%|██████████| 3/3 [06:15<00:00, 125.29s/it]
+Round 1: time=21.40s  cpu=20.1%  ram=154.9MB  gpu=2732.2MB
+ -> New Best IoU: 0.2607
+  client_model_upload_MB: 1149.16 MB
+  client_model_download_MB: 11491.57 MB
+Round 2: time=24.16s  cpu=23.2%  ram=9.3MB  gpu=2833.1MB
+ -> New Best IoU: 0.2675
+Avg Stats after 2 rounds: Loss=0.6565  IoU=26.75%
+  client_model_upload_MB: 2298.31 MB
+  client_model_download_MB: 22983.14 MB
+Round 3: time=21.61s  cpu=24.3%  ram=9.3MB  gpu=2826.2MB
+  client_model_upload_MB: 3447.47 MB
+  client_model_download_MB: 34474.71 MB
+
+Results after 3 global rounds:
+|---- Best Validation IoU: 26.75%  Dice: 39.25%  Round: 2
+|---- Best-checkpoint Test IoU: 26.75%  Test Dice: 39.25%
+Total Run Time: 389.7224s
+EXIT verify code=0 IoU=26.75 nan_or_shape_err=0

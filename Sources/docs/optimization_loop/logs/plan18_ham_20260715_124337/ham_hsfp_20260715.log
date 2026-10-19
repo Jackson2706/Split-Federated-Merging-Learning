@@ -1,0 +1,70 @@
+START ham_hsfp_20260715 2026-07-15T12:57:55+07:00
+/home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+[E-HSFP] Ablation mode: baseline_hsfp
+[Runner] Seed: 20260715
+[Runner] Overrides: {'prototype_space': 'centered_cosine', 'num_workers': 0, 'output_dir': 'outputs/proxy/plan_ham10000_hsfp_seed20260715'}
+[Runner] task=classification  method=h-sfp
+[Runner] cfg=configs/proxy/exp_66zq6onw.yaml
+
+Method: hier_fedavg
+[Device] training_device=cuda
+Train len: 8012
+[Integrity] resolved_config_hash=b5fa0a328f04c244ef2ebac63b5889d2c96f88a4ecadfd2a810d7699e77dd423
+[Integrity] architecture_id=1971ed624b9a run_dir=/home/jackson/Desktop/Split-Federated-Merging-Learning/outputs/proxy/plan_ham10000_hsfp_seed20260715/1971ed624b9a/b5fa0a328f04c244ef2ebac63b5889d2c96f88a4ecadfd2a810d7699e77dd423
+Using 0 workers for the DataLoader.
+
+==================== EPOCH 1/10 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 4: generated 350 L1 samples (original labels). Starting SSL...
+Edge 4: SSL done, final loss: nan
+Edge 3: generated 300 L1 samples (original labels). Starting SSL...
+Edge 3: SSL done, final loss: nan
+Edge 1: generated 250 L1 samples (original labels). Starting SSL...
+Edge 1: SSL done, final loss: nan
+Edge 2: generated 350 L1 samples (original labels). Starting SSL...
+Edge 2: SSL done, final loss: nan
+Edge 0: generated 350 L1 samples (original labels). Starting SSL...
+Edge 0: SSL done, final loss: nan
+-> Phase 3: Cloud Supervised Training...
+Cloud 0: generated 350 L2 samples (original labels). Starting supervised...
+Cloud 0: supervised done, final loss: nan
+!!! WARNING: NaN detected in model output during validation!
+
+--- Validation Debug Info ---
+Targets - Type: int64, Shape: (2003,)
+Targets - Unique values: [0 1 2 3 4 5 6]
+Targets - Min: 0, Max: 6
+Predictions - Type: int64, Shape: (2003,)
+Predictions - Unique values (first 20): [0]
+Predictions - Min: 0, Max: 0
+--- End Validation Debug Info ---
+Saved best model at epoch 1 with Acc: 10.98 %
+*** Checkpoint saved: /home/jackson/Desktop/Split-Federated-Merging-Learning/outputs/proxy/plan_ham10000_hsfp_seed20260715/1971ed624b9a/b5fa0a328f04c244ef2ebac63b5889d2c96f88a4ecadfd2a810d7699e77dd423/checkpoint.pt (F1: 10.98%)
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 246, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py", line 81, in run
+    output = hierarchical_fl.train_end_to_end(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/hierarchy.py", line 1532, in train_end_to_end
+    self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/metrics_logger.py", line 101, in append_jsonl
+    handle.write(json.dumps(data, sort_keys=True, allow_nan=False) + "\n")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jackson/miniconda3/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/home/jackson/miniconda3/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jackson/miniconda3/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+EXIT ham_hsfp_20260715 code=1 runtime_s=218

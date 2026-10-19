@@ -1,0 +1,290 @@
+import copy
+import json
+import os
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+from ehsfp.communication import add_communication, new_communication_tracker
+import torch.nn.functional as F
+from config import ConfigLoader
+from data import get_dataset
+from models import get_model
+from sklearn.metrics import accuracy_score, f1_score
+from classification.training_metrics import save_prediction_artifact
+from tensorboardX import SummaryWriter
+from torch.optim import SGD
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = [int(i) for i in idxs]
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.idxs[item]]
+        return image.clone(), torch.tensor(label)
+
+
+class HeteroServerAdapter(nn.Module):
+    def __init__(self, server_model, wide_channels, server_expected_channels=64):
+        super().__init__()
+        self.decoder = nn.Conv2d(wide_channels, server_expected_channels, kernel_size=3, padding=1)
+        self.server_model = server_model
+
+    def forward(self, x):
+        return self.server_model(self.decoder(x))
+
+
+def extract_narrow_model(wide_model, narrow_channels):
+    narrow_state = copy.deepcopy(wide_model.state_dict())
+    keys = list(narrow_state.keys())
+    narrow_state[keys[-2]] = narrow_state[keys[-2]][:narrow_channels]
+    narrow_state[keys[-1]] = narrow_state[keys[-1]][:narrow_channels]
+    return narrow_state
+
+
+def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    keys = list(global_wide_weights.keys())
+    weight_key, bias_key = keys[-2], keys[-1]
+
+    for local_w in local_updates:
+        is_narrow = local_w[weight_key].shape[0] == narrow_channels
+        for k in local_w:
+            if k in [weight_key, bias_key] and is_narrow:
+                update_acc[k][:narrow_channels] += local_w[k]
+                count_acc[k][:narrow_channels] += 1
+            else:
+                update_acc[k] += local_w[k]
+                count_acc[k] += 1
+
+    avg_weights = copy.deepcopy(global_wide_weights)
+    for k in avg_weights:
+        # Skip integer buffers (e.g. BatchNorm num_batches_tracked): averaging
+        # produces a float that cannot be written back into a Long tensor.
+        if not avg_weights[k].is_floating_point():
+            continue
+        mask = count_acc[k] > 0
+        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    return avg_weights
+
+
+def bdks_loss(pred_wide, pred_narrow, label, alpha=1.0):
+    loss_task = nn.CrossEntropyLoss()(pred_wide, label)
+    loss_n2w = F.kl_div(F.log_softmax(pred_wide, dim=1), F.softmax(pred_narrow, dim=1), reduction="batchmean")
+    loss_w2n = F.kl_div(F.log_softmax(pred_narrow, dim=1), F.softmax(pred_wide, dim=1), reduction="batchmean")
+    return loss_task + alpha * loss_n2w + loss_w2n
+
+
+def run(cfg_path: str):
+    start_time = time.time()
+    config_loader = ConfigLoader(cfg_path)
+    config = config_loader.get_config()
+
+    configured_out_dir = config.get("output_dir")
+    if configured_out_dir:
+        out_dir = configured_out_dir if os.path.isabs(configured_out_dir) else os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", configured_out_dir)
+        )
+        os.makedirs(out_dir, exist_ok=False)
+    else:
+        out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+        os.makedirs(out_dir, exist_ok=True)
+
+    WIDE_CHANNELS = config.get("wide_channels", 76)
+    NARROW_CHANNELS = config.get("narrow_channels", 4)
+    SERVER_EXPECTED_CHANNELS = config.get("server_in_channels", 64)
+    HIGH_END_RATIO = config.get("high_end_ratio", 0.3)
+    BDKS_ALPHA = config.get("bdks_alpha", 1.0)
+
+    print(f"HeteroSFL: Wide={WIDE_CHANNELS}, Narrow={NARROW_CHANNELS}, Ratio={HIGH_END_RATIO}")
+    config["client_out_channels"] = WIDE_CHANNELS
+
+    device = torch.device("cuda" if config["is_gpu"] else "cpu")
+    train_dataset, valid_dataset, test_dataset, user_groups = get_dataset(config)
+    model_tuple = get_model(config["model"], config["dataset"])
+
+    client_model_wide = model_tuple[0](config).to(device)
+    main_server_model = HeteroServerAdapter(
+        model_tuple[1](config).to(device), WIDE_CHANNELS, SERVER_EXPECTED_CHANNELS
+    ).to(device)
+
+    num_users = config["num_users"]
+    num_high = int(num_users * HIGH_END_RATIO)
+    client_types = ["high"] * num_high + ["low"] * (num_users - num_high)
+    np.random.shuffle(client_types)
+
+    comm_cost_dict = new_communication_tracker()
+    best_val_top1 = 0.0
+    best_validation_result = None
+    last_round_result = None
+
+    for epoch in tqdm(range(config["epochs"])):
+        idxs_users = np.random.choice(range(num_users), max(int(config["frac"] * num_users), 1), replace=False)
+        local_weights, epoch_losses = [], []
+        server_optimizer = SGD(main_server_model.parameters(), lr=config["lr"], momentum=config["momentum"])
+
+        for idx in idxs_users:
+            client_type = client_types[idx]
+            local_client_model = copy.deepcopy(client_model_wide)
+
+            if client_type == "low":
+                narrow_state = extract_narrow_model(client_model_wide, NARROW_CHANNELS)
+                last_layer = list(local_client_model.children())[-1]
+                if isinstance(last_layer, nn.Conv2d):
+                    last_layer.out_channels = NARROW_CHANNELS
+                    last_layer.weight = nn.Parameter(narrow_state[list(narrow_state.keys())[-2]])
+                    last_layer.bias = nn.Parameter(narrow_state[list(narrow_state.keys())[-1]])
+
+            local_client_model.to(device).train()
+            add_communication(comm_cost_dict, "server_to_client_MB", payload=local_client_model.state_dict())
+            client_optimizer = SGD(local_client_model.parameters(), lr=config["lr"], momentum=config["momentum"])
+            loader = DataLoader(DatasetSplit(train_dataset, user_groups[idx]), batch_size=config["local_bs"], shuffle=True)
+            client_losses = []
+
+            for _ in range(config["local_ep"]):
+                for image, label in loader:
+                    server_optimizer.zero_grad()
+                    client_optimizer.zero_grad()
+                    image, label = image.to(device), label.to(device)
+                    activation = local_client_model(image)
+
+                    if client_type == "high":
+                        act_wide = activation.clone().detach().requires_grad_(True)
+                        act_narrow_sim = act_wide.clone()
+                        act_narrow_sim[:, NARROW_CHANNELS:] = 0
+                        pred_wide = main_server_model(act_wide)
+                        pred_narrow = main_server_model(act_narrow_sim)
+                        loss = bdks_loss(pred_wide, pred_narrow, label, BDKS_ALPHA)
+                        loss.backward()
+                        activation_grad = act_wide.grad
+                    else:
+                        act_narrow = activation.clone().detach().requires_grad_(True)
+                        padding = torch.zeros(act_narrow.shape[0], WIDE_CHANNELS - NARROW_CHANNELS,
+                                              act_narrow.shape[2], act_narrow.shape[3]).to(device)
+                        act_input = torch.cat([act_narrow, padding], dim=1)
+                        pred = main_server_model(act_input)
+                        loss = nn.CrossEntropyLoss()(pred, label)
+                        loss.backward()
+                        activation_grad = act_narrow.grad
+
+                    server_optimizer.step()
+                    activation.backward(activation_grad)
+                    client_optimizer.step()
+                    client_losses.append(loss.item())
+                    # Cut activation and target go to the server; the gradient at
+                    # that same cut is returned to the client.
+                    add_communication(comm_cost_dict, "client_to_server_MB", payload=(activation, label))
+                    add_communication(comm_cost_dict, "server_to_client_MB", payload=activation_grad)
+
+            local_state = copy.deepcopy(local_client_model.state_dict())
+            add_communication(comm_cost_dict, "client_to_server_MB", payload=local_state)
+            local_weights.append(local_state)
+            epoch_losses.append(np.mean(client_losses))
+            del local_client_model
+            torch.cuda.empty_cache()
+
+        client_model_wide.load_state_dict(aggregate_hetero(client_model_wide.state_dict(), local_weights, NARROW_CHANNELS))
+
+        if (epoch + 1) % config["print_every"] == 0 or epoch + 1 == config["epochs"]:
+            client_model_wide.eval()
+            main_server_model.eval()
+            all_preds, all_labels = [], []
+            with torch.no_grad():
+                for image, label in DataLoader(valid_dataset, batch_size=config["local_bs"], shuffle=False):
+                    image, label = image.to(device), label.to(device)
+                    out = main_server_model(client_model_wide(image))
+                    _, predicted = torch.max(out.data, 1)
+                    all_preds.extend(predicted.cpu().numpy())
+                    all_labels.extend(label.cpu().numpy())
+
+            eval_acc = accuracy_score(all_labels, all_preds)
+            eval_f1 = f1_score(
+                all_labels, all_preds, average="macro", zero_division=0
+            )
+            current_result = {
+                "round": epoch + 1, "accuracy": eval_acc, "macro_f1": eval_f1
+            }
+            if epoch + 1 == config["epochs"]:
+                last_round_result = current_result
+                save_prediction_artifact(
+                    os.path.join(out_dir, "last_round_predictions.npz"),
+                    all_preds, all_labels,
+                )
+            print(f"Epoch {epoch+1}: Acc={eval_acc:.4f}  F1={eval_f1:.4f}")
+            if eval_acc > best_val_top1:
+                best_val_top1 = eval_acc
+                best_validation_result = current_result
+                save_prediction_artifact(
+                    os.path.join(out_dir, "best_val_predictions.npz"),
+                    all_preds, all_labels,
+                )
+                print(f" -> New Best Acc: {best_val_top1:.4f}")
+
+            if wandb is not None and wandb.run is not None:
+                wandb.log({
+                    "epoch": epoch + 1,
+                    "f1": eval_f1,
+                    "accuracy": eval_acc,
+                    "best_val_top1": best_val_top1,
+                    "train_loss": np.mean(epoch_losses),
+                    **{k: v for k, v in comm_cost_dict.items()},
+                })
+
+            client_model_wide.train()
+            main_server_model.train()
+
+    # Final test
+    client_model_wide.eval()
+    main_server_model.eval()
+    test_preds, test_labels = [], []
+    with torch.no_grad():
+        for image, label in DataLoader(test_dataset, batch_size=config["local_bs"], shuffle=False):
+            image, label = image.to(device), label.to(device)
+            out = main_server_model(client_model_wide(image))
+            _, predicted = torch.max(out.data, 1)
+            test_preds.extend(predicted.cpu().numpy())
+            test_labels.extend(label.cpu().numpy())
+
+    final_f1 = f1_score(
+        test_labels, test_preds, average="macro", zero_division=0
+    )
+    final_acc = accuracy_score(test_labels, test_preds)
+    total_time = time.time() - start_time
+    print(f"\nFinal Test Acc: {final_acc*100:.2f}%  (F1: {final_f1*100:.2f}%)")
+    print(f"Total Communication: {comm_cost_dict['total_comm_MB']:.2f} MB")
+    print("Total Run Time: {:.2f}s".format(total_time))
+
+    if wandb is not None and wandb.run is not None:
+        wandb.summary["test_f1"] = final_f1
+        wandb.summary["best_val_top1"] = best_val_top1
+        wandb.summary["total_time_s"] = total_time
+
+    with open(os.path.join(out_dir, f"HeteroSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"), "w") as f:
+        json.dump({
+            "best_val_top1": best_val_top1, "final_test_accuracy": final_acc,
+            "final_test_f1": final_f1, "total_comm_MB": comm_cost_dict["total_comm_MB"],
+            "last_round_validation": last_round_result,
+            "best_validation": best_validation_result,
+            "selected_checkpoint": {
+                "source": "last_round",
+                **last_round_result,
+                "test_accuracy": final_acc, "test_macro_f1": final_f1,
+            },
+            "comm_report": comm_cost_dict,
+            "peak_vram_MB": torch.cuda.max_memory_allocated(device) / (1024**2),
+            "runtime_s": total_time,
+        }, f, indent=4)

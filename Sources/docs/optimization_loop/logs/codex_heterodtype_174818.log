@@ -1,0 +1,1291 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f74d7-62bb-7f91-bf5d-c43366dda716
+--------
+user
+You are Codex. HeteroSFL ISIC segmentation crashes with: RuntimeError: Index put requires the source and destination dtypes match, got Long for the destination and Float for the source, at segmentation/HeteroSFL/runner.py:78 in aggregate_hetero(): avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]. Root cause: global_wide_weights (a model state_dict) contains at least one integer-dtype buffer (almost certainly BatchNorm's num_batches_tracked, dtype=torch.long) alongside float weight/bias tensors, but the loop at lines 60-78 does uniform float division (update_acc[k]/count_acc[k]) for EVERY key including integer buffers, then tries to write a float result into a Long-dtype tensor slice via in-place index_put. Fix aggregate_hetero() (segmentation/HeteroSFL/runner.py, function starting ~line 55-79) to only average floating-point tensors; for integer/non-floating buffers (e.g. num_batches_tracked), either skip averaging entirely and keep the global/first-client value, or average in a dtype-safe way and cast back to the original dtype (e.g. round + .to(original_dtype)) — prefer the simpler 'skip non-floating buffers, just copy them through unchanged' approach since num_batches_tracked doesn't need FedAvg semantics. Apply this generically (do not hardcode the key name 'num_batches_tracked' if you can instead check tensor.is_floating_point()) so it's robust to any similar integer buffer. Check if segmentation/Federated or segmentation/HierFL have an analogous generic weight-averaging function with the SAME latent bug (they didn't crash on ISIC because they may only have run cleanly by luck, or may use a different aggregation path — grep for similar avg_weights/index_put patterns) and apply the same fix if so. NO GPU/training (Claude re-runs). Preserve ALL uncommitted changes; local only; run any related unit tests plus a quick CPU sanity check (construct a small state_dict with a float tensor and a long tensor, verify aggregate_hetero-style averaging no longer raises and the long tensor's dtype/value is preserved sensibly). FINAL message: file:line diff, root-cause confirmation, and the CPU sanity-check result.
+codex
+I’ll inspect the aggregation paths and repository guidance first, then patch only the affected logic and run CPU-only checks. I’ll preserve the existing worktree changes.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '"'!**/.git/**'"' && git status --short && sed -n '1,130p' segmentation/HeteroSFL/runner.py && rg -n \"avg_weights|update_acc|count_acc|index_put|aggregate\" segmentation/Federated segmentation/HierFL segmentation/HeteroSFL" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ exited 1 in 0ms:
+/home/jackson/Desktop/Split-Federated-Merging-Learning
+
+codex
+The initial inspection command short-circuited because no `AGENTS.md` was found. I’m rerunning the read-only checks independently so missing optional files don’t suppress the repository results.
+exec
+/bin/bash -lc "git status --short
+sed -n '1,140p' segmentation/HeteroSFL/runner.py
+rg -n \"avg_weights|update_acc|count_acc|index_put|aggregate\" segmentation/Federated segmentation/HierFL segmentation/HeteroSFL || true" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+ M configs/proxy/plan_isic2018_federated.yaml
+ M configs/proxy/plan_isic2018_heterosfl.yaml
+ M configs/proxy/plan_isic2018_hierfl.yaml
+ M configs/proxy/plan_isic2018_hsfp.yaml
+ M docs/optimization_loop/DECISIONS.md
+ M docs/optimization_loop/RESULTS_SUMMARY.md
+ M segmentation/Federated/clients/Client.py
+ M segmentation/Federated/clients/DiceFocalLoss.py
+ M segmentation/Federated/clients/test.py
+ M segmentation/Federated/data/utils/ISIC.py
+ M segmentation/Federated/runner.py
+ M segmentation/H-SFP/clients/DiceFocalLoss.py
+ M segmentation/H-SFP/data/utils/ISIC.py
+ M segmentation/HeteroSFL/clients/DiceFocalLoss.py
+ M segmentation/HeteroSFL/clients/test.py
+ M segmentation/HeteroSFL/data/utils/ISIC.py
+ M segmentation/HeteroSFL/runner.py
+ M segmentation/HierFL/clients/DiceFocalLoss.py
+ M segmentation/HierFL/clients/test.py
+ M segmentation/HierFL/data/utils/ISIC.py
+ M segmentation/HierFL/runner.py
+ M tools/fair_compare/aggregate.py
+?? configs/proxy/plan_isic2018_h-sfp.yaml
+?? segmentation/training_metrics.py
+import copy
+import json
+import os
+import time
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from config.config_loader import ConfigLoader
+from data import get_dataset
+from models import get_model
+from clients import test_inference, DiceFocalLoss
+from torch.optim import SGD
+from torch.utils.data import DataLoader, Dataset
+from tqdm import tqdm
+from segmentation.training_metrics import BestSegmentationMetrics
+
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = [int(i) for i in idxs]
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, mask = self.dataset[self.idxs[item]]
+        return image.clone(), mask.clone()
+
+
+class HeteroServerAdapter(nn.Module):
+    """Wraps server model with a decoder that maps wide channels -> expected channels."""
+
+    def __init__(self, server_model, wide_channels, server_expected_channels=512):
+        super().__init__()
+        self.decoder = nn.Conv2d(wide_channels, server_expected_channels, kernel_size=3, padding=1)
+        self.server_model = server_model
+
+    def forward(self, x):
+        return self.server_model(self.decoder(x))
+
+
+def extract_narrow_model(wide_model, narrow_channels):
+    narrow_state = copy.deepcopy(wide_model.state_dict())
+    keys = list(narrow_state.keys())
+    # bl_encoder weight and bias are the last two keys of the client model
+    narrow_state[keys[-2]] = narrow_state[keys[-2]][:narrow_channels]
+    narrow_state[keys[-1]] = narrow_state[keys[-1]][:narrow_channels]
+    return narrow_state
+
+
+def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    keys = list(global_wide_weights.keys())
+    weight_key, bias_key = keys[-2], keys[-1]
+
+    for local_w in local_updates:
+        is_narrow = local_w[weight_key].shape[0] == narrow_channels
+        for k in local_w:
+            if k in [weight_key, bias_key] and is_narrow:
+                update_acc[k][:narrow_channels] += local_w[k]
+                count_acc[k][:narrow_channels] += 1
+            else:
+                update_acc[k] += local_w[k]
+                count_acc[k] += 1
+
+    avg_weights = copy.deepcopy(global_wide_weights)
+    for k in avg_weights:
+        mask = count_acc[k] > 0
+        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    return avg_weights
+
+
+def align_prediction_to_mask(prediction, mask):
+    """Resize a segmentation prediction without permitting BCE broadcasting."""
+    if prediction.shape[-2:] != mask.shape[-2:]:
+        prediction = F.interpolate(
+            prediction, size=mask.shape[-2:], mode="bilinear", align_corners=False
+        )
+    return prediction
+
+
+def run(cfg_path: str):
+    start_time = time.time()
+    config_loader = ConfigLoader(cfg_path)
+    config = config_loader.get_config()
+
+    WIDE_CHANNELS = config.get("wide_channels", 76)
+    NARROW_CHANNELS = config.get("narrow_channels", 4)
+    SERVER_EXPECTED_CHANNELS = config.get("server_in_channels", 512)
+    HIGH_END_RATIO = config.get("high_end_ratio", 0.3)
+
+    print(f"HeteroSFL (Seg): Wide={WIDE_CHANNELS}, Narrow={NARROW_CHANNELS}, Ratio={HIGH_END_RATIO}")
+    config["client_out_channels"] = WIDE_CHANNELS
+
+    device = torch.device("cuda" if config["is_gpu"] else "cpu")
+    train_dataset, test_dataset, user_groups = get_dataset(config)
+    model_tuple = get_model(config["model"], config["dataset"])
+
+    client_model_wide = model_tuple[0](config).to(device)
+    server_model_raw = model_tuple[1](config).to(device)
+    main_server_model = HeteroServerAdapter(
+        server_model_raw, WIDE_CHANNELS, SERVER_EXPECTED_CHANNELS
+    ).to(device)
+
+    num_users = config["num_users"]
+    num_high = int(num_users * HIGH_END_RATIO)
+    client_types = ["high"] * num_high + ["low"] * (num_users - num_high)
+    np.random.shuffle(client_types)
+
+    criterion = DiceFocalLoss().to(device)
+    comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+    best = BestSegmentationMetrics()
+    best_client_weights = None
+    best_server_weights = None
+
+    for epoch in tqdm(range(config["epochs"])):
+        idxs_users = np.random.choice(
+            range(num_users), max(int(config["frac"] * num_users), 1), replace=False
+        )
+        local_weights, epoch_losses = [], []
+        server_optimizer = SGD(
+            main_server_model.parameters(), lr=config["lr"], momentum=config["momentum"]
+        )
+
+        for idx in idxs_users:
+            client_type = client_types[idx]
+            local_client_model = copy.deepcopy(client_model_wide)
+
+            if client_type == "low":
+                narrow_state = extract_narrow_model(client_model_wide, NARROW_CHANNELS)
+                last_layer = list(local_client_model.children())[-1]
+segmentation/HierFL/hierarchy.py:181:        def aggregate_upward(layer_idx):
+segmentation/HierFL/hierarchy.py:189:                        self.aggregator.aggregate(None, None, weight_list)
+segmentation/HierFL/hierarchy.py:205:                        self.aggregator.aggregate(None, None, lower_weights)
+segmentation/HierFL/hierarchy.py:218:            aggregate_upward(layer_idx + 1)
+segmentation/HierFL/hierarchy.py:220:        aggregate_upward(0)
+segmentation/HeteroSFL/runner.py:59:def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+segmentation/HeteroSFL/runner.py:60:    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+segmentation/HeteroSFL/runner.py:61:    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+segmentation/HeteroSFL/runner.py:69:                update_acc[k][:narrow_channels] += local_w[k]
+segmentation/HeteroSFL/runner.py:70:                count_acc[k][:narrow_channels] += 1
+segmentation/HeteroSFL/runner.py:72:                update_acc[k] += local_w[k]
+segmentation/HeteroSFL/runner.py:73:                count_acc[k] += 1
+segmentation/HeteroSFL/runner.py:75:    avg_weights = copy.deepcopy(global_wide_weights)
+segmentation/HeteroSFL/runner.py:76:    for k in avg_weights:
+segmentation/HeteroSFL/runner.py:77:        mask = count_acc[k] > 0
+segmentation/HeteroSFL/runner.py:78:        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+segmentation/HeteroSFL/runner.py:79:    return avg_weights
+segmentation/HeteroSFL/runner.py:205:            aggregate_hetero(client_model_wide.state_dict(), local_weights, NARROW_CHANNELS)
+segmentation/Federated/runner.py:106:        global_weights, _ = strategy.aggregate(local_updates, global_weights, local_weights)
+segmentation/HierFL/servers/FedAvgAggregator.py:9:    def aggregate(self, _1, _2, client_updates):
+segmentation/Federated/server/FedAvgAggregator.py:10:    def aggregate(self, _1, _2, client_updates):
+segmentation/HierFL/servers/Aggregator.py:9:    def aggregate(self, client_updates):
+segmentation/Federated/server/FedNovaAggregator.py:8:    def aggregate(self, client_updates, global_weights, local_weights):
+segmentation/Federated/server/FedNovaAggregator.py:33:        # Normalize aggregated delta by total steps
+segmentation/Federated/server/Aggregator.py:9:    def aggregate(self, client_updates):
+
+exec
+/bin/bash -lc "sed -n '1,120p' segmentation/Federated/server/FedAvgAggregator.py
+sed -n '1,120p' segmentation/HierFL/servers/FedAvgAggregator.py
+sed -n '1,100p' segmentation/Federated/server/FedNovaAggregator.py
+git diff -- segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+import copy
+import sys
+
+import torch
+
+from .Aggregator import Aggregator
+
+
+class FedAvgAggregator(Aggregator):
+    def aggregate(self, _1, _2, client_updates):
+        """
+        Parameters:
+            client_updates: list of state_dicts
+        Return:
+            w_avg: the averaged weights of all clients
+            server_comm: communication overhead
+        """
+        server_comm = sys.getsizeof(client_updates)
+        w_avg = copy.deepcopy(client_updates[0])
+        for key in w_avg.keys():
+            for i in range(1, len(client_updates)):
+                w_avg[key] += client_updates[i][key]
+            w_avg[key] = torch.div(w_avg[key], len(client_updates))
+        return w_avg, server_commimport copy
+
+import torch
+
+from .Aggregator import Aggregator
+
+
+class FedAvgAggregator(Aggregator):
+    def aggregate(self, _1, _2, client_updates):
+        """
+        client_updates: list of state_dicts (each from a client)
+        Return the average model weights (FedAvg)
+        """
+        w_avg = copy.deepcopy(client_updates[0])
+
+        for key in w_avg.keys():
+            # Convert to float for safe accumulation if needed
+            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
+                for i in range(1, len(client_updates)):
+                    w_avg[key] += client_updates[i][key]
+                w_avg[key] = w_avg[key] / len(client_updates)
+            else:
+                # # For non-float types (like Long), just pick the first client's version
+                # for i in range(1, len(client_updates)):
+                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+                # Keep it unchanged (or majority vote if needed)
+                # Optional: vote or assert consistency
+                pass
+
+        return w_avg
+import copy
+import sys
+
+from .Aggregator import Aggregator
+
+
+class FedNovaAggregator(Aggregator):
+    def aggregate(self, client_updates, global_weights, local_weights):
+        """
+        Args:
+            client_updates: list of tuples (delta_weights, local_steps)
+            global_weights: current global model weights (state_dict)
+        
+        Returns:
+            new_global_weights: updated global model weights after aggregation
+            server_comm: communication overhead the server has to handle
+        """
+        total_steps = sum([steps for _, steps in client_updates])
+        if total_steps == 0:
+            raise ValueError("Sum of local steps is zero, cannot normalize")
+        
+        server_comm = sys.getsizeof(client_updates) + sys.getsizeof(global_weights)
+
+        agg_delta = None
+        for delta_weights, steps in client_updates:
+            weighted_delta = {k: v * steps for k, v in delta_weights.items()}
+            if agg_delta is None:
+                agg_delta = copy.deepcopy(weighted_delta)
+            else:
+                for k in agg_delta.keys():
+                    agg_delta[k] += weighted_delta[k]
+
+        # Normalize aggregated delta by total steps
+        for k in agg_delta.keys():
+            agg_delta[k] /= total_steps
+
+        # Update global weights
+        new_global_weights = copy.deepcopy(global_weights)
+        for k in new_global_weights.keys():
+            new_global_weights[k] = new_global_weights[k].float() + agg_delta[k]
+
+
+        # Return the updated global weights and the communication overhead
+        return new_global_weights, server_commdiff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d8..7f44192 100644
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -7,13 +7,14 @@ import numpy as np
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+ from torch.optim import SGD
+ from torch.utils.data import DataLoader, Dataset
+ from tqdm import tqdm
++from segmentation.training_metrics import BestSegmentationMetrics
+ 
+ try:
+     import wandb
+@@ -78,6 +79,15 @@ def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+     return avg_weights
+ 
+ 
++def align_prediction_to_mask(prediction, mask):
++    """Resize a segmentation prediction without permitting BCE broadcasting."""
++    if prediction.shape[-2:] != mask.shape[-2:]:
++        prediction = F.interpolate(
++            prediction, size=mask.shape[-2:], mode="bilinear", align_corners=False
++        )
++    return prediction
++
++
+ def run(cfg_path: str):
+     start_time = time.time()
+     config_loader = ConfigLoader(cfg_path)
+@@ -108,7 +118,9 @@ def run(cfg_path: str):
+ 
+     criterion = DiceFocalLoss().to(device)
+     comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+-    best_iou = 0.0
++    best = BestSegmentationMetrics()
++    best_client_weights = None
++    best_server_weights = None
+ 
+     for epoch in tqdm(range(config["epochs"])):
+         idxs_users = np.random.choice(
+@@ -155,6 +167,8 @@ def run(cfg_path: str):
+                         act_narrow_sim[:, NARROW_CHANNELS:] = 0
+                         pred_wide = main_server_model(act_wide)
+                         pred_narrow = main_server_model(act_narrow_sim)
++                        pred_wide = align_prediction_to_mask(pred_wide, mask)
++                        pred_narrow = align_prediction_to_mask(pred_narrow, mask)
+                         # Segmentation: use DiceFocalLoss for both, average
+                         loss_wide = criterion(pred_wide, mask)
+                         loss_narrow = criterion(pred_narrow, mask)
+@@ -171,6 +185,7 @@ def run(cfg_path: str):
+                         ).to(device)
+                         act_input = torch.cat([act_narrow, padding], dim=1)
+                         pred = main_server_model(act_input)
++                        pred = align_prediction_to_mask(pred, mask)
+                         loss = criterion(pred, mask)
+                         loss.backward()
+                         activation_grad = act_narrow.grad
+@@ -208,16 +223,17 @@ def run(cfg_path: str):
+             eval_iou, eval_dice, eval_loss = test_inference(config, eval_wrapper, test_dataset)
+             print(f"Epoch {epoch+1}: IoU={eval_iou:.4f}  Dice={eval_dice:.4f}")
+ 
+-            if eval_iou > best_iou:
+-                best_iou = eval_iou
+-                print(f" -> New Best IoU: {best_iou:.4f}")
++            if best.update(eval_iou, eval_dice, epoch + 1):
++                best_client_weights = copy.deepcopy(client_model_wide.state_dict())
++                best_server_weights = copy.deepcopy(main_server_model.state_dict())
++                print(f" -> New Best IoU: {best.iou:.4f}")
+ 
+             if wandb is not None and wandb.run is not None:
+                 wandb.log({
+                     "epoch": epoch + 1,
+                     "iou": eval_iou,
+                     "dice": eval_dice,
+-                    "best_iou": best_iou,
++                    "best_iou": best.iou,
+                     "train_loss": np.mean(epoch_losses),
+                     **{k: v for k, v in comm_cost_dict.items()},
+                 })
+@@ -234,18 +250,24 @@ def run(cfg_path: str):
+         def forward(self, x):
+             return self.server(self.client(x))
+ 
++    if best_client_weights is not None:
++        client_model_wide.load_state_dict(best_client_weights)
++        main_server_model.load_state_dict(best_server_weights)
+     final_model = _FinalWrapper(client_model_wide, main_server_model).to(device)
+     final_iou, final_dice, final_loss = test_inference(config, final_model, test_dataset)
+     total_time = time.time() - start_time
+ 
+-    print(f"\nFinal Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
++    print(f"\nBest Validation IoU: {best.iou:.4f}  Dice: {best.dice:.4f}  Round: {best.round}")
++    print(f"Best-checkpoint Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
+     print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
+     print(f"Total Run Time: {total_time:.2f}s")
+ 
+     if wandb is not None and wandb.run is not None:
+         wandb.summary["test_iou"] = final_iou
+         wandb.summary["test_dice"] = final_dice
+-        wandb.summary["best_iou"] = best_iou
++        wandb.summary["best_iou"] = best.iou
++        wandb.summary["best_dice"] = best.dice
++        wandb.summary["best_round"] = best.round
+         wandb.summary["total_time_s"] = total_time
+ 
+     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+@@ -254,6 +276,7 @@ def run(cfg_path: str):
+     with open(os.path.join(out_dir, filename), "w") as f:
+         json.dump({
+             "test_iou": final_iou, "test_dice": final_dice,
+-            "best_iou": best_iou, "total_time": total_time,
++            "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
++            "last_iou": eval_iou, "last_dice": eval_dice, "total_time": total_time,
+             "comm_cost": comm_cost_dict,
+         }, f, indent=4)
+
+codex
+The same latent issue exists in Federated FedAvg: it divides every state entry, converting integer buffers to floats. HierFL already skips non-floats, but its dtype whitelist excludes valid floating types such as bfloat16, so I’ll make both paths use the generic tensor predicate as requested. HeteroSFL will retain the global value for all non-floating entries.
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/server/FedAvgAggregator.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/servers/FedAvgAggregator.py
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..7f6467b8956905783e1a3a931097d0c056b88b4b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -74,6 +74,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..9bbdd2b943da3159289fa5656155e4ba31a60f0f
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -14,18 +14,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..7f6467b8956905783e1a3a931097d0c056b88b4b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -74,6 +74,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..9bbdd2b943da3159289fa5656155e4ba31a60f0f
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -14,18 +14,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+exec
+/bin/bash -lc "rg --files | rg '("'^|/)(test[''^/]*'"\\.py|tests?/)' | head -200
+python -m compileall -q segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py
+git diff --check -- segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py
+git diff --unified=4 -- segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+segmentation/HeteroSFL/clients/test.py
+segmentation/H-SFP/clients/test.py
+segmentation/Federated/clients/test.py
+segmentation/HierFL/clients/test.py
+classification/HierFL/clients/test.py
+classification/Federated/clients/test.py
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee7..0556178 100755
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -17,8 +17,10 @@ class FedAvgAggregator(Aggregator):
+         """
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index f7ae3d8..7f6467b 100644
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -6,15 +6,16 @@ import time
+ import numpy as np
+ import torch
+ import torch.nn as nn
+ import torch.nn.functional as F
+-from config import ConfigLoader
++from config.config_loader import ConfigLoader
+ from data import get_dataset
+ from models import get_model
+ from clients import test_inference, DiceFocalLoss
+ from torch.optim import SGD
+ from torch.utils.data import DataLoader, Dataset
+ from tqdm import tqdm
++from segmentation.training_metrics import BestSegmentationMetrics
+ 
+ try:
+     import wandb
+ except ImportError:
+@@ -72,13 +73,24 @@ def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+                 count_acc[k] += 1
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+ 
+ 
++def align_prediction_to_mask(prediction, mask):
++    """Resize a segmentation prediction without permitting BCE broadcasting."""
++    if prediction.shape[-2:] != mask.shape[-2:]:
++        prediction = F.interpolate(
++            prediction, size=mask.shape[-2:], mode="bilinear", align_corners=False
++        )
++    return prediction
++
++
+ def run(cfg_path: str):
+     start_time = time.time()
+     config_loader = ConfigLoader(cfg_path)
+     config = config_loader.get_config()
+@@ -107,9 +119,11 @@ def run(cfg_path: str):
+     np.random.shuffle(client_types)
+ 
+     criterion = DiceFocalLoss().to(device)
+     comm_cost_dict = {"upload_MB": 0, "download_MB": 0}
+-    best_iou = 0.0
++    best = BestSegmentationMetrics()
++    best_client_weights = None
++    best_server_weights = None
+ 
+     for epoch in tqdm(range(config["epochs"])):
+         idxs_users = np.random.choice(
+             range(num_users), max(int(config["frac"] * num_users), 1), replace=False
+@@ -154,8 +168,10 @@ def run(cfg_path: str):
+                         act_narrow_sim = act_wide.clone()
+                         act_narrow_sim[:, NARROW_CHANNELS:] = 0
+                         pred_wide = main_server_model(act_wide)
+                         pred_narrow = main_server_model(act_narrow_sim)
++                        pred_wide = align_prediction_to_mask(pred_wide, mask)
++                        pred_narrow = align_prediction_to_mask(pred_narrow, mask)
+                         # Segmentation: use DiceFocalLoss for both, average
+                         loss_wide = criterion(pred_wide, mask)
+                         loss_narrow = criterion(pred_narrow, mask)
+                         loss = loss_wide + 0.5 * loss_narrow
+@@ -170,8 +186,9 @@ def run(cfg_path: str):
+                             act_narrow.shape[3],
+                         ).to(device)
+                         act_input = torch.cat([act_narrow, padding], dim=1)
+                         pred = main_server_model(act_input)
++                        pred = align_prediction_to_mask(pred, mask)
+                         loss = criterion(pred, mask)
+                         loss.backward()
+                         activation_grad = act_narrow.grad
+ 
+@@ -207,18 +224,19 @@ def run(cfg_path: str):
+             eval_wrapper = _EvalWrapper(eval_client, eval_model).to(device)
+             eval_iou, eval_dice, eval_loss = test_inference(config, eval_wrapper, test_dataset)
+             print(f"Epoch {epoch+1}: IoU={eval_iou:.4f}  Dice={eval_dice:.4f}")
+ 
+-            if eval_iou > best_iou:
+-                best_iou = eval_iou
+-                print(f" -> New Best IoU: {best_iou:.4f}")
++            if best.update(eval_iou, eval_dice, epoch + 1):
++                best_client_weights = copy.deepcopy(client_model_wide.state_dict())
++                best_server_weights = copy.deepcopy(main_server_model.state_dict())
++                print(f" -> New Best IoU: {best.iou:.4f}")
+ 
+             if wandb is not None and wandb.run is not None:
+                 wandb.log({
+                     "epoch": epoch + 1,
+                     "iou": eval_iou,
+                     "dice": eval_dice,
+-                    "best_iou": best_iou,
++                    "best_iou": best.iou,
+                     "train_loss": np.mean(epoch_losses),
+                     **{k: v for k, v in comm_cost_dict.items()},
+                 })
+ 
+@@ -233,27 +251,34 @@ def run(cfg_path: str):
+ 
+         def forward(self, x):
+             return self.server(self.client(x))
+ 
++    if best_client_weights is not None:
++        client_model_wide.load_state_dict(best_client_weights)
++        main_server_model.load_state_dict(best_server_weights)
+     final_model = _FinalWrapper(client_model_wide, main_server_model).to(device)
+     final_iou, final_dice, final_loss = test_inference(config, final_model, test_dataset)
+     total_time = time.time() - start_time
+ 
+-    print(f"\nFinal Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
++    print(f"\nBest Validation IoU: {best.iou:.4f}  Dice: {best.dice:.4f}  Round: {best.round}")
++    print(f"Best-checkpoint Test IoU: {final_iou:.4f}  Dice: {final_dice:.4f}")
+     print(f"Total Upload: {comm_cost_dict['upload_MB']:.2f} MB")
+     print(f"Total Run Time: {total_time:.2f}s")
+ 
+     if wandb is not None and wandb.run is not None:
+         wandb.summary["test_iou"] = final_iou
+         wandb.summary["test_dice"] = final_dice
+-        wandb.summary["best_iou"] = best_iou
++        wandb.summary["best_iou"] = best.iou
++        wandb.summary["best_dice"] = best.dice
++        wandb.summary["best_round"] = best.round
+         wandb.summary["total_time_s"] = total_time
+ 
+     out_dir = os.path.join(os.path.dirname(__file__), "Figure", "data")
+     os.makedirs(out_dir, exist_ok=True)
+     filename = f"HeteroSFL_{config['dataset']}_iid:{config['iid']}_{config['model']}_{config['num_users']}users.json"
+     with open(os.path.join(out_dir, filename), "w") as f:
+         json.dump({
+             "test_iou": final_iou, "test_dice": final_dice,
+-            "best_iou": best_iou, "total_time": total_time,
++            "best_iou": best.iou, "best_dice": best.dice, "best_round": best.round,
++            "last_iou": eval_iou, "last_dice": eval_dice, "total_time": total_time,
+             "comm_cost": comm_cost_dict,
+         }, f, indent=4)
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631..9bbdd2b 100644
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -13,19 +13,10 @@ class FedAvgAggregator(Aggregator):
+         """
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..7f6467b8956905783e1a3a931097d0c056b88b4b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -74,6 +74,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..9bbdd2b943da3159289fa5656155e4ba31a60f0f
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -14,18 +14,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+codex
+One extra robustness detail surfaced: skipping only the final division still lets boolean or other non-floating buffers enter accumulation, where `+=` can itself fail. I’m moving the generic guard ahead of accumulation as well, while keeping the final guard explicit so unchanged global values are guaranteed.
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/servers/FedAvgAggregator.py
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..38eeb9dbe6794081b27db460b508417750a8111b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -65,6 +65,8 @@
+     for local_w in local_updates:
+         is_narrow = local_w[weight_key].shape[0] == narrow_channels
+         for k in local_w:
++            if not global_wide_weights[k].is_floating_point():
++                continue
+             if k in [weight_key, bias_key] and is_narrow:
+                 update_acc[k][:narrow_channels] += local_w[k]
+                 count_acc[k][:narrow_channels] += 1
+@@ -74,6 +76,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..1d1194698040318fbf98259be61a3f940b2e98e3
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -1,7 +1,5 @@
+ import copy
+ 
+-import torch
+-
+ from .Aggregator import Aggregator
+ 
+ 
+@@ -14,18 +12,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..38eeb9dbe6794081b27db460b508417750a8111b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -65,6 +65,8 @@
+     for local_w in local_updates:
+         is_narrow = local_w[weight_key].shape[0] == narrow_channels
+         for k in local_w:
++            if not global_wide_weights[k].is_floating_point():
++                continue
+             if k in [weight_key, bias_key] and is_narrow:
+                 update_acc[k][:narrow_channels] += local_w[k]
+                 count_acc[k][:narrow_channels] += 1
+@@ -74,6 +76,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..1d1194698040318fbf98259be61a3f940b2e98e3
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -1,7 +1,5 @@
+ import copy
+ 
+-import torch
+-
+ from .Aggregator import Aggregator
+ 
+ 
+@@ -14,18 +12,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+exec
+/bin/bash -lc "python - <<'PY'
+import ast
+import copy
+import sys
+import torch
+from collections import OrderedDict
+from pathlib import Path
+
+root = Path('.')
+
+# Load only aggregate_hetero so importing the training runner cannot trigger dataset dependencies.
+source = (root / 'segmentation/HeteroSFL/runner.py').read_text()
+tree = ast.parse(source)
+func = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'aggregate_hetero')
+ns = {'copy': copy, 'torch': torch}
+exec(compile(ast.Module(body=[func], type_ignores=[]), '<aggregate_hetero>', 'exec'), ns)
+aggregate_hetero = ns['aggregate_hetero']
+
+global_state = OrderedDict([
+    ('bn.num_batches_tracked', torch.tensor(7, dtype=torch.long)),
+    ('flag', torch.tensor(True, dtype=torch.bool)),
+    ('head.weight', torch.tensor([2.0, 4.0])),
+    ('head.bias', torch.tensor([1.0, 3.0])),
+])
+clients = [
+    OrderedDict([
+        ('bn.num_batches_tracked', torch.tensor(10, dtype=torch.long)),
+        ('flag', torch.tensor(False, dtype=torch.bool)),
+        ('head.weight', torch.tensor([4.0, 8.0])),
+        ('head.bias', torch.tensor([2.0, 6.0])),
+    ]),
+    OrderedDict([
+        ('bn.num_batches_tracked', torch.tensor(20, dtype=torch.long)),
+        ('flag', torch.tensor(False, dtype=torch.bool)),
+        ('head.weight', torch.tensor([8.0, 12.0])),
+        ('head.bias', torch.tensor([4.0, 10.0])),
+    ]),
+]
+result = aggregate_hetero(global_state, clients, narrow_channels=2)
+assert torch.equal(result['head.weight'], torch.tensor([6.0, 10.0]))
+assert torch.equal(result['head.bias'], torch.tensor([3.0, 8.0]))
+assert result['bn.num_batches_tracked'].dtype == torch.long
+assert result['bn.num_batches_tracked'].item() == 7
+assert result['flag'].dtype == torch.bool and result['flag'].item() is True
+
+class Aggregator:
+    pass
+
+for rel, expected_arity in [
+    ('segmentation/Federated/server/FedAvgAggregator.py', 2),
+    ('segmentation/HierFL/servers/FedAvgAggregator.py', 1),
+]:
+    source = (root / rel).read_text()
+    tree = ast.parse(source)
+    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'FedAvgAggregator')
+    ns = {'copy': copy, 'sys': sys, 'torch': torch, 'Aggregator': Aggregator}
+    exec(compile(ast.Module(body=[cls], type_ignores=[]), f'<{rel}>', 'exec'), ns)
+    updates = [
+        {'weight': torch.tensor([2.0]), 'counter': torch.tensor(3, dtype=torch.long)},
+        {'weight': torch.tensor([6.0]), 'counter': torch.tensor(9, dtype=torch.long)},
+    ]
+    output = ns['FedAvgAggregator']().aggregate(None, None, updates)
+    averaged = output[0] if expected_arity == 2 else output
+    assert torch.equal(averaged['weight'], torch.tensor([4.0]))
+    assert averaged['counter'].dtype == torch.long and averaged['counter'].item() == 3
+
+print('CPU sanity PASS: float tensors averaged; Long/bool buffers preserved unchanged with original dtype in HeteroSFL; Federated and HierFL FedAvg preserve Long buffers.')
+PY
+python -m compileall -q segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py
+git diff --check -- segmentation/HeteroSFL/runner.py segmentation/Federated/server/FedAvgAggregator.py segmentation/HierFL/servers/FedAvgAggregator.py
+nl -ba segmentation/HeteroSFL/runner.py | sed -n '55,88p'
+nl -ba segmentation/Federated/server/FedAvgAggregator.py | sed -n '12,32p'
+nl -ba segmentation/HierFL/servers/FedAvgAggregator.py | sed -n '8,28p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..38eeb9dbe6794081b27db460b508417750a8111b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -65,6 +65,8 @@
+     for local_w in local_updates:
+         is_narrow = local_w[weight_key].shape[0] == narrow_channels
+         for k in local_w:
++            if not global_wide_weights[k].is_floating_point():
++                continue
+             if k in [weight_key, bias_key] and is_narrow:
+                 update_acc[k][:narrow_channels] += local_w[k]
+                 count_acc[k][:narrow_channels] += 1
+@@ -74,6 +76,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..1d1194698040318fbf98259be61a3f940b2e98e3
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -1,7 +1,5 @@
+ import copy
+ 
+-import torch
+-
+ from .Aggregator import Aggregator
+ 
+ 
+@@ -14,18 +12,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+ succeeded in 1342ms:
+CPU sanity PASS: float tensors averaged; Long/bool buffers preserved unchanged with original dtype in HeteroSFL; Federated and HierFL FedAvg preserve Long buffers.
+    55	    narrow_state[keys[-1]] = narrow_state[keys[-1]][:narrow_channels]
+    56	    return narrow_state
+    57	
+    58	
+    59	def aggregate_hetero(global_wide_weights, local_updates, narrow_channels):
+    60	    update_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    61	    count_acc = {k: torch.zeros_like(v) for k, v in global_wide_weights.items()}
+    62	    keys = list(global_wide_weights.keys())
+    63	    weight_key, bias_key = keys[-2], keys[-1]
+    64	
+    65	    for local_w in local_updates:
+    66	        is_narrow = local_w[weight_key].shape[0] == narrow_channels
+    67	        for k in local_w:
+    68	            if not global_wide_weights[k].is_floating_point():
+    69	                continue
+    70	            if k in [weight_key, bias_key] and is_narrow:
+    71	                update_acc[k][:narrow_channels] += local_w[k]
+    72	                count_acc[k][:narrow_channels] += 1
+    73	            else:
+    74	                update_acc[k] += local_w[k]
+    75	                count_acc[k] += 1
+    76	
+    77	    avg_weights = copy.deepcopy(global_wide_weights)
+    78	    for k in avg_weights:
+    79	        if not avg_weights[k].is_floating_point():
+    80	            continue
+    81	        mask = count_acc[k] > 0
+    82	        avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+    83	    return avg_weights
+    84	
+    85	
+    86	def align_prediction_to_mask(prediction, mask):
+    87	    """Resize a segmentation prediction without permitting BCE broadcasting."""
+    88	    if prediction.shape[-2:] != mask.shape[-2:]:
+    12	        Parameters:
+    13	            client_updates: list of state_dicts
+    14	        Return:
+    15	            w_avg: the averaged weights of all clients
+    16	            server_comm: communication overhead
+    17	        """
+    18	        server_comm = sys.getsizeof(client_updates)
+    19	        w_avg = copy.deepcopy(client_updates[0])
+    20	        for key in w_avg.keys():
+    21	            if not w_avg[key].is_floating_point():
+    22	                continue
+    23	            for i in range(1, len(client_updates)):
+    24	                w_avg[key] += client_updates[i][key]
+    25	            w_avg[key] = torch.div(w_avg[key], len(client_updates))
+    26	        return w_avg, server_comm
+     8	        """
+     9	        client_updates: list of state_dicts (each from a client)
+    10	        Return the average model weights (FedAvg)
+    11	        """
+    12	        w_avg = copy.deepcopy(client_updates[0])
+    13	
+    14	        for key in w_avg.keys():
+    15	            if w_avg[key].is_floating_point():
+    16	                for i in range(1, len(client_updates)):
+    17	                    w_avg[key] += client_updates[i][key]
+    18	                w_avg[key] = w_avg[key] / len(client_updates)
+    19	
+    20	        return w_avg
+
+codex
+Fixed the dtype crash generically.
+
+Changes:
+
+- [segmentation/HeteroSFL/runner.py:68](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:68)
+  - Skips accumulation and averaging for non-floating tensors.
+  - Integer/boolean buffers retain the existing global value and dtype.
+
+- [segmentation/Federated/server/FedAvgAggregator.py:21](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/server/FedAvgAggregator.py:21)
+  - Fixed the analogous FedAvg bug by preserving the first-client value for non-floating buffers.
+
+- [segmentation/HierFL/servers/FedAvgAggregator.py:15](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/servers/FedAvgAggregator.py:15)
+  - Replaced the limited float dtype whitelist with generic `is_floating_point()` handling.
+
+Root cause confirmed: float division of integer state entries such as BatchNorm `num_batches_tracked` produced a float source that could not be assigned into the original `torch.long` destination.
+
+CPU-only validation passed:
+
+- Floating weights were averaged correctly.
+- `torch.long` and `torch.bool` buffers retained their original dtype and value.
+- HeteroSFL, Federated, and HierFL paths were checked.
+- Python compilation and `git diff --check` passed.
+- No GPU or training was run.
+- Existing uncommitted changes were preserved.
+diff --git a/segmentation/Federated/server/FedAvgAggregator.py b/segmentation/Federated/server/FedAvgAggregator.py
+index ca69ee76603fb21bf85cdb8cca0a25ab7fa69d04..055617852f3b7a24630fd00a78eb73bf8f882ef4
+--- a/segmentation/Federated/server/FedAvgAggregator.py
++++ b/segmentation/Federated/server/FedAvgAggregator.py
+@@ -18,7 +18,9 @@
+         server_comm = sys.getsizeof(client_updates)
+         w_avg = copy.deepcopy(client_updates[0])
+         for key in w_avg.keys():
++            if not w_avg[key].is_floating_point():
++                continue
+             for i in range(1, len(client_updates)):
+                 w_avg[key] += client_updates[i][key]
+             w_avg[key] = torch.div(w_avg[key], len(client_updates))
+-        return w_avg, server_comm
+\ No newline at end of file
++        return w_avg, server_comm
+diff --git a/segmentation/HeteroSFL/runner.py b/segmentation/HeteroSFL/runner.py
+index 7f441928b4a8e9e654915a274723d21518294e4f..38eeb9dbe6794081b27db460b508417750a8111b
+--- a/segmentation/HeteroSFL/runner.py
++++ b/segmentation/HeteroSFL/runner.py
+@@ -65,6 +65,8 @@
+     for local_w in local_updates:
+         is_narrow = local_w[weight_key].shape[0] == narrow_channels
+         for k in local_w:
++            if not global_wide_weights[k].is_floating_point():
++                continue
+             if k in [weight_key, bias_key] and is_narrow:
+                 update_acc[k][:narrow_channels] += local_w[k]
+                 count_acc[k][:narrow_channels] += 1
+@@ -74,6 +76,8 @@
+ 
+     avg_weights = copy.deepcopy(global_wide_weights)
+     for k in avg_weights:
++        if not avg_weights[k].is_floating_point():
++            continue
+         mask = count_acc[k] > 0
+         avg_weights[k][mask] = update_acc[k][mask] / count_acc[k][mask]
+     return avg_weights
+diff --git a/segmentation/HierFL/servers/FedAvgAggregator.py b/segmentation/HierFL/servers/FedAvgAggregator.py
+index 2bec631f6b67dd8503145155773a5795cf6205ee..1d1194698040318fbf98259be61a3f940b2e98e3
+--- a/segmentation/HierFL/servers/FedAvgAggregator.py
++++ b/segmentation/HierFL/servers/FedAvgAggregator.py
+@@ -1,7 +1,5 @@
+ import copy
+ 
+-import torch
+-
+ from .Aggregator import Aggregator
+ 
+ 
+@@ -14,18 +12,9 @@
+         w_avg = copy.deepcopy(client_updates[0])
+ 
+         for key in w_avg.keys():
+-            # Convert to float for safe accumulation if needed
+-            if w_avg[key].dtype in [torch.float32, torch.float64, torch.float16]:
++            if w_avg[key].is_floating_point():
+                 for i in range(1, len(client_updates)):
+                     w_avg[key] += client_updates[i][key]
+                 w_avg[key] = w_avg[key] / len(client_updates)
+-            else:
+-                # # For non-float types (like Long), just pick the first client's version
+-                # for i in range(1, len(client_updates)):
+-                #     if not torch.equal(w_avg[key], client_updates[i][key]):
+-                #         print(f"[Warning] Skipping averaging non-float field: {key}")
+-                # Keep it unchanged (or majority vote if needed)
+-                # Optional: vote or assert consistency
+-                pass
+ 
+         return w_avg
+
+tokens used
+30,013
+Fixed the dtype crash generically.
+
+Changes:
+
+- [segmentation/HeteroSFL/runner.py:68](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HeteroSFL/runner.py:68)
+  - Skips accumulation and averaging for non-floating tensors.
+  - Integer/boolean buffers retain the existing global value and dtype.
+
+- [segmentation/Federated/server/FedAvgAggregator.py:21](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/Federated/server/FedAvgAggregator.py:21)
+  - Fixed the analogous FedAvg bug by preserving the first-client value for non-floating buffers.
+
+- [segmentation/HierFL/servers/FedAvgAggregator.py:15](/home/jackson/Desktop/Split-Federated-Merging-Learning/segmentation/HierFL/servers/FedAvgAggregator.py:15)
+  - Replaced the limited float dtype whitelist with generic `is_floating_point()` handling.
+
+Root cause confirmed: float division of integer state entries such as BatchNorm `num_batches_tracked` produced a float source that could not be assigned into the original `torch.long` destination.
+
+CPU-only validation passed:
+
+- Floating weights were averaged correctly.
+- `torch.long` and `torch.bool` buffers retained their original dtype and value.
+- HeteroSFL, Federated, and HierFL paths were checked.
+- Python compilation and `git diff --check` passed.
+- No GPU or training was run.
+- Existing uncommitted changes were preserved.

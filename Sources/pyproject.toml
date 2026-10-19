@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h-sfp"
+version = "0.1.0"
+description = "H-SFP & E-HSFP: hierarchical split-federated learning with decoupled prototyping"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "H-SFP authors" }]
+keywords = [
+    "federated-learning", "split-learning", "hierarchical-federated-learning",
+    "prototypes", "self-supervised-learning", "communication-efficiency",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "torch>=2.0",
+    "torchvision>=0.15",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.6",
+    "Pillow>=9.0",
+    "tqdm>=4.62",
+    "psutil>=5.9",
+    "tensorboardX>=2.5",
+    "PyYAML>=6.0",
+    "kornia>=0.7",
+]
+
+[project.optional-dependencies]
+tracking = ["wandb"]
+figures = ["seaborn"]
+inversion = ["scikit-image", "lpips"]
+all = ["wandb", "seaborn", "scikit-image", "lpips"]
+
+[project.urls]
+Homepage = "https://github.com/Jackson2706/Split-Federated-Merging-Learning"
+Repository = "https://github.com/Jackson2706/Split-Federated-Merging-Learning"
+
+# The runnable method code (classification/, segmentation/) is loaded dynamically
+# by main.py; only the shared libraries are installable as importable packages.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ehsfp*", "camera_ready*", "serverless*"]

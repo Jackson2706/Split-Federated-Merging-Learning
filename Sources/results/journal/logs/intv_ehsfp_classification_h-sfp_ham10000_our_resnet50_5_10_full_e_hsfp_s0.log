@@ -1,0 +1,45 @@
+[E-HSFP] Ablation mode: full_e_hsfp
+[Runner] Seed: 0
+[Runner] task=classification  method=h-sfp
+[Runner] cfg=configs/classification/h-sfp/exp_2bhwpn3w.yaml
+
+Method: hier_fedavg
+[Device] training_device=cuda
+Train len: 8012
+[Integrity] resolved_config_hash=b69d46e5f46b476c76df57c3593a4aa512d26ac5f7187a7618f827a58426ffc4
+[Integrity] architecture_id=ebb9daeaf490 run_dir=/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/Figure/data/runs/ebb9daeaf490/b69d46e5f46b476c76df57c3593a4aa512d26ac5f7187a7618f827a58426ffc4
+Using 2 workers for the DataLoader.
+
+==================== EPOCH 1/60 ====================
+-> Phase 1: Clients Processing (20 nodes)...
+-> Phase 2: Edge Processing...
+Edge 0: generated 350 L1 samples (original labels). Starting SSL...
+Edge 0: SSL done, final loss: nan
+Edge 2: generated 350 L1 samples (original labels). Starting SSL...
+Edge 2: SSL done, final loss: nan
+Edge 1: generated 350 L1 samples (original labels). Starting SSL...
+Edge 1: SSL done, final loss: nan
+Edge 3: generated 350 L1 samples (original labels). Starting SSL...
+Edge 3: SSL done, final loss: nan
+Edge 4: generated 350 L1 samples (original labels). Starting SSL...
+Edge 4: SSL done, final loss: nan
+Traceback (most recent call last):
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 314, in <module>
+    main()
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 304, in main
+    run(args.task, args.method, args.cfg,
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/main.py", line 246, in run
+    runner.run(cfg_path)
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/runner.py", line 81, in run
+    output = hierarchical_fl.train_end_to_end(
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/hierarchy.py", line 1347, in train_end_to_end
+    self._flush_runtime_counters(config, epoch, "edges_complete")
+  File "/home/jackson/Desktop/Split-Federated-Merging-Learning/classification/H-SFP/hierarchy.py", line 466, in _flush_runtime_counters
+    handle.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/json/__init__.py", line 234, in dumps
+    return cls(
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/json/encoder.py", line 199, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/home/jackson/miniconda3/envs/AAAI-2026/lib/python3.9/json/encoder.py", line 257, in iterencode
+    return _iterencode(o, 0)
+ValueError: Out of range float values are not JSON compliant

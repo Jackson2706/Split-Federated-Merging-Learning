@@ -1,0 +1,11 @@
+figure_id,required_variables,existing_data_experiment_ids,missing_data,raw_data_path,aggregated_data_path,validation_status
+convergence_curves,"per-round acc/F1/loss x {IID, mild non-IID a=0.7, severe non-IID a=0.3}",cifar100_full60_all_methods (IID only, per-round history unverified),"mild/severe non-IID sweeps at a=0.7/0.3; per-round extraction; E-HSFP variant",outputs/full60/,MISSING,NOT_YET_VERIFIED
+prototype_drift_over_rounds,per-round drift metric (global/per-tier/per-class),none,"metric implementation itself + all runs",N/A,N/A,BLOCKED_METRIC_NOT_IMPLEMENTED
+stability_bound_vs_empirical_drift,both metrics per round,none,"both metrics unimplemented",N/A,N/A,BLOCKED_METRIC_NOT_IMPLEMENTED
+dropout_sensitivity,"accuracy/F1/stability vs dropout rate {0,0.1,0.2,0.3,0.5}",none,full sweep (script exists but wrong rate values {0,0.1,0.3,0.5,0.7} and never executed),results/journal/dropout/,MISSING,NOT_YET_VERIFIED
+staleness_sensitivity,"accuracy/F1/stability vs tau {0,1,3,5,10}",none,full sweep (script exists, matches required values, never executed),results/journal/staleness/,MISSING,NOT_YET_VERIFIED
+component_ablation_trends,per-preset accuracy/F1/comm/convergence/stability/drift/memory/time,"scripts/journal_experiments abl_* logs (seed 0 only, cifar+ham10000)",metric extraction (collect_results.py broken); 5-seed protocol; stability/drift metrics,results/journal/logs/abl_*.log,MISSING,PARTIAL_RAW_LOGS_ONLY
+reliability_weight_analysis,"per-prototype support/variance/age/reference_distance/raw_score/normalized_weight/class/tier/round/seed",none captured in structured form,full instrumentation + runs,N/A,N/A,MISSING
+memory_size_effects,metrics vs memory_size {0,1,5,10,20},none,full sweep (never attempted; only default 500 used anywhere),N/A,N/A,MISSING
+communication_accuracy_tradeoff,"normalized comm (all methods) vs accuracy",scattered non-normalized figures across fair_comparison_*.csv,accounting normalization pass + full grid,results/fair_comparison_*.csv,MISSING,NOT_COMPARABLE
+memory_performance_tradeoff,tier memory vs accuracy (all methods),scattered non-normalized figures,same normalization pass,N/A,MISSING,NOT_COMPARABLE

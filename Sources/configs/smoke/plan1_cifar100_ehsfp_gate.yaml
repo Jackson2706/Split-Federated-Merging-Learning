@@ -1,0 +1,40 @@
+# PLAN-1 only: bounded CIFAR-100 instrumentation smoke gate.
+# The execution harness deterministically caps the locally cached CIFAR-100
+# partition to 32 train samples/client and 128 validation/test samples.
+# This config is not suitable for accuracy or paper-number comparisons.
+base: ../classification/h-sfp/cifar_our_resnet50_5_10.yaml
+
+is_gpu: true
+require_cuda: true
+iid: true
+num_users: 8
+mid_server: [2]
+epochs: 2
+frac: 1.0
+t1: 1
+t2: 2
+eval_every: 2
+
+local_bs: 16
+ssl_epochs_client: 1
+ssl_epochs_edge: 1
+syn_epochs_cloud: 1
+syn_samples_per_class: 16
+use_lr_schedule: false
+
+smoke_train_samples_per_client: 32
+smoke_eval_samples: 128
+
+# Keep the smoke paths small while ensuring the full preset can exercise them.
+memory_size: 10000
+memory_top_k: 2
+prc_num_samples: 2
+
+# full_e_hsfp enables the simulator; eliminate simulated timeouts so the
+# instrumentation gate observes every selected client in both rounds.
+cold_start_probability: 0.0
+function_timeout_probability: 0.0
+
+# Distinguishes the sandbox-safe zero-worker retry from the preserved failed
+# preflight directory; it has no training semantics.
+smoke_attempt_id: plan1b_cuda_tiny_v1

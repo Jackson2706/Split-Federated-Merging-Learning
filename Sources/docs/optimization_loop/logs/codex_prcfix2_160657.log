@@ -1,0 +1,2399 @@
+Reading additional input from stdin...
+OpenAI Codex v0.144.4
+--------
+workdir: /home/jackson/Desktop/Split-Federated-Merging-Learning
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: low
+reasoning summaries: none
+session id: 019f6a2d-dd17-7c10-b6b6-461b474cb216
+--------
+user
+You are Codex. CORRECTION: the tensorboardX removal did NOT fix the PRC deadlock (prc_verify still hangs, code=124). Re-reading the faulthandler stack: the MAIN thread deadlocks inside torch.autograd _engine_run_backward at classification/H-SFP/hierarchy.py:908 (scaler.scale(loss).backward()) in _edge_ssl_extraction_phase; the tensorboardX thread was merely idle-waiting (red herring). The hang appears ONLY when PRC is active. At lines 890-905 the edge PRC does: edge_repr_fn(x)=flatten(AdaptiveAvgPool2d(model(x))) where model is the EDGE model currently being trained; prototype_replay_consistency_loss samples synthetic features per class and forwards them through edge_repr_fn, then loss = loss + lambda_prc*prc, then scaler.scale(loss).backward(). Investigate WHY this backward deadlocks: candidates — (a) autocast/GradScaler interaction with the PRC subgraph (PRC forward may run outside/inside autocast inconsistently vs the SSL forward, corrupting the scaled-grad graph); (b) the edge model forward inside PRC creates a second graph through the SAME module in the same iteration causing an autograd-engine hang; (c) PRC builds an enormous graph (num_samples x 100 classes x edge-model forwards) that hangs backward; (d) a retain_graph / in-place op issue. Look at ehsfp/losses.py prototype_replay_consistency_loss AND its edge/cloud call sites in hierarchy.py. Propose+apply a fix that makes full_e/PRC backward complete WITHOUT deadlock while preserving PRC semantics (PRC still contributes a nonzero trainable gradient). Likely safe fixes: ensure the PRC forward runs under the SAME autocast context as the SSL forward and uses the scaler consistently; or reduce PRC graph size; or compute PRC on detached-then-reattached features correctly. NO GPU (Claude verifies by re-running hsfp_memory_reliability_prc epochs=2). Preserve uncommitted changes; local only; run unit tests. FINAL: file:line diff, the identified backward-deadlock mechanism, and confirmation PRC gradient semantics preserved.
+codex
+I’ll trace the PRC loss and both hierarchy call sites, then patch the smallest safe graph-construction issue and run the targeted CPU reliability test plus relevant unit tests. I’ll preserve all unrelated working-tree changes.
+exec
+/bin/bash -lc "git status --short && rg -n \"prototype_replay_consistency_loss|_edge_ssl_extraction_phase|lambda_prc|autocast|GradScaler\" classification/H-SFP/hierarchy.py ehsfp/losses.py classification/H-SFP -g '*.py'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+ M .gitignore
+ M classification/Federated/runner.py
+ M classification/Federated/server/FedNovaAggregator.py
+ M classification/H-SFP/hierarchy.py
+ M classification/H-SFP/models/alexnet_cifar.py
+ M classification/H-SFP/models/cnn_cifar.py
+ M classification/H-SFP/models/resnet50_ham10000.py
+ M classification/H-SFP/models/vgg_ham10000.py
+ M classification/H-SFP/runner.py
+ M classification/HSFL/models/CNN_Cifar.py
+ M classification/HSFL/runner.py
+ M classification/HeteroSFL/models/CNN_Cifar.py
+ M classification/HeteroSFL/runner.py
+ M classification/HierFL/runner.py
+ M classification/HierFL/servers/FedAvgAggregator.py
+ M classification/SplitFL/models/CNN_Cifar.py
+ M classification/SplitFL/runner.py
+ M configs/classification/federated/default.yaml
+ M configs/classification/h-sfp/default.yaml
+ M configs/classification/hetero-sfl/default.yaml
+ M configs/classification/hierfl/default.yaml
+ M configs/classification/hsfl/default.yaml
+ M configs/classification/splitfl/default.yaml
+ M configs/segmentation/federated/default.yaml
+ M configs/segmentation/h-sfp/default.yaml
+ M configs/segmentation/hetero-sfl/default.yaml
+ M configs/segmentation/hierfl/default.yaml
+ M configs/segmentation/hsfl/default.yaml
+ M configs/segmentation/splitfl/default.yaml
+ M ehsfp/__init__.py
+ M ehsfp/aggregation.py
+ M ehsfp/config.py
+ M ehsfp/dropout.py
+ M ehsfp/losses.py
+ M ehsfp/memory.py
+ M ehsfp/metrics_logger.py
+ M ehsfp/reliability.py
+ M main.py
+ M scripts/journal_experiments/common.sh
+ M segmentation/H-SFP/hierarchy.py
+ M segmentation/H-SFP/runner.py
+?? configs/proxy/
+?? configs/smoke/
+?? ehsfp/client_objective.py
+?? ehsfp/integrity.py
+?? ehsfp/prototype_space.py
+?? tools/diag/
+?? tools/fair_compare/
+ehsfp/losses.py:14:def prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:31:    prototype_replay_consistency_loss,
+classification/H-SFP/hierarchy.py:138:            with torch.amp.autocast(device_type='cuda', enabled=(fx.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:306:        with torch.amp.autocast(device_type='cuda', enabled=(x.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:683:        """Initialize optimizers, GradScalers and (optional) LR schedulers.
+classification/H-SFP/hierarchy.py:703:                    'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda')),
+classification/H-SFP/hierarchy.py:732:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:785:        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:810:    def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
+classification/H-SFP/hierarchy.py:875:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:900:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:905:                            loss = loss + self.ecfg["lambda_prc"] * prc
+classification/H-SFP/hierarchy.py:919:        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:1015:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:1024:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:1029:                            loss = loss + self.ecfg["lambda_prc"] * prc
+classification/H-SFP/hierarchy.py:1340:                edge_outputs[eid], edge_support = self._edge_ssl_extraction_phase(
+classification/H-SFP/models/pipeline.py:27:        with torch.amp.autocast(device_type='cuda', enabled=(x.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:31:    prototype_replay_consistency_loss,
+classification/H-SFP/hierarchy.py:138:            with torch.amp.autocast(device_type='cuda', enabled=(fx.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:306:        with torch.amp.autocast(device_type='cuda', enabled=(x.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:683:        """Initialize optimizers, GradScalers and (optional) LR schedulers.
+classification/H-SFP/hierarchy.py:703:                    'scaler': torch.amp.GradScaler(enabled=(self.device.type == 'cuda')),
+classification/H-SFP/hierarchy.py:732:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:785:        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:810:    def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
+classification/H-SFP/hierarchy.py:875:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:900:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:905:                            loss = loss + self.ecfg["lambda_prc"] * prc
+classification/H-SFP/hierarchy.py:919:        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:1015:                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+classification/H-SFP/hierarchy.py:1024:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:1029:                            loss = loss + self.ecfg["lambda_prc"] * prc
+classification/H-SFP/hierarchy.py:1340:                edge_outputs[eid], edge_support = self._edge_ssl_extraction_phase(
+
+exec
+/bin/bash -lc "sed -n '1,220p' ehsfp/losses.py && sed -n '810,940p' classification/H-SFP/hierarchy.py && sed -n '970,1050p' classification/H-SFP/hierarchy.py && git diff -- ehsfp/losses.py classification/H-SFP/hierarchy.py && rg -n \"hsfp_memory_reliability_prc|prc_verify|full_e\" . -g '"'!*.log'"'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+"""
+E-HSFP loss functions.
+
+Provides the Prototype Replay Consistency (PRC) loss and
+dropout consistency loss for episodic training stability.
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from typing import Dict, Callable, Optional
+
+
+def prototype_replay_consistency_loss(
+    current_protos: Dict[int, torch.Tensor],
+    current_stds: Dict[int, torch.Tensor],
+    memory_protos: Dict[int, torch.Tensor],
+    memory_stds: Dict[int, torch.Tensor],
+    representation_fn: Callable[[torch.Tensor], torch.Tensor],
+    num_samples: int = 16,
+    device: Optional[torch.device] = None,
+    runtime_counters=None,
+) -> torch.Tensor:
+    """Prototype Replay Consistency loss.
+
+    For each class present in both current and memory prototypes:
+    - Sample synthetic features from current distribution
+    - Sample synthetic features from memory distribution
+    - Pass both through the same representation module
+    - Minimize L2 distance between representations
+
+    L_prc = mean(|| h(z_current) - h(z_memory) ||_2^2)
+
+    Returns zero tensor if no shared classes or early rounds.
+    """
+    shared_classes = set(current_protos.keys()) & set(memory_protos.keys())
+    if runtime_counters is not None:
+        runtime_counters.increment("prc.calls")
+        runtime_counters.increment("prc.shared_classes", len(shared_classes))
+    if not shared_classes:
+        if device is not None:
+            return torch.tensor(0.0, device=device, requires_grad=True)
+        return torch.tensor(0.0, requires_grad=True)
+
+    # A per-class model call made CIFAR-100 execute 200 tiny CUDA forwards for
+    # every minibatch.  At proxy scale that can stall in the CUDA/BLAS worker
+    # pool (observed as futex_wait).  Batch classes exactly as reliability does.
+    class_ids = sorted(shared_classes)
+    compute_device = (
+        torch.device(device) if device is not None
+        else current_protos[class_ids[0]].device
+    )
+    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
+
+    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
+    z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+        sample_shape, device=compute_device, dtype=cur_mu.dtype
+    )
+    z_memory = mem_mu.unsqueeze(1) + mem_sigma.unsqueeze(1) * torch.randn(
+        sample_shape, device=compute_device, dtype=mem_mu.dtype
+    )
+
+    # Flatten class and replay dimensions for two model calls total.  A global
+    # mean is identical to the old mean of equal-sized per-class MSE losses.
+    flat_shape = (-1, *cur_mu.shape[1:])
+    h_current = representation_fn(z_current.reshape(flat_shape))
+    h_memory = representation_fn(z_memory.reshape(flat_shape))
+    total_loss = F.mse_loss(h_current, h_memory)
+
+    if runtime_counters is not None:
+        # Keep instrumentation asynchronous.  Calling .item() here serialized
+        # every CUDA PRC forward with the host (hundreds of synchronizations per
+        # proxy round), which can present as a futex hang.  RuntimeCounters
+        # materializes these detached scalars once at a phase snapshot.
+        scalar_loss = total_loss.detach()
+        runtime_counters.increment(
+            "prc.nonzero_loss_calls", (scalar_loss != 0).to(torch.int64)
+        )
+        runtime_counters.increment("prc.loss_sum", scalar_loss)
+        runtime_counters.increment("prc.loss_observations")
+
+    return total_loss
+
+
+def dropout_consistency_loss(
+    logits_full: torch.Tensor,
+    logits_dropped: torch.Tensor,
+) -> torch.Tensor:
+    """KL divergence between predictions from full and dropped prototypes.
+
+    L_drop = KL(p(y|z_full) || p(y|z_drop))
+
+    Both inputs are logits [N, C].
+    """
+    p_full = F.log_softmax(logits_full, dim=-1)
+    p_drop = F.softmax(logits_dropped, dim=-1)
+    return F.kl_div(p_full, p_drop, reduction="batchmean")
+    def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
+        """(Phase 2) Run SSL and extract (proto, dist) for one edge."""
+        model = self.structure[0][eid]
+        opt_dict = self.optimizers[0][eid]
+        optimizer = opt_dict['optimizer']
+        scaler = opt_dict['scaler']
+
+        # --- 2a. Collect and synthesize L1 data ---
+        edge_specific_client_outputs = {cid: client_outputs[cid] for cid in cids if cid in client_outputs}
+
+        # E-HSFP: Apply prototype dropout at client level
+        if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("client_prototype", "both"):
+            edge_specific_client_outputs = self.proto_dropout.apply_to_source_outputs(edge_specific_client_outputs)
+
+        # E-HSFP: Use reliability-weighted aggregation when enabled
+        syn_features_L1, syn_labels_L1 = reliability_weighted_aggregate(
+            input_outputs=edge_specific_client_outputs,
+            num_samples_per_class=syn_samples_per_class,
+            device=self.device,
+            reliability_net=self.reliability_net,
+            memory=self.client_memory,
+            generator=self.residual_generator,
+            support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
+            runtime_counters=self.runtime_counters,
+        )
+
+        if syn_features_L1.shape[0] == 0:
+             print(f"Edge {eid}: no prototypes from clients, skipping.")
+             return None, {}
+
+        print(f"Edge {eid}: generated {syn_features_L1.shape[0]} L1 samples (original labels). Starting SSL...")
+
+        # --- 2b. SSL training ---
+        model.to(self.device).train()
+        
+        # Move data to CPU
+        syn_dataset_L1 = torch.utils.data.TensorDataset(
+            syn_features_L1.cpu(), 
+            syn_labels_L1.cpu() # include labels
+        )
+        del syn_features_L1, syn_labels_L1
+        
+        syn_loader_L1 = DataLoader(
+            syn_dataset_L1, 
+            batch_size=self.args['local_bs'], 
+            shuffle=True,
+            # --- fix AttributeError ---
+            num_workers=0, # data already in RAM
+            pin_memory=False,
+            # --- end ---
+            drop_last=True 
+        )
+        
+        for epoch in range(ssl_epochs):
+            total_loss = 0
+            # Supervised Contrastive Training (Paper Alg. 2, Lines 9-11)
+            for features, labels in syn_loader_L1:
+                features = features.to(self.device)
+                labels = labels.to(self.device)
+
+                # Build edge SSL transforms lazily from actual feature map spatial dims
+                if self.ssl_transforms_edge is None:
+                    spatial_size = features.shape[-1]  # H dimension of feature map
+                    self.ssl_transforms_edge = build_edge_ssl_transforms(spatial_size).to(self.device)
+
+                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+                    view_1 = self.ssl_transforms_edge(features)
+                    view_2 = self.ssl_transforms_edge(features)
+                    
+                    z1 = model(view_1)
+                    z2 = model(view_2)
+                    
+                    # Pool 4D feature maps to 2D vectors for SupCon
+                    z1_flat = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(z1), start_dim=1)
+                    z2_flat = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(z2), start_dim=1)
+                    # SupCon with synthetic labels (Paper Eq. 1)
+                    all_features = torch.cat([z1_flat, z2_flat], dim=0)
+                    all_labels = torch.cat([labels, labels], dim=0)
+                    loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
+
+                    # E-HSFP: PRC loss at edge level
+                    if self.ecfg["use_prc_loss"] and self.client_memory is not None and len(self.client_memory) > 0:
+                        mem_p, mem_d = self.client_memory.to_proto_dist_dicts()
+                        cur_p, cur_d = aggregate_proto_dicts({
+                            cid: client_outputs[cid] for cid in cids
+                            if cid in client_outputs and client_outputs[cid] is not None
+                        }, device=self.device)
+                        if cur_p and mem_p:
+                            def edge_repr_fn(x):
+                                return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
+                            prc = prototype_replay_consistency_loss(
+                                cur_p, cur_d, mem_p, mem_d,
+                                edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
+                            )
+                            loss = loss + self.ecfg["lambda_prc"] * prc
+
+                optimizer.zero_grad()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                total_loss += loss.item()
+        print(f"Edge {eid}: SSL done, final loss: {total_loss/len(syn_loader_L1):.4f}")
+
+        # --- 2c. Extract proto/dist ---
+        model.to(self.device).eval()
+        edge_feats_L2 = []
+        
+        # Avoid FutureWarning
+        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+            syn_loader_L1_eval = DataLoader(
+                syn_dataset_L1, # reuse dataset (features + labels)
+                batch_size=self.args['local_bs'], 
+                shuffle=False,
+                # --- fix AttributeError ---
+                num_workers=0,
+                pin_memory=False
+                # (no drop_last=True)
+                # --- end ---
+            )
+            # DataLoader returns (features, labels)
+            for features, _ in syn_loader_L1_eval: # take features only
+                features = features.to(self.device)
+                out_4d = model(features)
+                
+                # Flatten 4D -> 2D for the cloud
+                out_2d = torch.flatten(nn.AdaptiveAvgPool2d((1,1))(out_4d), start_dim=1)
+                
+                if self.input_shape_cloud is None:
+                    self.input_shape_cloud = out_2d.shape[1:]
+                
+        # E-HSFP: reliability-weighted aggregation
+        syn_features_L2, syn_labels_L2 = reliability_weighted_aggregate(
+            input_outputs=edge_outputs,
+            num_samples_per_class=syn_samples_per_class,
+            device=self.device,
+            reliability_net=self.reliability_net,
+            memory=self.edge_memory,
+            generator=self.residual_generator,
+            support_map=getattr(self, "_edge_support", {}),
+            runtime_counters=self.runtime_counters,
+        )
+        
+        if syn_features_L2.shape[0] == 0:
+            print(f"Cloud {cloud_id}: no prototypes from edges, skipping.")
+            return 0.0
+
+        print(f"Cloud {cloud_id}: generated {syn_features_L2.shape[0]} L2 samples (original labels). Starting supervised...")
+
+        # --- 3b. Supervised training (CrossEntropy) ---
+        model.to(self.device).train()
+        
+        syn_dataset_L2 = torch.utils.data.TensorDataset(
+            syn_features_L2.cpu(), 
+            syn_labels_L2.cpu() # original labels (e.g. 0-99)
+        )
+        del syn_features_L2, syn_labels_L2
+        
+        syn_loader_L2 = DataLoader(
+            syn_dataset_L2, 
+            batch_size=self.args['local_bs'], 
+            shuffle=True,
+            # --- fix AttributeError ---
+            num_workers=0,
+            pin_memory=False,
+            # --- end ---
+            drop_last=True
+        )
+        
+        total_loss = 0
+        for epoch in range(syn_epochs):
+            epoch_loss = 0
+            for features, labels in syn_loader_L2:
+                features, labels = features.to(self.device), labels.to(self.device, non_blocking=True)
+                
+                # Avoid FutureWarning
+                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+                    logits = model(features)
+                    loss = self.criterion(logits, labels)
+
+                    # E-HSFP: PRC loss at cloud level
+                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
+                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
+                        cur_p, cur_d = aggregate_proto_dicts(edge_outputs, device=self.device)
+                        if cur_p and mem_p:
+                            prc = prototype_replay_consistency_loss(
+                                cur_p, cur_d, mem_p, mem_d,
+                                model, self.ecfg["prc_num_samples"], self.device,
+                                runtime_counters=self.runtime_counters,
+                            )
+                            loss = loss + self.ecfg["lambda_prc"] * prc
+
+                optimizer.zero_grad()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+
+                epoch_loss += loss.item()
+
+            total_loss = epoch_loss / len(syn_loader_L2)
+
+        print(f"Cloud {cloud_id}: supervised done, final loss: {total_loss:.4f}")
+        del syn_dataset_L2, syn_loader_L2
+        return total_loss
+        
+    def _run_validation(self, valid_dataset, best_f1, epoch):
+        """(Phase 5) Run evaluation (optimized).
+
+        Evaluate on the FedAvg GLOBAL client model (average of the clients
+        actually trained this round), not an arbitrary ``structure[-1][0]``.
+        Under a fixed seed, client 0 may never be selected, leaving its local
+        model at the frozen pretrained init — which made every checkpoint grade
+diff --git a/classification/H-SFP/hierarchy.py b/classification/H-SFP/hierarchy.py
+index 2df2c0e..9fbc44c 100644
+--- a/classification/H-SFP/hierarchy.py
++++ b/classification/H-SFP/hierarchy.py
+@@ -1,4 +1,5 @@
+ import copy
++import json
+ import logging
+ import math
+ import os
+@@ -33,6 +34,19 @@ from ehsfp import (
+     ServerlessMetricsTracker,
+     ResidualPrototypeGenerator,
+     EHSFPMetricsLogger,
++    RuntimeCounters,
++    aggregate_proto_dicts,
++    center_features,
++    center_source_outputs,
++    derive_global_feature_mean,
++    derive_whitening_transform,
++    recenter_memory,
++    validate_prototype_space,
++    whiten_features,
++    whiten_source_outputs,
++    COSINE_SPACES,
++    compose_client_objective_loss,
++    validate_client_objective,
+ )
+ 
+ # camera-ready: optional fine-grained phase profiling (gated by config["profile"])
+@@ -140,8 +154,31 @@ def build_client_ssl_transforms(input_size):
+         K.RandomGrayscale(p=0.2)
+     )
+ 
++class _FeatureNoiseAug(nn.Module):
++    """SSL augmentation for pooled (1x1-spatial) feature maps.
++
++    Spatial crops/flips/blur are meaningless on a [C,1,1] vector, so we build
++    the two SupCon views by perturbing in feature space: additive Gaussian
++    noise + feature dropout. Used at the edge when the client already pools to a
++    semantic vector (the new resnet18 split)."""
++
++    def __init__(self, noise_std=0.1, dropout_p=0.1):
++        super().__init__()
++        self.noise_std = noise_std
++        self.dropout = nn.Dropout(dropout_p)
++
++    def forward(self, x):
++        x = x + torch.randn_like(x) * self.noise_std
++        return self.dropout(x)
++
++
+ def build_edge_ssl_transforms(spatial_size):
+-    """Build edge SSL augmentations adaptive to feature map spatial dims."""
++    """Build edge SSL augmentations adaptive to feature map spatial dims.
++
++    For pooled vector features (spatial_size <= 1) spatial ops are undefined, so
++    fall back to feature-space noise/dropout to create contrastive views."""
++    if spatial_size <= 1:
++        return _FeatureNoiseAug(noise_std=0.1, dropout_p=0.1)
+     return nn.Sequential(
+         K.RandomHorizontalFlip(p=0.5),
+         K.RandomResizedCrop(size=(spatial_size, spatial_size), scale=(0.8, 1.0)),
+@@ -243,19 +280,37 @@ def get_proto_dist_size_MB(proto_dist_tuple: tuple) -> float:
+ # =============================================================================
+ 
+ class FullPipelineModel(nn.Module):
+-    def __init__(self, client_model, edge_model, cloud_model):
++    def __init__(
++        self, client_model, edge_model, cloud_model,
++        prototype_space="raw", client_to_edge_mean=None, edge_to_cloud_mean=None,
++        client_to_edge_whitener=None, edge_to_cloud_whitener=None,
++    ):
+         super().__init__()
+         self.client = client_model
+         self.edge = edge_model
+         self.cloud = cloud_model
++        self.prototype_space = validate_prototype_space(prototype_space)
++        self.register_buffer("client_to_edge_mean", client_to_edge_mean)
++        self.register_buffer("edge_to_cloud_mean", edge_to_cloud_mean)
++        self.register_buffer("client_to_edge_whitener", client_to_edge_whitener)
++        self.register_buffer("edge_to_cloud_whitener", edge_to_cloud_whitener)
++
++    def _apply_space(self, x, mean, whitener):
++        if self.prototype_space == "centered_cosine":
++            return center_features(x, mean)
++        if self.prototype_space == "whitened_cosine":
++            return whiten_features(x, mean, whitener)
++        return x
+ 
+     def forward(self, x):
+         with torch.amp.autocast(device_type='cuda', enabled=(x.device.type == 'cuda')):
+             x = self.client(x)
++            x = self._apply_space(x, self.client_to_edge_mean, self.client_to_edge_whitener)
+             x = self.edge(x)
+             # Apply GAP + flatten to match the prototype extraction pipeline
+             # (edge extraction does AdaptiveAvgPool2d + flatten before cloud)
+             x = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(x), start_dim=1)
++            x = self._apply_space(x, self.edge_to_cloud_mean, self.edge_to_cloud_whitener)
+             x = self.cloud(x)
+         return x
+ 
+@@ -296,6 +351,24 @@ class HierarchicalFL:
+         self.client_weight = client_weights
+         self.edge_weight = edge_weights
+         self.cloud_weight = cloud_weight
++        self.prototype_space = validate_prototype_space(args.get("prototype_space"))
++        self.client_objective = validate_client_objective(args.get("client_objective"))
++        self.client_objective_weight = float(args.get("client_objective_weight", 0.1))
++        if self.client_objective_weight < 0:
++            raise ValueError("client_objective_weight must be non-negative")
++        self.client_supervised_heads = {}
++        self.client_supervised_optimizers = {}
++        self.global_feature_means = {
++            "client_to_edge": None,
++            "edge_to_cloud": None,
++        }
++        # ZCA whitening transforms per boundary (whitened_cosine only). Derived
++        # from the between-class scatter of aggregated prototype means; never
++        # transmitted (computed at the reconstructing tier).
++        self.global_feature_whiteners = {
++            "client_to_edge": None,
++            "edge_to_cloud": None,
++        }
+ 
+         self.structure, self.connectivity = self._build_hierarchy()
+         self.total_layers = len(args["mid_server"]) + 1
+@@ -332,12 +405,17 @@ class HierarchicalFL:
+         self.input_shape_edge = None
+         self.input_shape_cloud = None
+ 
+-        self.num_workers = 2 if os.name != 'nt' else 0
++        # Configurable; default preserves prior behavior. persistent_workers=True
++        # across many per-client DataLoaders (20 clients x N rounds) can exhaust/
++        # deadlock worker processes at proxy scale — set num_workers=0 to disable.
++        _default_workers = 2 if os.name != 'nt' else 0
++        self.num_workers = int(self.args.get("num_workers", _default_workers))
+         print(f"Using {self.num_workers} workers for the DataLoader.")
+ 
+         # --- E-HSFP components ---
+         self.ecfg = get_ehsfp_config(args)
+         self.ehsfp_logger = EHSFPMetricsLogger()
++        self.runtime_counters = RuntimeCounters()
+ 
+         # Episodic memory (client-level and edge-level)
+         if self.ecfg["use_episodic_memory"]:
+@@ -399,6 +477,19 @@ class HierarchicalFL:
+         if self.profiler is not None:
+             self.profiler.add(name, self._prof_now() - t0, round_idx)
+ 
++    def _flush_runtime_counters(self, config, epoch, phase):
++        """Durably persist cumulative counters at round phase boundaries."""
++        path = config.get("runtime_counters_path")
++        if not path:
++            return
++        record = {"epoch": epoch, "phase": phase, "device": str(self.device)}
++        record.update(self.runtime_counters.snapshot())
++        os.makedirs(os.path.dirname(path), exist_ok=True)
++        with open(path, "a") as handle:
++            handle.write(json.dumps(record, sort_keys=True, allow_nan=False) + "\n")
++            handle.flush()
++            os.fsync(handle.fileno())
++
+     def _build_hierarchy(self):
+         # ... (original code - unchanged) ...
+         structure = {}
+@@ -634,8 +725,11 @@ class HierarchicalFL:
+                 data = data.to(self.device, non_blocking=True)
+                 target = target.to(self.device, non_blocking=True)
+                 optimizer.zero_grad(set_to_none=True)
++                head_optimizer = self.client_supervised_optimizers.get(cid)
++                if head_optimizer is not None:
++                    head_optimizer.zero_grad(set_to_none=True)
+                 
+-                with torch.amp.autocast(device_type=self.device.type):
++                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+                     v1, v2 = self.ssl_transforms(data), self.ssl_transforms(data)
+                     z1 = model(v1)
+                     z2 = model(v2)
+@@ -646,9 +740,39 @@ class HierarchicalFL:
+                     all_features = torch.cat([z1_flat, z2_flat], dim=0)
+                     all_labels = torch.cat([target, target], dim=0)
+                     loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
++
++                    # PLAN-6 auxiliaries see only this client's activations and
++                    # labels. The default branch leaves the legacy tensor alone.
++                    if self.client_objective == "ssl_supcon":
++                        loss = compose_client_objective_loss(
++                            loss, self.client_objective, z1_flat, target,
++                            weight=self.client_objective_weight,
++                            temperature=self.supcon_temp,
++                        )
++                    elif self.client_objective == "supervised":
++                        head = self.client_supervised_heads.get(cid)
++                        if head is None:
++                            head = nn.Linear(z1_flat.shape[1], self.args["num_classes"]).to(
++                                device=z1_flat.device
++                            )
++                            self.client_supervised_heads[cid] = head
++                            head_optimizer = torch.optim.Adam(
++                                head.parameters(),
++                                lr=self.args.get("ssl_lr", self.args["lr"]),
++                                weight_decay=self.args["weight_decay"],
++                            )
++                            self.client_supervised_optimizers[cid] = head_optimizer
++                            head_optimizer.zero_grad(set_to_none=True)
++                        loss = compose_client_objective_loss(
++                            loss, self.client_objective,
++                            torch.cat([z1_flat, z2_flat], dim=0), all_labels,
++                            linear_head=head, weight=self.client_objective_weight,
++                        )
+                 
+                 scaler.scale(loss).backward()
+                 scaler.step(optimizer)
++                if head_optimizer is not None:
++                    scaler.step(head_optimizer)
+                 scaler.update()
+ 
+         # 2. Extraction - avoid storing all features in a list when unnecessary
+@@ -658,7 +782,7 @@ class HierarchicalFL:
+         # Optimization: accumulate per batch to avoid huge tensors
+         # For simplicity and correct std, use class-wise grouping
+         feats_by_cls = {}
+-        with torch.no_grad(), torch.amp.autocast(device_type=self.device.type):
++        with torch.no_grad(), torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+             for data, target in loader:
+                 data = data.to(self.device, non_blocking=True)
+                 out = model(data)
+@@ -706,6 +830,7 @@ class HierarchicalFL:
+             memory=self.client_memory,
+             generator=self.residual_generator,
+             support_map={cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids},
++            runtime_counters=self.runtime_counters,
+         )
+ 
+         if syn_features_L1.shape[0] == 0:
+@@ -763,16 +888,19 @@ class HierarchicalFL:
+                     loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
+ 
+                     # E-HSFP: PRC loss at edge level
+-                    if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
+-                        mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
+-                        cur_p = {cid: client_outputs[cid][0] for cid in cids if cid in client_outputs and client_outputs[cid] is not None}
+-                        cur_d = {cid: client_outputs[cid][1] for cid in cids if cid in client_outputs and client_outputs[cid] is not None}
++                    if self.ecfg["use_prc_loss"] and self.client_memory is not None and len(self.client_memory) > 0:
++                        mem_p, mem_d = self.client_memory.to_proto_dist_dicts()
++                        cur_p, cur_d = aggregate_proto_dicts({
++                            cid: client_outputs[cid] for cid in cids
++                            if cid in client_outputs and client_outputs[cid] is not None
++                        }, device=self.device)
+                         if cur_p and mem_p:
+                             def edge_repr_fn(x):
+                                 return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
+                             prc = prototype_replay_consistency_loss(
+                                 cur_p, cur_d, mem_p, mem_d,
+                                 edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
++                                runtime_counters=self.runtime_counters,
+                             )
+                             loss = loss + self.ecfg["lambda_prc"] * prc
+ 
+@@ -848,6 +976,7 @@ class HierarchicalFL:
+             memory=self.edge_memory,
+             generator=self.residual_generator,
+             support_map=getattr(self, "_edge_support", {}),
++            runtime_counters=self.runtime_counters,
+         )
+         
+         if syn_features_L2.shape[0] == 0:
+@@ -890,12 +1019,12 @@ class HierarchicalFL:
+                     # E-HSFP: PRC loss at cloud level
+                     if self.ecfg["use_prc_loss"] and self.edge_memory is not None and len(self.edge_memory) > 0:
+                         mem_p, mem_d = self.edge_memory.to_proto_dist_dicts()
+-                        cur_p = {eid: edge_outputs[eid][0] for eid in edge_outputs if edge_outputs[eid] is not None}
+-                        cur_d = {eid: edge_outputs[eid][1] for eid in edge_outputs if edge_outputs[eid] is not None}
++                        cur_p, cur_d = aggregate_proto_dicts(edge_outputs, device=self.device)
+                         if cur_p and mem_p:
+                             prc = prototype_replay_consistency_loss(
+                                 cur_p, cur_d, mem_p, mem_d,
+                                 model, self.ecfg["prc_num_samples"], self.device,
++                                runtime_counters=self.runtime_counters,
+                             )
+                             loss = loss + self.ecfg["lambda_prc"] * prc
+ 
+@@ -913,8 +1042,25 @@ class HierarchicalFL:
+         return total_loss
+         
+     def _run_validation(self, valid_dataset, best_f1, epoch):
+-        """(Phase 5) Run evaluation (optimized)."""
+-        client_model = self.structure[-1][0]
++        """(Phase 5) Run evaluation (optimized).
++
++        Evaluate on the FedAvg GLOBAL client model (average of the clients
++        actually trained this round), not an arbitrary ``structure[-1][0]``.
++        Under a fixed seed, client 0 may never be selected, leaving its local
++        model at the frozen pretrained init — which made every checkpoint grade
++        a never-trained encoder. Averaging the cached (trained) clients gives a
++        correct, seed-robust, baseline-fair evaluation of the trained encoder.
++        """
++        client_layer = self.structure[-1]
++        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
++        if trained_cids:
++            global_client_state = average_state_dicts(
++                [client_layer[c].state_dict() for c in trained_cids]
++            )
++            client_model = copy.deepcopy(self.client_model)
++            client_model.load_state_dict(global_client_state)
++        else:
++            client_model = self.structure[-1][0]
+         eid = self.connectivity[-1][0]
+         edge_model = self.structure[0][eid]
+         cloud_model = self.structure[len(self.args["mid_server"])][0]
+@@ -938,7 +1084,7 @@ class HierarchicalFL:
+         with torch.no_grad():
+             for data, target in loader:
+                 data, target = data.to(self.device), target.to(self.device)
+-                out_cl = FullPipelineModel(client_model, edge_model, cloud_model)(data)
++                out_cl = self._full_pipeline(client_model, edge_model, cloud_model)(data)
+ 
+                 # --- DEBUG: Check for NaN/Inf in model output ---
+                 if not nan_detected and torch.isnan(out_cl).any():
+@@ -982,7 +1128,7 @@ class HierarchicalFL:
+             if best_f1 < f1:
+                 print(f"Saved best model at epoch {epoch} with Acc: {f1 * 100:.2f} %")
+                 best_f1 = f1
+-                pipeline_model = FullPipelineModel(
++                pipeline_model = self._full_pipeline(
+                     client_model=copy.deepcopy(client_model),
+                     edge_model=copy.deepcopy(edge_model),
+                     cloud_model=copy.deepcopy(cloud_model),
+@@ -994,6 +1140,45 @@ class HierarchicalFL:
+             
+         return f1, best_f1, pipeline_model
+ 
++    def _full_pipeline(self, client_model, edge_model, cloud_model):
++        """Build an eval/checkpoint pipeline in the same spaces used to train."""
++        return FullPipelineModel(
++            client_model,
++            edge_model,
++            cloud_model,
++            prototype_space=self.prototype_space,
++            client_to_edge_mean=self.global_feature_means["client_to_edge"],
++            edge_to_cloud_mean=self.global_feature_means["edge_to_cloud"],
++            client_to_edge_whitener=self.global_feature_whiteners["client_to_edge"],
++            edge_to_cloud_whitener=self.global_feature_whiteners["edge_to_cloud"],
++        )
++
++    def _center_round_outputs(self, boundary, outputs, support_map, memory):
++        """Express transmitted prototypes in the centered/whitened space.
++
++        The global mean (and, for whitened_cosine, the ZCA whitening transform)
++        is derived from the already-received class means; no feature tensor is
++        added to the communication payload.
++        """
++        if self.prototype_space == "raw" or not any(v is not None for v in outputs.values()):
++            return outputs
++        old_mean = self.global_feature_means[boundary]
++        new_mean = derive_global_feature_mean(outputs, support_map=support_map).detach().cpu()
++        recenter_memory(memory, old_mean, new_mean)
++        payload_before = sum(get_proto_dist_size_MB(value) for value in outputs.values())
++        if self.prototype_space == "whitened_cosine":
++            whitener = derive_whitening_transform(
++                outputs, new_mean, support_map=support_map
++            ).detach().cpu()
++            outputs = whiten_source_outputs(outputs, new_mean, whitener)
++            self.global_feature_whiteners[boundary] = whitener
++        else:
++            outputs = center_source_outputs(outputs, new_mean)
++        payload_after = sum(get_proto_dist_size_MB(value) for value in outputs.values())
++        assert payload_after == payload_before, "prototype-space transform must not add a transmitted tensor"
++        self.global_feature_means[boundary] = new_mean
++        return outputs
++
+     # --- Main training method (reorganized) --
+ 
+     def train_end_to_end(
+@@ -1076,7 +1261,8 @@ class HierarchicalFL:
+                 self._client_support[cid] = support_counts
+ 
+                 # E-HSFP: Store client prototypes in memory
+-                if self.client_memory is not None and client_outputs[cid] is not None:
++                if (self.prototype_space == "raw" and self.client_memory is not None
++                        and client_outputs[cid] is not None):
+                     proto_dict, dist_dict = client_outputs[cid]
+                     self.client_memory.add_from_proto_dicts(
+                         proto_dict, dist_dict,
+@@ -1084,6 +1270,30 @@ class HierarchicalFL:
+                         round_idx=epoch,
+                         support_counts=support_counts,
+                     )
++                    self.runtime_counters.increment(
++                        "memory.writes", len(set(proto_dict) & set(dist_dict))
++                    )
++                    if self.serverless_tracker is not None:
++                        self.serverless_tracker.record_prototype_processing(len(proto_dict))
++
++            client_outputs = self._center_round_outputs(
++                "client_to_edge", client_outputs, self._client_support, self.client_memory
++            )
++
++            # Centered-space memory is written only after the round-global mean
++            # is derivable from all existing class prototype statistics.
++            if self.prototype_space == "centered_cosine" and self.client_memory is not None:
++                for cid, outputs in client_outputs.items():
++                    if outputs is None:
++                        continue
++                    proto_dict, dist_dict = outputs
++                    self.client_memory.add_from_proto_dicts(
++                        proto_dict, dist_dict, source_id=f"client_{cid}", round_idx=epoch,
++                        support_counts=self._client_support.get(cid, {}),
++                    )
++                    self.runtime_counters.increment(
++                        "memory.writes", len(set(proto_dict) & set(dist_dict))
++                    )
+                     if self.serverless_tracker is not None:
+                         self.serverless_tracker.record_prototype_processing(len(proto_dict))
+ 
+@@ -1096,6 +1306,8 @@ class HierarchicalFL:
+                             proto_dict, dist_dict, self.client_memory,
+                             alpha=self.ecfg["memory_replay_ratio"],
+                             top_k=self.ecfg["memory_top_k"],
++                            runtime_counters=self.runtime_counters,
++                            device=self.device,
+                         )
+                         client_outputs[cid] = (mixed_p, mixed_d)
+                 if self.serverless_tracker is not None:
+@@ -1106,6 +1318,7 @@ class HierarchicalFL:
+             gc.collect()
+ 
+             self._prof_add("client_pack", _t_pack, epoch)
++            self._flush_runtime_counters(config, epoch, "clients_complete")
+ 
+             # --- PHASE 2: EDGE PROCESSING ---
+             print(f"-> Phase 2: Edge Processing...")
+@@ -1135,7 +1348,8 @@ class HierarchicalFL:
+                 self._edge_support[eid] = edge_support
+ 
+                 # E-HSFP: Store edge prototypes in memory
+-                if self.edge_memory is not None and edge_outputs[eid] is not None:
++                if (self.prototype_space == "raw" and self.edge_memory is not None
++                        and edge_outputs[eid] is not None):
+                     proto_dict, dist_dict = edge_outputs[eid]
+                     self.edge_memory.add_from_proto_dicts(
+                         proto_dict, dist_dict,
+@@ -1143,6 +1357,26 @@ class HierarchicalFL:
+                         round_idx=epoch,
+                         support_counts=edge_support,
+                     )
++                    self.runtime_counters.increment(
++                        "memory.writes", len(set(proto_dict) & set(dist_dict))
++                    )
++
++            edge_outputs = self._center_round_outputs(
++                "edge_to_cloud", edge_outputs, self._edge_support, self.edge_memory
++            )
++
++            if self.prototype_space == "centered_cosine" and self.edge_memory is not None:
++                for eid, outputs in edge_outputs.items():
++                    if outputs is None:
++                        continue
++                    proto_dict, dist_dict = outputs
++                    self.edge_memory.add_from_proto_dicts(
++                        proto_dict, dist_dict, source_id=f"edge_{eid}", round_idx=epoch,
++                        support_counts=self._edge_support.get(eid, {}),
++                    )
++                    self.runtime_counters.increment(
++                        "memory.writes", len(set(proto_dict) & set(dist_dict))
++                    )
+ 
+             # E-HSFP: Mix edge outputs with memory
+             if self.edge_memory is not None and len(self.edge_memory) > 0:
+@@ -1153,6 +1387,8 @@ class HierarchicalFL:
+                             proto_dict, dist_dict, self.edge_memory,
+                             alpha=self.ecfg["memory_replay_ratio"],
+                             top_k=self.ecfg["memory_top_k"],
++                            runtime_counters=self.runtime_counters,
++                            device=self.device,
+                         )
+                         edge_outputs[eid] = (mixed_p, mixed_d)
+ 
+@@ -1162,6 +1398,7 @@ class HierarchicalFL:
+             gc.collect()
+ 
+             self._prof_add("edge_process", _t_edge, epoch)
++            self._flush_runtime_counters(config, epoch, "edges_complete")
+ 
+             # --- PHASE 3: CLOUD PROCESSING ---
+             print(f"-> Phase 3: Cloud Supervised Training...")
+@@ -1178,6 +1415,7 @@ class HierarchicalFL:
+             )
+             cloud_loss_list.append(cloud_loss)
+             self._prof_add("cloud_process", _t_cloud, epoch)
++            self._flush_runtime_counters(config, epoch, "cloud_complete")
+ 
+             del edge_outputs
+             torch.cuda.empty_cache()
+@@ -1227,6 +1465,7 @@ class HierarchicalFL:
+                         'model_state_dict': model_snapshot.state_dict(),
+                         'best_f1': best_f1,
+                         'config': config
++                        ,'resolved_config_hash': config["resolved_config_hash"]
+                     }, checkpoint_path)
+                     print(f"*** Checkpoint saved: {checkpoint_path} (F1: {best_f1*100:.2f}%)")
+ 
+@@ -1249,7 +1488,22 @@ class HierarchicalFL:
+                 self.ehsfp_logger.log_dropout_stats(
+                     self.ecfg["prototype_dropout_rate"], stats["dropped_prototypes"],
+                 )
++                self.ehsfp_logger.log_dict({
++                    "ehsfp/runtime/dropout.apply_calls": stats["apply_calls"],
++                    "ehsfp/runtime/dropout.changed_calls": stats["changed_calls"],
++                    "ehsfp/runtime/dropout.total_seen": stats["total_prototypes_seen"],
++                    "ehsfp/runtime/dropout.active_set_total": stats["active_set_total"],
++                    "ehsfp/runtime/dropout.active_set_observations": stats["active_set_observations"],
++                    "ehsfp/runtime/dropout.active_set_last": stats["active_set_last"],
++                })
++                for key in (
++                    "apply_calls", "changed_calls", "total_prototypes_seen",
++                    "active_set_total", "active_set_observations", "active_set_last",
++                ):
++                    counter_key = "total_seen" if key == "total_prototypes_seen" else key
++                    self.runtime_counters.set(f"dropout.{counter_key}", stats[key])
+             self.ehsfp_logger.log("ehsfp/cloud_loss", cloud_loss)
++            self.ehsfp_logger.log_dict({f"ehsfp/runtime/{k}": v for k, v in self.runtime_counters.snapshot().items()})
+             self.ehsfp_logger.log_communication(
+                 self.comm_tracker["client_to_edge_data_MB"] + self.comm_tracker["edge_to_cloud_data_MB"],
+                 sum(v for k, v in self.comm_tracker.items() if k != "total_comm_MB"),
+@@ -1275,6 +1529,8 @@ class HierarchicalFL:
+ 
+             if wandb is not None and wandb.run is not None:
+                 wandb.log(log_data)
++            self.ehsfp_logger.append_jsonl(config["runtime_metrics_path"], log_data)
++            self._flush_runtime_counters(config, epoch, "round_complete")
+ 
+             # Advance the warmup+cosine LR schedule (no-op if disabled)
+             self._step_lr_schedulers()
+@@ -1288,6 +1544,8 @@ class HierarchicalFL:
+         # Reload the best model from file for testing
+         if os.path.exists(checkpoint_path):
+             checkpoint = torch.load(checkpoint_path)
++            from ehsfp import validate_checkpoint_config_hash
++            validate_checkpoint_config_hash(checkpoint, config["resolved_config_hash"])
+             print(f"Loaded best model from epoch {checkpoint['epoch']}")
+ 
+         self.print_comm_report()
+@@ -1299,6 +1557,7 @@ class HierarchicalFL:
+             "best_weight": best_pipeline_model,
+             "comm_report": self.comm_tracker,
+             "ehsfp_metrics": self.ehsfp_logger.finalize(),
++            "ehsfp_runtime_counters": self.runtime_counters.snapshot(),
+         }
+         # camera-ready: persist fine-grained profiling, if enabled
+         if self.profiler is not None:
+@@ -1316,4 +1575,4 @@ class HierarchicalFL:
+                 print(f"[profile] could not write profile files: {_e}")
+         if self.serverless_tracker is not None:
+             output["serverless_metrics"] = self.serverless_tracker.get_summary()
+-        return output
+\ No newline at end of file
++        return output
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 67b3ff7..194ef19 100644
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -19,6 +19,7 @@ def prototype_replay_consistency_loss(
+     representation_fn: Callable[[torch.Tensor], torch.Tensor],
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
++    runtime_counters=None,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -33,39 +34,53 @@ def prototype_replay_consistency_loss(
+     Returns zero tensor if no shared classes or early rounds.
+     """
+     shared_classes = set(current_protos.keys()) & set(memory_protos.keys())
++    if runtime_counters is not None:
++        runtime_counters.increment("prc.calls")
++        runtime_counters.increment("prc.shared_classes", len(shared_classes))
+     if not shared_classes:
+         if device is not None:
+             return torch.tensor(0.0, device=device, requires_grad=True)
+         return torch.tensor(0.0, requires_grad=True)
+ 
+-    total_loss = torch.tensor(0.0, device=device, requires_grad=True) if device else torch.tensor(0.0, requires_grad=True)
+-    count = 0
+-
+-    for cls_id in shared_classes:
+-        cur_mu = current_protos[cls_id]
+-        cur_sigma = current_stds[cls_id]
+-        mem_mu = memory_protos[cls_id].to(cur_mu.device)
+-        mem_sigma = memory_stds[cls_id].to(cur_sigma.device)
+-
+-        # Sample from current distribution: z = mu + sigma * epsilon
+-        eps_cur = torch.randn(num_samples, *cur_mu.shape, device=cur_mu.device, dtype=cur_mu.dtype)
+-        z_current = cur_mu.unsqueeze(0) + cur_sigma.unsqueeze(0) * eps_cur
+-
+-        # Sample from memory distribution
+-        eps_mem = torch.randn(num_samples, *mem_mu.shape, device=mem_mu.device, dtype=mem_mu.dtype)
+-        z_memory = mem_mu.unsqueeze(0) + mem_sigma.unsqueeze(0) * eps_mem
+-
+-        # Pass through representation function
+-        h_current = representation_fn(z_current)
+-        h_memory = representation_fn(z_memory)
+-
+-        # L2 distance
+-        loss = F.mse_loss(h_current, h_memory)
+-        total_loss = total_loss + loss
+-        count += 1
+-
+-    if count > 0:
+-        total_loss = total_loss / count
++    # A per-class model call made CIFAR-100 execute 200 tiny CUDA forwards for
++    # every minibatch.  At proxy scale that can stall in the CUDA/BLAS worker
++    # pool (observed as futex_wait).  Batch classes exactly as reliability does.
++    class_ids = sorted(shared_classes)
++    compute_device = (
++        torch.device(device) if device is not None
++        else current_protos[class_ids[0]].device
++    )
++    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++
++    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
++        sample_shape, device=compute_device, dtype=cur_mu.dtype
++    )
++    z_memory = mem_mu.unsqueeze(1) + mem_sigma.unsqueeze(1) * torch.randn(
++        sample_shape, device=compute_device, dtype=mem_mu.dtype
++    )
++
++    # Flatten class and replay dimensions for two model calls total.  A global
++    # mean is identical to the old mean of equal-sized per-class MSE losses.
++    flat_shape = (-1, *cur_mu.shape[1:])
++    h_current = representation_fn(z_current.reshape(flat_shape))
++    h_memory = representation_fn(z_memory.reshape(flat_shape))
++    total_loss = F.mse_loss(h_current, h_memory)
++
++    if runtime_counters is not None:
++        # Keep instrumentation asynchronous.  Calling .item() here serialized
++        # every CUDA PRC forward with the host (hundreds of synchronizations per
++        # proxy round), which can present as a futex hang.  RuntimeCounters
++        # materializes these detached scalars once at a phase snapshot.
++        scalar_loss = total_loss.detach()
++        runtime_counters.increment(
++            "prc.nonzero_loss_calls", (scalar_loss != 0).to(torch.int64)
++        )
++        runtime_counters.increment("prc.loss_sum", scalar_loss)
++        runtime_counters.increment("prc.loss_observations")
+ 
+     return total_loss
+ 
+./main.py:9:    python main.py --task <task> --method h-sfp --cfg <config> --ablation full_e_hsfp
+./main.py:19:        --ablation full_e_hsfp
+./main.py:23:        --ablation hsfp_memory_reliability_prc
+./main.py:283:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+./ehsfp/config.py:81:    "hsfp_memory_reliability_prc": {
+./ehsfp/config.py:87:    "full_e_hsfp": {
+./run.sh:197:    ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+./configs/smoke/plan1_cifar100_ehsfp_gate.yaml:33:# full_e_hsfp enables the simulator; eliminate simulated timeouts so the
+./configs/proxy/plan2_cifar100_hsfp_full_e.yaml:4:proxy_id: plan2_cifar100_hsfp_full_e_seed20260714
+./configs/proxy/plan2_cifar100_hsfp_full_e.yaml:5:output_dir: outputs/proxy/plan2_cifar100_hsfp_full_e_seed20260714
+./configs/proxy/plan2_cifar100_hsfp_full_e.yaml:8:ablation_mode: full_e_hsfp
+./scripts/journal_experiments/run_smoke.sh:32:ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+./scripts/journal_experiments/run_ablation.sh:13:#   5. hsfp_memory_reliability_prc (+ memory + reliability + PRC loss)
+./scripts/journal_experiments/run_ablation.sh:14:#   6. full_e_hsfp                (all E-HSFP features)
+./scripts/journal_experiments/run_ablation.sh:36:    "hsfp_memory_reliability_prc"
+./scripts/journal_experiments/run_ablation.sh:37:    "full_e_hsfp"
+./scripts/journal_experiments/run_intervals.sh:43:    run_seeds "intv_ehsfp" classification h-sfp "$cfg" "full_e_hsfp"
+./scripts/journal_experiments/run_intervals.sh:60:    run_seeds "intv_ehsfp" classification h-sfp "$cfg" "full_e_hsfp"
+./scripts/journal_experiments/run_intervals.sh:77:    run_seeds "intv_ehsfp" segmentation h-sfp "$cfg" "full_e_hsfp"
+./scripts/journal_experiments/run_dropout_staleness.sh:59:        run_one "$eid" classification h-sfp "$tmp_cfg" "$seed" "full_e_hsfp" || true
+./scripts/journal_experiments/run_dropout_staleness.sh:67:        run_one "$eid" segmentation h-sfp "$tmp_cfg" "$seed" "full_e_hsfp" || true
+./scripts/journal_experiments/run_dropout_staleness.sh:86:        run_one "$eid" classification h-sfp "$tmp_cfg" "$seed" "full_e_hsfp" || true
+./scripts/journal_experiments/run_dropout_staleness.sh:94:        run_one "$eid" segmentation h-sfp "$tmp_cfg" "$seed" "full_e_hsfp" || true
+./scripts/journal_experiments/run_convergence.sh:49:# 2. E-HSFP (full_e_hsfp ablation)
+./scripts/journal_experiments/run_convergence.sh:54:    run_seeds "conv_ehsfp" classification h-sfp "$cfg" "full_e_hsfp"
+./scripts/journal_experiments/run_convergence.sh:60:    run_seeds "conv_ehsfp" segmentation h-sfp "$cfg" "full_e_hsfp"
+./scripts/journal_experiments/collect_results.py:57:        abl_classification_h-sfp_cifar_our_resnet50_5_10_full_e_hsfp_s2
+./configs/segmentation/h-sfp/default.yaml:69:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+./configs/classification/h-sfp/default.yaml:81:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+
+codex
+The current loss already batches classes, but that creates a single replay batch of `shared_classes × num_samples` and retains two full edge-model graphs until the combined SSL backward. On CIFAR-100 that is 3,200 replay examples’ activations per minibatch (current + memory), so the stack can remain in `_engine_run_backward` long enough to look like a deadlock. I’m checking the configured dimensions and tests before changing it to bounded replay chunks with gradient accumulation.
+exec
+/bin/bash -lc "rg -n \"prototype_replay_consistency_loss|prc_num_samples|lambda_prc\" tests test* configs ehsfp classification segmentation 2>/dev/null && find . -maxdepth 3 -type f \\( -name '*test*.py' -o -name 'test_*.py' \\) -print | sort | head -100 && sed -n '60,105p' ehsfp/config.py && sed -n '60,95p' configs/classification/h-sfp/default.yaml" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+ehsfp/losses.py:14:def prototype_replay_consistency_loss(
+configs/smoke/plan1_cifar100_ehsfp_gate.yaml:31:prc_num_samples: 2
+ehsfp/config.py:26:    "lambda_prc": 0.1,
+ehsfp/config.py:27:    "prc_num_samples": 16,
+ehsfp/__init__.py:32:    prototype_replay_consistency_loss,
+ehsfp/__init__.py:84:    "prototype_replay_consistency_loss",
+segmentation/H-SFP/hierarchy.py:29:    prototype_replay_consistency_loss,
+segmentation/H-SFP/hierarchy.py:597:                            prc = prototype_replay_consistency_loss(
+segmentation/H-SFP/hierarchy.py:599:                                edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+segmentation/H-SFP/hierarchy.py:602:                            loss = loss + self.ecfg["lambda_prc"] * prc
+segmentation/H-SFP/hierarchy.py:682:                            prc = prototype_replay_consistency_loss(
+segmentation/H-SFP/hierarchy.py:684:                                model, self.ecfg["prc_num_samples"], self.device,
+segmentation/H-SFP/hierarchy.py:687:                            loss = loss + self.ecfg["lambda_prc"] * prc
+configs/segmentation/h-sfp/default.yaml:45:lambda_prc: 0.1
+configs/segmentation/h-sfp/default.yaml:46:prc_num_samples: 16
+tests/test_phase0_effects.py:13:    prototype_replay_consistency_loss, reliability_weighted_aggregate,
+tests/test_phase0_effects.py:26:    loss = prototype_replay_consistency_loss(
+tests/test_phase0_effects.py:79:        prc = prototype_replay_consistency_loss(
+tests/test_phase0_effects.py:102:            losses_module.prototype_replay_consistency_loss,
+tests/test_phase0_effects.py:159:        loss = prototype_replay_consistency_loss(
+tests/test_phase0_effects.py:13:    prototype_replay_consistency_loss, reliability_weighted_aggregate,
+tests/test_phase0_effects.py:26:    loss = prototype_replay_consistency_loss(
+tests/test_phase0_effects.py:79:        prc = prototype_replay_consistency_loss(
+tests/test_phase0_effects.py:102:            losses_module.prototype_replay_consistency_loss,
+tests/test_phase0_effects.py:159:        loss = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:31:    prototype_replay_consistency_loss,
+classification/H-SFP/hierarchy.py:900:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:902:                                edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+classification/H-SFP/hierarchy.py:905:                            loss = loss + self.ecfg["lambda_prc"] * prc
+classification/H-SFP/hierarchy.py:1024:                            prc = prototype_replay_consistency_loss(
+classification/H-SFP/hierarchy.py:1026:                                model, self.ecfg["prc_num_samples"], self.device,
+classification/H-SFP/hierarchy.py:1029:                            loss = loss + self.ecfg["lambda_prc"] * prc
+configs/classification/h-sfp/default.yaml:57:lambda_prc: 0.1
+configs/classification/h-sfp/default.yaml:58:prc_num_samples: 16
+./tests/test_phase0_effects.py
+./tests/test_plan5_prototype_space.py
+./tests/test_plan6_client_objective.py
+        "use_residual_generator": False,
+    },
+    "hsfp_memory": {
+        "use_episodic_memory": True,
+        "aggregation_mode": "average",
+        "use_prc_loss": False,
+        "use_prototype_dropout": False,
+    },
+    "hsfp_memory_dropout": {
+        "use_episodic_memory": True,
+        "aggregation_mode": "average",
+        "use_prc_loss": False,
+        "use_prototype_dropout": True,
+        "use_serverless_simulation": True,
+    },
+    "hsfp_memory_reliability": {
+        "use_episodic_memory": True,
+        "aggregation_mode": "learnable_reliability",
+        "use_prc_loss": False,
+        "use_prototype_dropout": False,
+    },
+    "hsfp_memory_reliability_prc": {
+        "use_episodic_memory": True,
+        "aggregation_mode": "learnable_reliability",
+        "use_prc_loss": True,
+        "use_prototype_dropout": False,
+    },
+    "full_e_hsfp": {
+        "use_episodic_memory": True,
+        "aggregation_mode": "learnable_reliability",
+        "use_prc_loss": True,
+        "use_prototype_dropout": True,
+        "use_serverless_simulation": True,
+        "use_residual_generator": True,
+    },
+}
+
+
+def get_ehsfp_config(user_config: dict) -> dict:
+    """Merge E-HSFP defaults with user config, applying ablation preset if set."""
+    cfg = dict(EHSFP_DEFAULTS)
+    # Load the resolved YAML first.  The repository defaults contain explicit
+    # ``false`` values, so applying them after a preset silently disabled every
+    # ablation selected by the CLI.
+    for k in EHSFP_DEFAULTS:
+        if k in user_config:
+# Serverless Prototype Dropout
+use_prototype_dropout: false
+prototype_dropout_rate: 0.2
+dropout_mode: "client_prototype"      # "client_prototype" | "edge_prototype" | "both"
+use_dropout_consistency: false
+lambda_dropout: 0.1
+
+# Serverless Episode Simulator
+use_serverless_simulation: false
+cold_start_probability: 0.15
+function_timeout_probability: 0.05
+max_episode_duration: 30.0
+latency_mean: 0.5
+latency_std: 0.2
+
+# Residual Prototype Generator
+use_residual_generator: false
+generator_hidden_dim: 64
+generator_scale: 0.1
+
+# Ablation mode (overrides individual flags when set)
+# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+
+exec
+/bin/bash -lc "sed -n '1,210p' tests/test_phase0_effects.py && rg -n \"epochs.?=.?2|prc_verify|memory_reliability_prc\" README* docs scripts tools configs -g '*' 2>/dev/null | head -100 && sed -n '850,915p' classification/H-SFP/hierarchy.py | nl -ba -v850" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+import json
+import inspect
+import tempfile
+import unittest
+
+import torch
+
+from ehsfp import (
+    ABLATION_PRESETS, EHSFP_DEFAULTS, EpisodicPrototypeMemory,
+    PrototypeDropout, PrototypeRecord, PrototypeReliabilityNetwork,
+    RuntimeCounters, build_reliability_features, get_ehsfp_config,
+    mix_current_and_memory, prepare_run_dir,
+    prototype_replay_consistency_loss, reliability_weighted_aggregate,
+    resolved_config_hash, validate_checkpoint_config_hash,
+)
+from ehsfp import aggregation as aggregation_module
+from ehsfp import losses as losses_module
+from ehsfp import memory as memory_module
+from ehsfp import reliability as reliability_module
+
+
+def _prc_gradient(memory_mu):
+    representation = torch.nn.Linear(2, 1, bias=False)
+    representation.weight.data.copy_(torch.tensor([[1.0, -0.5]]))
+    counters = RuntimeCounters()
+    loss = prototype_replay_consistency_loss(
+        {0: torch.tensor([1.0, 2.0])}, {0: torch.zeros(2)},
+        {0: torch.tensor(memory_mu)}, {0: torch.zeros(2)},
+        representation, num_samples=3, device=torch.device("cpu"),
+        runtime_counters=counters,
+    )
+    loss.backward()
+    return representation.weight.grad.clone(), loss.item(), counters.snapshot()
+
+
+class Phase0EffectTests(unittest.TestCase):
+    def test_memory_consumers_coerce_cpu_records_to_compute_device(self):
+        # Resolve to an indexed device (e.g. cuda:0) so equality with a
+        # tensor's .device holds on GPU hosts (torch.device('cuda') != 'cuda:0').
+        target = torch.empty(0, device="cuda" if torch.cuda.is_available() else "cpu").device
+        record = PrototypeRecord(
+            0, torch.tensor([1.0, 2.0]), torch.tensor([0.2, 0.4]),
+            3, "cpu-memory", 0,
+        )
+        center = torch.tensor([1.5, 2.5], device=target)
+
+        features = build_reliability_features([record], center, device=target)
+        self.assertEqual(features.device, target)
+
+        memory = EpisodicPrototypeMemory(max_size=2, max_age=2)
+        memory.add_from_proto_dicts(
+            {0: record.mu}, {0: record.sigma}, "cpu-memory", round_idx=0,
+        )
+        memory_protos, memory_stds = memory.to_proto_dist_dicts()
+        network = PrototypeReliabilityNetwork(hidden_dim=2).to(target)
+        synthetic, labels = reliability_weighted_aggregate(
+            {"memory": (memory_protos, memory_stds)},
+            num_samples_per_class=2,
+            device=target,
+            reliability_net=network,
+            memory=memory,
+        )
+        self.assertEqual(synthetic.device, target)
+        self.assertEqual(labels.device, target)
+        self.assertEqual(memory.get_recent()[0].mu.device.type, "cpu")
+        self.assertEqual(memory.get_recent()[0].sigma.device.type, "cpu")
+
+        mixed_protos, mixed_stds = mix_current_and_memory(
+            {0: torch.tensor([2.0, 3.0])},
+            {0: torch.tensor([0.3, 0.5])},
+            memory,
+            alpha=0.5,
+            device=target,
+        )
+        self.assertEqual(mixed_protos[0].device, target)
+        self.assertEqual(mixed_stds[0].device, target)
+
+        representation = torch.nn.Linear(2, 2).to(target)
+        prc = prototype_replay_consistency_loss(
+            {0: torch.tensor([2.0, 3.0])},
+            {0: torch.tensor([0.3, 0.5])},
+            memory_protos,
+            memory_stds,
+            representation,
+            num_samples=2,
+            device=target,
+        )
+        self.assertEqual(prc.device, target)
+
+        # CPU-only CI cannot exercise a CUDA transfer, so retain a structural
+        # guard that each audited consumption boundary explicitly copies.
+        self.assertIn(".to(device=device", inspect.getsource(
+            reliability_module.build_reliability_features,
+        ))
+        self.assertIn(".to(device)", inspect.getsource(
+            aggregation_module.reliability_weighted_aggregate,
+        ))
+        self.assertIn(".to(compute_device)", inspect.getsource(
+            memory_module.mix_current_and_memory,
+        ))
+        self.assertIn(".to(compute_device)", inspect.getsource(
+            losses_module.prototype_replay_consistency_loss,
+        ))
+
+    def test_memory_replay_changes_prototype(self):
+        memory = EpisodicPrototypeMemory(max_size=4, max_age=2)
+        memory.add(PrototypeRecord(
+            0, torch.tensor([10.0, 12.0]), torch.ones(2), 4, "old", 0,
+        ))
+        counters = RuntimeCounters()
+        current_p = {0: torch.tensor([0.0, 2.0])}
+        current_d = {0: torch.ones(2)}
+        mixed_p, _ = mix_current_and_memory(
+            current_p, current_d, memory, alpha=0.5,
+            runtime_counters=counters,
+        )
+        self.assertTrue(torch.equal(mixed_p[0], torch.tensor([5.0, 7.0])))
+        self.assertEqual(counters.snapshot()["memory.changed_classes"], 1)
+
+    def test_reliability_weights_are_nonuniform_for_unequal_inputs(self):
+        net = PrototypeReliabilityNetwork(hidden_dim=2)
+        with torch.no_grad():
+            for parameter in net.parameters():
+                parameter.zero_()
+            net.net[0].weight[0, 0] = 1.0
+            net.net[2].weight[0, 0] = 1.0
+            net.net[4].weight[0, 0] = 1.0
+        features = torch.zeros(2, 6)
+        features[1, 0] = 1.0
+        weights = net(features)
+        self.assertGreater(weights[1], weights[0])
+        self.assertFalse(torch.allclose(weights, weights[0].expand_as(weights)))
+
+    def test_prc_changes_trainable_gradient_when_inputs_differ(self):
+        same_grad, same_loss, _ = _prc_gradient([1.0, 2.0])
+        changed_grad, changed_loss, counters = _prc_gradient([3.0, -1.0])
+        self.assertEqual(same_loss, 0.0)
+        self.assertTrue(torch.equal(same_grad, torch.zeros_like(same_grad)))
+        self.assertGreater(changed_loss, 0.0)
+        self.assertFalse(torch.equal(changed_grad, same_grad))
+        self.assertEqual(counters["prc.shared_classes"], 1)
+        self.assertEqual(counters["prc.nonzero_loss_calls"], 1)
+
+    def test_prc_batches_classes_into_two_representation_forwards(self):
+        class CountingRepresentation(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(2, 2, bias=False)
+                self.calls = 0
+
+            def forward(self, inputs):
+                self.calls += 1
+                return self.linear(inputs)
+
+        representation = CountingRepresentation()
+        current = {class_id: torch.full((2,), float(class_id)) for class_id in range(7)}
+        memory = {class_id: value + 1 for class_id, value in current.items()}
+        stds = {class_id: torch.zeros(2) for class_id in current}
+        loss = prototype_replay_consistency_loss(
+            current, stds, memory, stds, representation, num_samples=3,
+            device=torch.device("cpu"),
+        )
+        loss.backward()
+
+        self.assertEqual(representation.calls, 2)
+        self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+
+    def test_dropout_changes_active_client_ids_when_enabled(self):
+        active = {client_id: object() for client_id in range(5)}
+        dropout = PrototypeDropout(rate=1.0, seed=17)
+        kept = dropout.apply_to_source_outputs(active)
+        self.assertNotEqual(set(kept), set(active))
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(dropout.stats["changed_calls"], 1)
+        self.assertEqual(dropout.stats["active_set_last"], 1)
+
+    def test_runtime_counter_schema_has_explicit_inactive_values(self):
+        counters = RuntimeCounters().snapshot()
+        self.assertEqual(counters["memory.reads"], 0)
+        self.assertEqual(counters["memory.writes"], 0)
+        self.assertEqual(counters["memory.replays"], 0)
+        self.assertEqual(counters["reliability.weight_variance"], 0.0)
+        self.assertEqual(counters["prc.loss_mean"], 0.0)
+        self.assertEqual(counters["dropout.active_set_last"], 0)
+
+    def test_ablation_presets_have_distinct_configs_and_hashes(self):
+        effective, hashes = {}, {}
+        for name in ABLATION_PRESETS:
+            cfg = {**EHSFP_DEFAULTS, "dataset": "cifar100", "ablation_mode": name}
+            effective[name] = get_ehsfp_config(cfg)
+            hashes[name] = resolved_config_hash(cfg, effective[name])
+        serialized = {json.dumps(v, sort_keys=True) for v in effective.values()}
+        self.assertEqual(len(serialized), len(effective))
+        self.assertEqual(len(set(hashes.values())), len(hashes))
+        self.assertIs(effective["full_e_hsfp"]["use_prc_loss"], True)
+        self.assertIs(effective["baseline_hsfp"]["use_prc_loss"], False)
+
+    def test_checkpoint_hash_mismatch_is_refused(self):
+        validate_checkpoint_config_hash({"resolved_config_hash": "same"}, "same")
+        with self.assertRaisesRegex(RuntimeError, "mismatch"):
+            validate_checkpoint_config_hash({"resolved_config_hash": "old"}, "new")
+
+    def test_result_directory_guard(self):
+        with tempfile.TemporaryDirectory() as tmp_path:
+            first = prepare_run_dir(tmp_path, "legacy-split", "abc")
+            second = prepare_run_dir(tmp_path, "new-split", "abc")
+            self.assertNotEqual(first, second)
+            with self.assertRaisesRegex(FileExistsError, "Refusing to overwrite"):
+                prepare_run_dir(tmp_path, "legacy-split", "abc")
+
+README.md:191:| `hsfp_memory_reliability_prc` | ✓ | ✓ | ✓ | – |
+scripts/journal_experiments/run_smoke.sh:32:ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+scripts/journal_experiments/run_ablation.sh:13:#   5. hsfp_memory_reliability_prc (+ memory + reliability + PRC loss)
+scripts/journal_experiments/run_ablation.sh:36:    "hsfp_memory_reliability_prc"
+scripts/journal_experiments/README.md:84:5. `hsfp_memory_reliability_prc` — + PRC loss
+configs/proxy/exp_75trlaia.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+configs/proxy/exp_75trlaia.yaml:8:output_dir: outputs/proxy/plan20_prc_verify
+scripts/camera_ready/smoke_check.sh:16:OVR=(--set dataset=cifar100 --set epochs=2 --set ssl_epochs_client=1
+docs/usage.md:41:    --ablation hsfp_memory_reliability_prc
+configs/proxy/exp_f5k754qt.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+configs/proxy/exp_tao3pg_7.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+configs/proxy/exp_tao3pg_7.yaml:8:output_dir: outputs/proxy/plan19_prc_verify
+configs/segmentation/h-sfp/default.yaml:69:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/plan0_ablation_hashes_20260713.log:5:{"ablation": "hsfp_memory_reliability_prc", "effective": {"aggregation_mode": "learnable_reliability", "use_episodic_memory": true, "use_prc_loss": true, "use_prototype_dropout": false, "use_residual_generator": false, "use_serverless_simulation": false}, "hash": "2ceee6ad768bb5af6551855d2e3c581aa48c5cee7960efa3b2bf48958be72b45"}
+configs/proxy/exp_4swx65ot.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+configs/proxy/exp_c7ln9kqg.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+docs/optimization_loop/NEXT_PLAN.md:17:- GPU: plan20 E-HSFP batch (docs/optimization_loop/logs/plan20_ehsfp_*): prc_verify (code=0=fixed)
+docs/optimization_loop/NEXT_PLAN.md:24:1. Read plan20: if prc_verify code=0, record full_e IID/non-IID + ablation numbers => report E-HSFP
+configs/proxy/exp__wfs0cuq.yaml:1:ablation_mode: hsfp_memory_reliability_prc
+configs/proxy/exp__wfs0cuq.yaml:8:output_dir: outputs/proxy/plan16_bisect_hsfp_memory_reliability_prc
+configs/proxy/exp__wfs0cuq.yaml:11:proxy_id: bisect_hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_isic_194708.log:318:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/plan17_20260715_104558/run.sh:13:  --set epochs=2 --set proxy_id=plan17_verify --set output_dir=outputs/proxy/plan17_fulle_verify >> "$RUNDIR/verify.log" 2>&1
+docs/optimization_loop/logs/codex_plan21_155336.log:668:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_plan21_155336.log:1466:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan21_155336.log:2271:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/prcdiag2_194708/diag.sh:4:  --cfg configs/proxy/plan2_cifar100_hsfp_baseline.yaml --ablation hsfp_memory_reliability_prc --seed 20260714 \
+docs/optimization_loop/logs/prcdiag2_194708/diag.sh:5:  --set epochs=2 --set prototype_space=centered_cosine --set num_workers=0 \
+docs/optimization_loop/logs/prcdiag2_194708/prc.log:1:[E-HSFP] Ablation mode: hsfp_memory_reliability_prc
+configs/classification/h-sfp/default.yaml:81:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_ham_102714.log:219:ablation_mode: hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_ham_102714.log:226:output_dir: outputs/proxy/plan16_bisect_hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_ham_102714.log:229:proxy_id: bisect_hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_ham_102714.log:813:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_ham_102714.log:1131:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_ham_102714.log:1367:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan1b_20260713_233942.log:1987:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_plan1b_20260713_233942.log:2247:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_tbxfix_195703.log:14:You are Codex. The E-HSFP full_e/PRC DEADLOCK is now precisely diagnosed via a faulthandler stack dump. It is NOT in PRC math. It is a tensorboardX-writer-thread x torch-autograd deadlock: the MAIN thread hangs in .backward() at classification/H-SFP/hierarchy.py:908 (_edge_ssl_extraction_phase) inside torch.autograd _engine_run_backward (futex_wait), while a SECOND thread is the tensorboardX EventFileWriter background writer stuck in multiprocessing/queues.py get (event_file_writer.py:199 run). PRC just increases edge-phase autograd+logging so it reliably triggers this race; lighter ablations got lucky. FIX: eliminate the tensorboardX background-writer-thread deadlock. Inspect ehsfp/metrics_logger.py (EHSFPMetricsLogger) and anywhere a tensorboardX SummaryWriter/FileWriter is created (grep tensorboardX / SummaryWriter across the repo). Preferred fix: make E-HSFP logging NOT use the tensorboardX async writer during training (JSONL logging in append_jsonl already captures all metrics) — either disable the tensorboardX writer by default (guard behind a config flag defaulting off), or force synchronous/flush_secs=0 + ensure the writer thread cannot contend with autograd (e.g., write tensorboard events only at end-of-run, or close the writer before backward). Keep JSONL metrics intact. Do NOT remove any metric from JSONL. NO GPU (Claude verifies on GPU by re-running hsfp_memory_reliability_prc epochs=2 and full_e). Preserve uncommitted changes; local only. Run unit tests. FINAL: file:line diffs, where tensorboardX was instantiated, the exact mechanism disabled, and confirmation JSONL logging is unchanged.
+docs/optimization_loop/logs/codex_plan5_20260714_033045.log:2598:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_plan5_20260714_033045.log:2661:docs/optimization_loop/logs/plan0_ablation_hashes_20260713.log:5:{"ablation": "hsfp_memory_reliability_prc", "effective": {"aggregation_mode": "learnable_reliability", "use_episodic_memory": true, "use_prc_loss": true, "use_prototype_dropout": false, "use_residual_generator": false, "use_serverless_simulation": false}, "hash": "2ceee6ad768bb5af6551855d2e3c581aa48c5cee7960efa3b2bf48958be72b45"}
+docs/optimization_loop/logs/codex_plan5_20260714_033045.log:3759:docs/optimization_loop/logs/codex_plan0_20260713_225256.log:24554:{"ablation": "hsfp_memory_reliability_prc", "effective": {"aggregation_mode": "learnable_reliability", "use_episodic_memory": true, "use_prc_loss": true, "use_prototype_dropout": false, "use_residual_generator": false, "use_serverless_simulation": false}, "hash": "2ceee6ad768bb5af6551855d2e3c581aa48c5cee7960efa3b2bf48958be72b45"}
+docs/optimization_loop/logs/codex_plan5_20260714_033045.log:4837:   283	            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/plan20_ehsfp_155336/PROGRESS.txt:1:prc_verify code=124
+docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh:5:echo "START prc_verify $(date -Is)" > "$RUNDIR/prc_verify.log"; T=$(date +%s)
+docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh:6:HSFP_FREEZE_BACKBONE=1 timeout 600 env CUDA_VISIBLE_DEVICES=0 python main.py --task classification $HS --ablation hsfp_memory_reliability_prc \
+docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh:7:  --set epochs=2 --set output_dir=outputs/proxy/plan20_prc_verify >> "$RUNDIR/prc_verify.log" 2>&1
+docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh:8:PRC=$?; echo "EXIT prc_verify code=$PRC runtime_s=$(( $(date +%s)-T )) (124=HANG)" >> "$RUNDIR/prc_verify.log"; echo "prc_verify code=$PRC" >> "$RUNDIR/PROGRESS.txt"
+docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh:18:  for ABL in hsfp_memory hsfp_memory_dropout hsfp_memory_reliability hsfp_memory_reliability_prc; do
+docs/optimization_loop/logs/plan20_ehsfp_155336/prc_verify.log:1:START prc_verify 2026-07-16T15:53:36+07:00
+docs/optimization_loop/logs/plan20_ehsfp_155336/prc_verify.log:8:EXIT prc_verify code=124 runtime_s=600 (124=HANG)
+docs/optimization_loop/logs/codex_prcfix2_160657.log:14:You are Codex. CORRECTION: the tensorboardX removal did NOT fix the PRC deadlock (prc_verify still hangs, code=124). Re-reading the faulthandler stack: the MAIN thread deadlocks inside torch.autograd _engine_run_backward at classification/H-SFP/hierarchy.py:908 (scaler.scale(loss).backward()) in _edge_ssl_extraction_phase; the tensorboardX thread was merely idle-waiting (red herring). The hang appears ONLY when PRC is active. At lines 890-905 the edge PRC does: edge_repr_fn(x)=flatten(AdaptiveAvgPool2d(model(x))) where model is the EDGE model currently being trained; prototype_replay_consistency_loss samples synthetic features per class and forwards them through edge_repr_fn, then loss = loss + lambda_prc*prc, then scaler.scale(loss).backward(). Investigate WHY this backward deadlocks: candidates — (a) autocast/GradScaler interaction with the PRC subgraph (PRC forward may run outside/inside autocast inconsistently vs the SSL forward, corrupting the scaled-grad graph); (b) the edge model forward inside PRC creates a second graph through the SAME module in the same iteration causing an autograd-engine hang; (c) PRC builds an enormous graph (num_samples x 100 classes x edge-model forwards) that hangs backward; (d) a retain_graph / in-place op issue. Look at ehsfp/losses.py prototype_replay_consistency_loss AND its edge/cloud call sites in hierarchy.py. Propose+apply a fix that makes full_e/PRC backward complete WITHOUT deadlock while preserving PRC semantics (PRC still contributes a nonzero trainable gradient). Likely safe fixes: ensure the PRC forward runs under the SAME autocast context as the SSL forward and uses the scaler consistently; or reduce PRC graph size; or compute PRC on detached-then-reattached features correctly. NO GPU (Claude verifies by re-running hsfp_memory_reliability_prc epochs=2). Preserve uncommitted changes; local only; run unit tests. FINAL: file:line diff, the identified backward-deadlock mechanism, and confirmation PRC gradient semantics preserved.
+docs/optimization_loop/logs/codex_prcfix2_160657.log:104:/bin/bash -lc "sed -n '1,220p' ehsfp/losses.py && sed -n '810,940p' classification/H-SFP/hierarchy.py && sed -n '970,1050p' classification/H-SFP/hierarchy.py && git diff -- ehsfp/losses.py classification/H-SFP/hierarchy.py && rg -n \"hsfp_memory_reliability_prc|prc_verify|full_e\" . -g '"'!*.log'"'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1073:./main.py:23:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1074:./main.py:283:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1075:./ehsfp/config.py:81:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1077:./run.sh:197:    ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1082:./scripts/journal_experiments/run_smoke.sh:32:ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1083:./scripts/journal_experiments/run_ablation.sh:13:#   5. hsfp_memory_reliability_prc (+ memory + reliability + PRC loss)
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1085:./scripts/journal_experiments/run_ablation.sh:36:    "hsfp_memory_reliability_prc"
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1098:./configs/segmentation/h-sfp/default.yaml:69:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1099:./configs/classification/h-sfp/default.yaml:81:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1164:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_prcfix2_160657.log:1210:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/plan16_20260715_100450/PROGRESS.txt:5:bisect_hsfp_memory_reliability_prc code=124
+docs/optimization_loop/logs/codex_prcfix_102835.log:14:You are Codex. DIAGNOSIS: the E-HSFP 'prc' component causes a reproducible DEADLOCK (futex_wait, hang) at CIFAR-100 proxy scale (200 clients). Bisection proved: hsfp_memory, hsfp_memory_dropout, hsfp_memory_reliability all COMPLETE fine; adding PRC (hsfp_memory_reliability_prc) HANGS. Find and fix the deadlock in the PRC path (you have NO GPU; reason from code — Claude verifies on GPU). Inspect: ehsfp/losses.py prototype_replay_consistency_loss (+ any dropout_consistency_loss), and its invocation in classification/H-SFP/hierarchy.py (_cloud_supervised_phase / _edge_ssl_extraction_phase around the PRC call). Look SPECIFICALLY for: a threading.Lock/RLock or multiprocessing primitive acquired and not released; a torch op that blocks (e.g. .item()/.cpu() sync inside a context holding a lock; torch.multiprocessing; a DataLoader created per-call with workers; an unbounded loop that grows with client count causing apparent hang; or a CUDA operation inside a no_grad/autocast that deadlocks with the memory lock). Compare PRC's memory access pattern to reliability's (which works). Apply the minimal fix that removes the deadlock while preserving PRC's intended loss semantics (PRC must still change a trainable gradient when inputs differ — do not no-op it). Add a short comment explaining the deadlock. NO GPU/training. Preserve uncommitted changes; local only. FINAL: the exact file:line diff, the identified deadlock cause, and confirmation PRC loss semantics are preserved (still nonzero/gradient-affecting when current vs memory prototypes differ).
+docs/optimization_loop/logs/plan16_20260715_100450/bisect_hsfp_memory_reliability_prc.log:1:START bisect_hsfp_memory_reliability_prc 2026-07-15T10:17:13+07:00
+docs/optimization_loop/logs/plan16_20260715_100450/bisect_hsfp_memory_reliability_prc.log:6:EXIT bisect_hsfp_memory_reliability_prc code=124 runtime_s=600 (124=TIMEOUT/HANG)
+docs/optimization_loop/logs/codex_fullefix_154213.log:14:You are Codex. full_e_hsfp STILL deadlocks (futex hang, epochs=2 timeout) at CIFAR-100 proxy scale even after your PRC batching fix. The bisection only went up to hsfp_memory_reliability_prc (which hung, and you fixed PRC). full_e adds MORE than the ladder: use_residual_generator and use_dropout_consistency (and maybe residual sampling). Diagnose which full-only component deadlocks: inspect ehsfp/dropout.py dropout_consistency_loss, ehsfp/losses.py residual generator / ResidualPrototypeGenerator, and their invocation in classification/H-SFP/hierarchy.py under full_e. Apply the SAME class of fix as PRC if it's the many-tiny-CUDA-dispatch pattern (batch per-class ops into few forwards), or fix whatever blocking op is present, preserving each component's loss/gradient semantics. ALSO re-verify your PRC fix is actually applied in ehsfp/losses.py (Claude's GPU re-test of hsfp_memory_reliability_prc at epochs=2 is running in parallel — assume it may still hang and double-check the PRC batching is correct). NO GPU (Claude verifies). Preserve uncommitted changes; local only. Run unit tests. FINAL: file:line diffs, the identified deadlock component(s), and confirmation semantics preserved.
+docs/optimization_loop/logs/codex_fullefix_154213.log:263:ehsfp/config.py:81:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_fullefix_154213.log:2369:    81	    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_fullefix_154213.log:3110:scripts/journal_experiments/run_smoke.sh:32:ABLATION_MODES=("baseline_hsfp" "hsfp_memory" "hsfp_memory_dropout" "hsfp_memory_reliability" "hsfp_memory_reliability_prc" "full_e_hsfp")
+docs/optimization_loop/logs/codex_plan15_20260715_074256.log:623:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_plan15_20260715_074256.log:3113:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:216:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:554:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:684:configs/segmentation/h-sfp/default.yaml:69:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:818:configs/classification/h-sfp/default.yaml:81:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:849:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_plan1_20260713_230426.log:1811:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/plan16_20260715_100450/run.sh:12:for ABL in hsfp_memory hsfp_memory_dropout hsfp_memory_reliability hsfp_memory_reliability_prc; do
+docs/optimization_loop/logs/plan16_20260715_100450/run.sh:16:    --set epochs=2 --set prototype_space=centered_cosine --set num_workers=0 \
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:453:./main.py:23:        --ablation hsfp_memory_reliability_prc
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:460:./main.py:283:            "hsfp_memory_reliability", "hsfp_memory_reliability_prc", "full_e_hsfp",
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:482:./ehsfp/config.py:81:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:707:./configs/segmentation/h-sfp/default.yaml:69:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:755:./configs/classification/h-sfp/default.yaml:81:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan6_20260714_043021.log:2280:# ablation_mode: null                 # baseline_hsfp | hsfp_memory | hsfp_memory_dropout | hsfp_memory_reliability | hsfp_memory_reliability_prc | full_e_hsfp
+docs/optimization_loop/logs/codex_plan1c_20260714_000705.log:730:ehsfp/config.py:81:    "hsfp_memory_reliability_prc": {
+docs/optimization_loop/logs/plan19_20260715_174245/PROGRESS.txt:4:prc_verify code=124
+docs/optimization_loop/logs/plan19_20260715_174245/run.sh:14:echo "START prc_verify $(date -Is)" > "$RUNDIR/prc_verify.log"; T=$(date +%s)
+docs/optimization_loop/logs/plan19_20260715_174245/run.sh:16:  --cfg configs/proxy/plan2_cifar100_hsfp_baseline.yaml --ablation hsfp_memory_reliability_prc --seed 20260714 \
+docs/optimization_loop/logs/plan19_20260715_174245/run.sh:17:  --set epochs=2 --set prototype_space=centered_cosine --set num_workers=0 \
+docs/optimization_loop/logs/plan19_20260715_174245/run.sh:18:  --set output_dir=outputs/proxy/plan19_prc_verify >> "$RUNDIR/prc_verify.log" 2>&1
+docs/optimization_loop/logs/plan19_20260715_174245/run.sh:19:PRC=$?; echo "EXIT prc_verify code=$PRC runtime_s=$(( $(date +%s)-T )) (124=HANG)" >> "$RUNDIR/prc_verify.log"; echo "prc_verify code=$PRC" >> "$RUNDIR/PROGRESS.txt"
+docs/optimization_loop/logs/plan19_20260715_174245/prc_verify.log:1:START prc_verify 2026-07-15T19:31:07+07:00
+docs/optimization_loop/logs/plan19_20260715_174245/prc_verify.log:8:EXIT prc_verify code=124 runtime_s=600 (124=HANG)
+docs/optimization_loop/logs/plan18_ham_20260715_124337/run.sh:7:  --cfg configs/proxy/plan2_cifar100_hsfp_baseline.yaml --ablation hsfp_memory_reliability_prc --seed 20260714 \
+docs/optimization_loop/logs/plan18_ham_20260715_124337/run.sh:8:  --set epochs=2 --set prototype_space=centered_cosine --set num_workers=0 \
+docs/optimization_loop/logs/codex_plan2_20260714_002938.log:926:        --ablation hsfp_memory_reliability_prc
+   850	        del syn_features_L1, syn_labels_L1
+   851	        
+   852	        syn_loader_L1 = DataLoader(
+   853	            syn_dataset_L1, 
+   854	            batch_size=self.args['local_bs'], 
+   855	            shuffle=True,
+   856	            # --- fix AttributeError ---
+   857	            num_workers=0, # data already in RAM
+   858	            pin_memory=False,
+   859	            # --- end ---
+   860	            drop_last=True 
+   861	        )
+   862	        
+   863	        for epoch in range(ssl_epochs):
+   864	            total_loss = 0
+   865	            # Supervised Contrastive Training (Paper Alg. 2, Lines 9-11)
+   866	            for features, labels in syn_loader_L1:
+   867	                features = features.to(self.device)
+   868	                labels = labels.to(self.device)
+   869	
+   870	                # Build edge SSL transforms lazily from actual feature map spatial dims
+   871	                if self.ssl_transforms_edge is None:
+   872	                    spatial_size = features.shape[-1]  # H dimension of feature map
+   873	                    self.ssl_transforms_edge = build_edge_ssl_transforms(spatial_size).to(self.device)
+   874	
+   875	                with torch.amp.autocast(device_type='cuda', enabled=(self.device.type == 'cuda')):
+   876	                    view_1 = self.ssl_transforms_edge(features)
+   877	                    view_2 = self.ssl_transforms_edge(features)
+   878	                    
+   879	                    z1 = model(view_1)
+   880	                    z2 = model(view_2)
+   881	                    
+   882	                    # Pool 4D feature maps to 2D vectors for SupCon
+   883	                    z1_flat = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(z1), start_dim=1)
+   884	                    z2_flat = torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(z2), start_dim=1)
+   885	                    # SupCon with synthetic labels (Paper Eq. 1)
+   886	                    all_features = torch.cat([z1_flat, z2_flat], dim=0)
+   887	                    all_labels = torch.cat([labels, labels], dim=0)
+   888	                    loss = supervised_contrastive_loss(all_features, all_labels, temperature=self.supcon_temp)
+   889	
+   890	                    # E-HSFP: PRC loss at edge level
+   891	                    if self.ecfg["use_prc_loss"] and self.client_memory is not None and len(self.client_memory) > 0:
+   892	                        mem_p, mem_d = self.client_memory.to_proto_dist_dicts()
+   893	                        cur_p, cur_d = aggregate_proto_dicts({
+   894	                            cid: client_outputs[cid] for cid in cids
+   895	                            if cid in client_outputs and client_outputs[cid] is not None
+   896	                        }, device=self.device)
+   897	                        if cur_p and mem_p:
+   898	                            def edge_repr_fn(x):
+   899	                                return torch.flatten(nn.AdaptiveAvgPool2d((1, 1))(model(x)), start_dim=1)
+   900	                            prc = prototype_replay_consistency_loss(
+   901	                                cur_p, cur_d, mem_p, mem_d,
+   902	                                edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
+   903	                                runtime_counters=self.runtime_counters,
+   904	                            )
+   905	                            loss = loss + self.ecfg["lambda_prc"] * prc
+   906	
+   907	                optimizer.zero_grad()
+   908	                scaler.scale(loss).backward()
+   909	                scaler.step(optimizer)
+   910	                scaler.update()
+   911	                total_loss += loss.item()
+   912	        print(f"Edge {eid}: SSL done, final loss: {total_loss/len(syn_loader_L1):.4f}")
+   913	
+   914	        # --- 2c. Extract proto/dist ---
+   915	        model.to(self.device).eval()
+
+codex
+Autocast is already consistent: both SSL and PRC forwards are inside the same `torch.amp.autocast` block, and one scaler scales their summed loss. Reusing a module in multiple forwards is also supported by autograd, with no `retain_graph` or relevant in-place operation here. The scale-dependent fault is the unbounded PRC replay graph, so I’m bounding its Monte Carlo samples while retaining every shared class and explicitly detaching prototype statistics (PRC should train the representation, not backpropagate into stored prototype history).
+apply patch
+patch: completed
+/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/losses.py
+/home/jackson/Desktop/Split-Federated-Merging-Learning/tests/test_phase0_effects.py
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 194ef19791f33d29cc38bccee8fd4e387311d0b2..b49db5a20f0a568cadcd6def1d73028937f4aeac
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -20,6 +20,7 @@
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
+     runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -50,12 +51,27 @@
+         torch.device(device) if device is not None
+         else current_protos[class_ids[0]].device
+     )
+-    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+-    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+-    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+-    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
+ 
+-    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+     z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+         sample_shape, device=compute_device, dtype=cur_mu.dtype
+     )
+diff --git a/tests/test_phase0_effects.py b/tests/test_phase0_effects.py
+index bdfe391f112e365fcbb2a22b8d6e44f40b62712d..3214428b78662e59184c45a13e094e50cbe4dabe
+--- a/tests/test_phase0_effects.py
++++ b/tests/test_phase0_effects.py
+@@ -165,6 +165,31 @@
+         self.assertEqual(representation.calls, 2)
+         self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+ 
++    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
++        class RecordingRepresentation(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                self.linear = torch.nn.Linear(2, 2, bias=False)
++                self.batch_sizes = []
++
++            def forward(self, inputs):
++                self.batch_sizes.append(inputs.shape[0])
++                return self.linear(inputs)
++
++        representation = RecordingRepresentation()
++        current = {class_id: torch.ones(2) for class_id in range(100)}
++        memory = {class_id: torch.zeros(2) for class_id in range(100)}
++        stds = {class_id: torch.zeros(2) for class_id in current}
++        loss = prototype_replay_consistency_loss(
++            current, stds, memory, stds, representation, num_samples=16,
++            device=torch.device("cpu"), max_replay_batch=128,
++        )
++        loss.backward()
++
++        self.assertEqual(representation.batch_sizes, [100, 100])
++        self.assertGreater(loss.item(), 0.0)
++        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
++
+     def test_dropout_changes_active_client_ids_when_enabled(self):
+         active = {client_id: object() for client_id in range(5)}
+         dropout = PrototypeDropout(rate=1.0, seed=17)
+
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 194ef19791f33d29cc38bccee8fd4e387311d0b2..b49db5a20f0a568cadcd6def1d73028937f4aeac
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -20,6 +20,7 @@
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
+     runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -50,12 +51,27 @@
+         torch.device(device) if device is not None
+         else current_protos[class_ids[0]].device
+     )
+-    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+-    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+-    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+-    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
+ 
+-    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+     z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+         sample_shape, device=compute_device, dtype=cur_mu.dtype
+     )
+diff --git a/tests/test_phase0_effects.py b/tests/test_phase0_effects.py
+index bdfe391f112e365fcbb2a22b8d6e44f40b62712d..3214428b78662e59184c45a13e094e50cbe4dabe
+--- a/tests/test_phase0_effects.py
++++ b/tests/test_phase0_effects.py
+@@ -165,6 +165,31 @@
+         self.assertEqual(representation.calls, 2)
+         self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+ 
++    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
++        class RecordingRepresentation(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                self.linear = torch.nn.Linear(2, 2, bias=False)
++                self.batch_sizes = []
++
++            def forward(self, inputs):
++                self.batch_sizes.append(inputs.shape[0])
++                return self.linear(inputs)
++
++        representation = RecordingRepresentation()
++        current = {class_id: torch.ones(2) for class_id in range(100)}
++        memory = {class_id: torch.zeros(2) for class_id in range(100)}
++        stds = {class_id: torch.zeros(2) for class_id in current}
++        loss = prototype_replay_consistency_loss(
++            current, stds, memory, stds, representation, num_samples=16,
++            device=torch.device("cpu"), max_replay_batch=128,
++        )
++        loss.backward()
++
++        self.assertEqual(representation.batch_sizes, [100, 100])
++        self.assertGreater(loss.item(), 0.0)
++        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
++
+     def test_dropout_changes_active_client_ids_when_enabled(self):
+         active = {client_id: object() for client_id in range(5)}
+         dropout = PrototypeDropout(rate=1.0, seed=17)
+
+exec
+/bin/bash -lc 'python -m unittest tests.test_phase0_effects tests.test_plan5_prototype_space tests.test_plan6_client_objective' in /home/jackson/Desktop/Split-Federated-Merging-Learning
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 194ef19791f33d29cc38bccee8fd4e387311d0b2..b49db5a20f0a568cadcd6def1d73028937f4aeac
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -20,6 +20,7 @@
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
+     runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -50,12 +51,27 @@
+         torch.device(device) if device is not None
+         else current_protos[class_ids[0]].device
+     )
+-    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+-    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+-    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+-    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
+ 
+-    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+     z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+         sample_shape, device=compute_device, dtype=cur_mu.dtype
+     )
+diff --git a/tests/test_phase0_effects.py b/tests/test_phase0_effects.py
+index bdfe391f112e365fcbb2a22b8d6e44f40b62712d..3214428b78662e59184c45a13e094e50cbe4dabe
+--- a/tests/test_phase0_effects.py
++++ b/tests/test_phase0_effects.py
+@@ -165,6 +165,31 @@
+         self.assertEqual(representation.calls, 2)
+         self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+ 
++    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
++        class RecordingRepresentation(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                self.linear = torch.nn.Linear(2, 2, bias=False)
++                self.batch_sizes = []
++
++            def forward(self, inputs):
++                self.batch_sizes.append(inputs.shape[0])
++                return self.linear(inputs)
++
++        representation = RecordingRepresentation()
++        current = {class_id: torch.ones(2) for class_id in range(100)}
++        memory = {class_id: torch.zeros(2) for class_id in range(100)}
++        stds = {class_id: torch.zeros(2) for class_id in current}
++        loss = prototype_replay_consistency_loss(
++            current, stds, memory, stds, representation, num_samples=16,
++            device=torch.device("cpu"), max_replay_batch=128,
++        )
++        loss.backward()
++
++        self.assertEqual(representation.batch_sizes, [100, 100])
++        self.assertGreater(loss.item(), 0.0)
++        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
++
+     def test_dropout_changes_active_client_ids_when_enabled(self):
+         active = {client_id: object() for client_id in range(5)}
+         dropout = PrototypeDropout(rate=1.0, seed=17)
+
+ succeeded in 3854ms:
+.........../home/jackson/miniconda3/lib/python3.12/site-packages/sklearn/utils/_param_validation.py:14: UserWarning: A NumPy version >=1.23.5 and <2.3.0 is required for this version of SciPy (detected version 2.4.4)
+  from scipy.sparse import csr_matrix, issparse
+.............
+----------------------------------------------------------------------
+Ran 24 tests in 1.795s
+
+OK
+
+exec
+/bin/bash -lc "sed -n '1,120p' configs/proxy/plan2_cifar100_hsfp_baseline.yaml && sed -n '1,60p' docs/optimization_loop/logs/plan20_ehsfp_155336/run.sh && git diff --check && git diff --unified=3 -- ehsfp/losses.py tests/test_phase0_effects.py && nl -ba ehsfp/losses.py | sed -n '10,115p' && nl -ba tests/test_phase0_effects.py | sed -n '135,210p'" in /home/jackson/Desktop/Split-Federated-Merging-Learning
+ succeeded in 0ms:
+# PLAN-2 bounded proxy only; not a paper-number configuration.
+base: ../classification/h-sfp/cifar_our_resnet50_10_20.yaml
+
+proxy_id: plan2_cifar100_hsfp_baseline_seed20260714
+output_dir: outputs/proxy/plan2_cifar100_hsfp_baseline_seed20260714
+seed: 20260714
+require_cuda: true
+ablation_mode: baseline_hsfp
+
+# Reduced rounds only; retain full CIFAR-100 and the current H-SFP tier budgets.
+epochs: 10
+iid: true
+partition: iid
+num_users: 200
+frac: 0.1
+set +e
+cd /home/jackson/Desktop/Split-Federated-Merging-Learning
+RUNDIR="$1"
+HS="--method h-sfp --cfg configs/proxy/plan2_cifar100_hsfp_baseline.yaml --seed 20260714 --set prototype_space=centered_cosine --set num_workers=0"
+echo "START prc_verify $(date -Is)" > "$RUNDIR/prc_verify.log"; T=$(date +%s)
+HSFP_FREEZE_BACKBONE=1 timeout 600 env CUDA_VISIBLE_DEVICES=0 python main.py --task classification $HS --ablation hsfp_memory_reliability_prc \
+  --set epochs=2 --set output_dir=outputs/proxy/plan20_prc_verify >> "$RUNDIR/prc_verify.log" 2>&1
+PRC=$?; echo "EXIT prc_verify code=$PRC runtime_s=$(( $(date +%s)-T )) (124=HANG)" >> "$RUNDIR/prc_verify.log"; echo "prc_verify code=$PRC" >> "$RUNDIR/PROGRESS.txt"
+if [ $PRC -eq 0 ]; then
+  for MODE in iid noniid; do
+    EXTRA=""; [ "$MODE" = "noniid" ] && EXTRA="--set partition=two_level_dirichlet --set alpha_edge=0.1"
+    echo "START fulle_$MODE $(date -Is)" > "$RUNDIR/fulle_${MODE}.log"; T=$(date +%s)
+    HSFP_FREEZE_BACKBONE=1 timeout 5400 env CUDA_VISIBLE_DEVICES=0 python main.py --task classification $HS --ablation full_e_hsfp \
+      --set epochs=10 $EXTRA --set output_dir=outputs/proxy/plan20_fulle_${MODE} >> "$RUNDIR/fulle_${MODE}.log" 2>&1
+    echo "EXIT fulle_$MODE code=$? runtime_s=$(( $(date +%s)-T ))" >> "$RUNDIR/fulle_${MODE}.log"; echo "fulle_$MODE done" >> "$RUNDIR/PROGRESS.txt"
+  done
+  # also run the intermediate ablations (10-round) for the E-HSFP ablation table
+  for ABL in hsfp_memory hsfp_memory_dropout hsfp_memory_reliability hsfp_memory_reliability_prc; do
+    echo "START abl_$ABL $(date -Is)" > "$RUNDIR/abl_${ABL}.log"; T=$(date +%s)
+    HSFP_FREEZE_BACKBONE=1 timeout 5400 env CUDA_VISIBLE_DEVICES=0 python main.py --task classification $HS --ablation $ABL \
+      --set epochs=10 --set output_dir=outputs/proxy/plan20_abl_${ABL} >> "$RUNDIR/abl_${ABL}.log" 2>&1
+    echo "EXIT abl_$ABL code=$? runtime_s=$(( $(date +%s)-T ))" >> "$RUNDIR/abl_${ABL}.log"; echo "abl_$ABL done" >> "$RUNDIR/PROGRESS.txt"
+  done
+fi
+echo "ALL_DONE $(date -Is)" > "$RUNDIR/DONE.marker"
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 67b3ff7..b49db5a 100644
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -19,6 +19,8 @@ def prototype_replay_consistency_loss(
+     representation_fn: Callable[[torch.Tensor], torch.Tensor],
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
++    runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -33,39 +35,68 @@ def prototype_replay_consistency_loss(
+     Returns zero tensor if no shared classes or early rounds.
+     """
+     shared_classes = set(current_protos.keys()) & set(memory_protos.keys())
++    if runtime_counters is not None:
++        runtime_counters.increment("prc.calls")
++        runtime_counters.increment("prc.shared_classes", len(shared_classes))
+     if not shared_classes:
+         if device is not None:
+             return torch.tensor(0.0, device=device, requires_grad=True)
+         return torch.tensor(0.0, requires_grad=True)
+ 
+-    total_loss = torch.tensor(0.0, device=device, requires_grad=True) if device else torch.tensor(0.0, requires_grad=True)
+-    count = 0
+-
+-    for cls_id in shared_classes:
+-        cur_mu = current_protos[cls_id]
+-        cur_sigma = current_stds[cls_id]
+-        mem_mu = memory_protos[cls_id].to(cur_mu.device)
+-        mem_sigma = memory_stds[cls_id].to(cur_sigma.device)
+-
+-        # Sample from current distribution: z = mu + sigma * epsilon
+-        eps_cur = torch.randn(num_samples, *cur_mu.shape, device=cur_mu.device, dtype=cur_mu.dtype)
+-        z_current = cur_mu.unsqueeze(0) + cur_sigma.unsqueeze(0) * eps_cur
+-
+-        # Sample from memory distribution
+-        eps_mem = torch.randn(num_samples, *mem_mu.shape, device=mem_mu.device, dtype=mem_mu.dtype)
+-        z_memory = mem_mu.unsqueeze(0) + mem_sigma.unsqueeze(0) * eps_mem
+-
+-        # Pass through representation function
+-        h_current = representation_fn(z_current)
+-        h_memory = representation_fn(z_memory)
+-
+-        # L2 distance
+-        loss = F.mse_loss(h_current, h_memory)
+-        total_loss = total_loss + loss
+-        count += 1
+-
+-    if count > 0:
+-        total_loss = total_loss / count
++    # A per-class model call made CIFAR-100 execute 200 tiny CUDA forwards for
++    # every minibatch.  At proxy scale that can stall in the CUDA/BLAS worker
++    # pool (observed as futex_wait).  Batch classes exactly as reliability does.
++    class_ids = sorted(shared_classes)
++    compute_device = (
++        torch.device(device) if device is not None
++        else current_protos[class_ids[0]].device
++    )
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
++
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
++    z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
++        sample_shape, device=compute_device, dtype=cur_mu.dtype
++    )
++    z_memory = mem_mu.unsqueeze(1) + mem_sigma.unsqueeze(1) * torch.randn(
++        sample_shape, device=compute_device, dtype=mem_mu.dtype
++    )
++
++    # Flatten class and replay dimensions for two model calls total.  A global
++    # mean is identical to the old mean of equal-sized per-class MSE losses.
++    flat_shape = (-1, *cur_mu.shape[1:])
++    h_current = representation_fn(z_current.reshape(flat_shape))
++    h_memory = representation_fn(z_memory.reshape(flat_shape))
++    total_loss = F.mse_loss(h_current, h_memory)
++
++    if runtime_counters is not None:
++        # Keep instrumentation asynchronous.  Calling .item() here serialized
++        # every CUDA PRC forward with the host (hundreds of synchronizations per
++        # proxy round), which can present as a futex hang.  RuntimeCounters
++        # materializes these detached scalars once at a phase snapshot.
++        scalar_loss = total_loss.detach()
++        runtime_counters.increment(
++            "prc.nonzero_loss_calls", (scalar_loss != 0).to(torch.int64)
++        )
++        runtime_counters.increment("prc.loss_sum", scalar_loss)
++        runtime_counters.increment("prc.loss_observations")
+ 
+     return total_loss
+ 
+    10	import torch.nn.functional as F
+    11	from typing import Dict, Callable, Optional
+    12	
+    13	
+    14	def prototype_replay_consistency_loss(
+    15	    current_protos: Dict[int, torch.Tensor],
+    16	    current_stds: Dict[int, torch.Tensor],
+    17	    memory_protos: Dict[int, torch.Tensor],
+    18	    memory_stds: Dict[int, torch.Tensor],
+    19	    representation_fn: Callable[[torch.Tensor], torch.Tensor],
+    20	    num_samples: int = 16,
+    21	    device: Optional[torch.device] = None,
+    22	    runtime_counters=None,
+    23	    max_replay_batch: int = 128,
+    24	) -> torch.Tensor:
+    25	    """Prototype Replay Consistency loss.
+    26	
+    27	    For each class present in both current and memory prototypes:
+    28	    - Sample synthetic features from current distribution
+    29	    - Sample synthetic features from memory distribution
+    30	    - Pass both through the same representation module
+    31	    - Minimize L2 distance between representations
+    32	
+    33	    L_prc = mean(|| h(z_current) - h(z_memory) ||_2^2)
+    34	
+    35	    Returns zero tensor if no shared classes or early rounds.
+    36	    """
+    37	    shared_classes = set(current_protos.keys()) & set(memory_protos.keys())
+    38	    if runtime_counters is not None:
+    39	        runtime_counters.increment("prc.calls")
+    40	        runtime_counters.increment("prc.shared_classes", len(shared_classes))
+    41	    if not shared_classes:
+    42	        if device is not None:
+    43	            return torch.tensor(0.0, device=device, requires_grad=True)
+    44	        return torch.tensor(0.0, requires_grad=True)
+    45	
+    46	    # A per-class model call made CIFAR-100 execute 200 tiny CUDA forwards for
+    47	    # every minibatch.  At proxy scale that can stall in the CUDA/BLAS worker
+    48	    # pool (observed as futex_wait).  Batch classes exactly as reliability does.
+    49	    class_ids = sorted(shared_classes)
+    50	    compute_device = (
+    51	        torch.device(device) if device is not None
+    52	        else current_protos[class_ids[0]].device
+    53	    )
+    54	    # Prototype statistics are replay data, not trainable graph inputs.  In
+    55	    # particular, never retain a graph from prototype extraction/aggregation.
+    56	    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
+    57	    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
+    58	    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
+    59	    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
+    60	
+    61	    # Keep at least one Monte Carlo pair for every shared class, but cap the
+    62	    # number of pairs retained by the representation graph.  Without this cap,
+    63	    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
+    64	    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
+    65	    # the same PRC estimator with fewer draws at large class counts; gradients
+    66	    # still flow through both representation forwards into model parameters.
+    67	    if max_replay_batch <= 0:
+    68	        raise ValueError("max_replay_batch must be positive")
+    69	    samples_per_class = min(
+    70	        num_samples,
+    71	        max(1, max_replay_batch // len(class_ids)),
+    72	    )
+    73	
+    74	    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+    75	    z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+    76	        sample_shape, device=compute_device, dtype=cur_mu.dtype
+    77	    )
+    78	    z_memory = mem_mu.unsqueeze(1) + mem_sigma.unsqueeze(1) * torch.randn(
+    79	        sample_shape, device=compute_device, dtype=mem_mu.dtype
+    80	    )
+    81	
+    82	    # Flatten class and replay dimensions for two model calls total.  A global
+    83	    # mean is identical to the old mean of equal-sized per-class MSE losses.
+    84	    flat_shape = (-1, *cur_mu.shape[1:])
+    85	    h_current = representation_fn(z_current.reshape(flat_shape))
+    86	    h_memory = representation_fn(z_memory.reshape(flat_shape))
+    87	    total_loss = F.mse_loss(h_current, h_memory)
+    88	
+    89	    if runtime_counters is not None:
+    90	        # Keep instrumentation asynchronous.  Calling .item() here serialized
+    91	        # every CUDA PRC forward with the host (hundreds of synchronizations per
+    92	        # proxy round), which can present as a futex hang.  RuntimeCounters
+    93	        # materializes these detached scalars once at a phase snapshot.
+    94	        scalar_loss = total_loss.detach()
+    95	        runtime_counters.increment(
+    96	            "prc.nonzero_loss_calls", (scalar_loss != 0).to(torch.int64)
+    97	        )
+    98	        runtime_counters.increment("prc.loss_sum", scalar_loss)
+    99	        runtime_counters.increment("prc.loss_observations")
+   100	
+   101	    return total_loss
+   102	
+   103	
+   104	def dropout_consistency_loss(
+   105	    logits_full: torch.Tensor,
+   106	    logits_dropped: torch.Tensor,
+   107	) -> torch.Tensor:
+   108	    """KL divergence between predictions from full and dropped prototypes.
+   109	
+   110	    L_drop = KL(p(y|z_full) || p(y|z_drop))
+   111	
+   112	    Both inputs are logits [N, C].
+   113	    """
+   114	    p_full = F.log_softmax(logits_full, dim=-1)
+   115	    p_drop = F.softmax(logits_dropped, dim=-1)
+   135	        same_grad, same_loss, _ = _prc_gradient([1.0, 2.0])
+   136	        changed_grad, changed_loss, counters = _prc_gradient([3.0, -1.0])
+   137	        self.assertEqual(same_loss, 0.0)
+   138	        self.assertTrue(torch.equal(same_grad, torch.zeros_like(same_grad)))
+   139	        self.assertGreater(changed_loss, 0.0)
+   140	        self.assertFalse(torch.equal(changed_grad, same_grad))
+   141	        self.assertEqual(counters["prc.shared_classes"], 1)
+   142	        self.assertEqual(counters["prc.nonzero_loss_calls"], 1)
+   143	
+   144	    def test_prc_batches_classes_into_two_representation_forwards(self):
+   145	        class CountingRepresentation(torch.nn.Module):
+   146	            def __init__(self):
+   147	                super().__init__()
+   148	                self.linear = torch.nn.Linear(2, 2, bias=False)
+   149	                self.calls = 0
+   150	
+   151	            def forward(self, inputs):
+   152	                self.calls += 1
+   153	                return self.linear(inputs)
+   154	
+   155	        representation = CountingRepresentation()
+   156	        current = {class_id: torch.full((2,), float(class_id)) for class_id in range(7)}
+   157	        memory = {class_id: value + 1 for class_id, value in current.items()}
+   158	        stds = {class_id: torch.zeros(2) for class_id in current}
+   159	        loss = prototype_replay_consistency_loss(
+   160	            current, stds, memory, stds, representation, num_samples=3,
+   161	            device=torch.device("cpu"),
+   162	        )
+   163	        loss.backward()
+   164	
+   165	        self.assertEqual(representation.calls, 2)
+   166	        self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+   167	
+   168	    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
+   169	        class RecordingRepresentation(torch.nn.Module):
+   170	            def __init__(self):
+   171	                super().__init__()
+   172	                self.linear = torch.nn.Linear(2, 2, bias=False)
+   173	                self.batch_sizes = []
+   174	
+   175	            def forward(self, inputs):
+   176	                self.batch_sizes.append(inputs.shape[0])
+   177	                return self.linear(inputs)
+   178	
+   179	        representation = RecordingRepresentation()
+   180	        current = {class_id: torch.ones(2) for class_id in range(100)}
+   181	        memory = {class_id: torch.zeros(2) for class_id in range(100)}
+   182	        stds = {class_id: torch.zeros(2) for class_id in current}
+   183	        loss = prototype_replay_consistency_loss(
+   184	            current, stds, memory, stds, representation, num_samples=16,
+   185	            device=torch.device("cpu"), max_replay_batch=128,
+   186	        )
+   187	        loss.backward()
+   188	
+   189	        self.assertEqual(representation.batch_sizes, [100, 100])
+   190	        self.assertGreater(loss.item(), 0.0)
+   191	        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
+   192	
+   193	    def test_dropout_changes_active_client_ids_when_enabled(self):
+   194	        active = {client_id: object() for client_id in range(5)}
+   195	        dropout = PrototypeDropout(rate=1.0, seed=17)
+   196	        kept = dropout.apply_to_source_outputs(active)
+   197	        self.assertNotEqual(set(kept), set(active))
+   198	        self.assertEqual(len(kept), 1)
+   199	        self.assertEqual(dropout.stats["changed_calls"], 1)
+   200	        self.assertEqual(dropout.stats["active_set_last"], 1)
+   201	
+   202	    def test_runtime_counter_schema_has_explicit_inactive_values(self):
+   203	        counters = RuntimeCounters().snapshot()
+   204	        self.assertEqual(counters["memory.reads"], 0)
+   205	        self.assertEqual(counters["memory.writes"], 0)
+   206	        self.assertEqual(counters["memory.replays"], 0)
+   207	        self.assertEqual(counters["reliability.weight_variance"], 0.0)
+   208	        self.assertEqual(counters["prc.loss_mean"], 0.0)
+   209	        self.assertEqual(counters["dropout.active_set_last"], 0)
+   210	
+
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 194ef19791f33d29cc38bccee8fd4e387311d0b2..b49db5a20f0a568cadcd6def1d73028937f4aeac
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -20,6 +20,7 @@
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
+     runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -50,12 +51,27 @@
+         torch.device(device) if device is not None
+         else current_protos[class_ids[0]].device
+     )
+-    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+-    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+-    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+-    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
+ 
+-    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+     z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+         sample_shape, device=compute_device, dtype=cur_mu.dtype
+     )
+diff --git a/tests/test_phase0_effects.py b/tests/test_phase0_effects.py
+index bdfe391f112e365fcbb2a22b8d6e44f40b62712d..3214428b78662e59184c45a13e094e50cbe4dabe
+--- a/tests/test_phase0_effects.py
++++ b/tests/test_phase0_effects.py
+@@ -165,6 +165,31 @@
+         self.assertEqual(representation.calls, 2)
+         self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+ 
++    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
++        class RecordingRepresentation(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                self.linear = torch.nn.Linear(2, 2, bias=False)
++                self.batch_sizes = []
++
++            def forward(self, inputs):
++                self.batch_sizes.append(inputs.shape[0])
++                return self.linear(inputs)
++
++        representation = RecordingRepresentation()
++        current = {class_id: torch.ones(2) for class_id in range(100)}
++        memory = {class_id: torch.zeros(2) for class_id in range(100)}
++        stds = {class_id: torch.zeros(2) for class_id in current}
++        loss = prototype_replay_consistency_loss(
++            current, stds, memory, stds, representation, num_samples=16,
++            device=torch.device("cpu"), max_replay_batch=128,
++        )
++        loss.backward()
++
++        self.assertEqual(representation.batch_sizes, [100, 100])
++        self.assertGreater(loss.item(), 0.0)
++        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
++
+     def test_dropout_changes_active_client_ids_when_enabled(self):
+         active = {client_id: object() for client_id in range(5)}
+         dropout = PrototypeDropout(rate=1.0, seed=17)
+
+codex
+Implemented a bounded PRC replay graph while preserving trainable PRC gradients.
+
+- [ehsfp/losses.py:14](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/losses.py:14)
+  - Added `max_replay_batch=128`.
+  - CIFAR-100 now uses one replay pair per shared class instead of 16, reducing each PRC branch from 1,600 to 100 edge-model examples.
+  - Detached current/memory prototype statistics before sampling, preventing accidental retention of upstream extraction graphs.
+  - Both current and memory representations still pass through the trainable model and contribute MSE gradients.
+
+- [tests/test_phase0_effects.py:168](/home/jackson/Desktop/Split-Federated-Merging-Learning/tests/test_phase0_effects.py:168)
+  - Added a 100-class regression test confirming bounded forward batches, nonzero PRC loss, and nonzero model parameter gradients.
+
+Identified mechanism: an oversized combined autograd graph, not an autocast/scaler mismatch. Both edge PRC and SSL already execute under the same autocast context, and the summed loss is scaled once. Multiple forwards through the same module are valid, and no `retain_graph` or relevant in-place operation exists. The problematic scale was two retained 1,600-example edge-model PRC graphs plus the SSL graphs in every minibatch.
+
+Validation:
+
+```text
+Ran 24 tests in 1.795s
+OK
+```
+
+`git diff --check` passed. The full proxy verification requires CUDA (`require_cuda: true`), so it was not run locally. Unrelated uncommitted changes were preserved.
+diff --git a/ehsfp/losses.py b/ehsfp/losses.py
+index 194ef19791f33d29cc38bccee8fd4e387311d0b2..b49db5a20f0a568cadcd6def1d73028937f4aeac
+--- a/ehsfp/losses.py
++++ b/ehsfp/losses.py
+@@ -20,6 +20,7 @@
+     num_samples: int = 16,
+     device: Optional[torch.device] = None,
+     runtime_counters=None,
++    max_replay_batch: int = 128,
+ ) -> torch.Tensor:
+     """Prototype Replay Consistency loss.
+ 
+@@ -50,12 +51,27 @@
+         torch.device(device) if device is not None
+         else current_protos[class_ids[0]].device
+     )
+-    cur_mu = torch.stack([current_protos[c].to(compute_device) for c in class_ids])
+-    cur_sigma = torch.stack([current_stds[c].to(compute_device) for c in class_ids])
+-    mem_mu = torch.stack([memory_protos[c].to(compute_device) for c in class_ids])
+-    mem_sigma = torch.stack([memory_stds[c].to(compute_device) for c in class_ids])
++    # Prototype statistics are replay data, not trainable graph inputs.  In
++    # particular, never retain a graph from prototype extraction/aggregation.
++    cur_mu = torch.stack([current_protos[c].detach().to(compute_device) for c in class_ids])
++    cur_sigma = torch.stack([current_stds[c].detach().to(compute_device) for c in class_ids])
++    mem_mu = torch.stack([memory_protos[c].detach().to(compute_device) for c in class_ids])
++    mem_sigma = torch.stack([memory_stds[c].detach().to(compute_device) for c in class_ids])
++
++    # Keep at least one Monte Carlo pair for every shared class, but cap the
++    # number of pairs retained by the representation graph.  Without this cap,
++    # CIFAR-100's default creates two 1,600-example edge-model graphs in every
++    # SSL minibatch and the CUDA autograd engine can stall in backward.  This is
++    # the same PRC estimator with fewer draws at large class counts; gradients
++    # still flow through both representation forwards into model parameters.
++    if max_replay_batch <= 0:
++        raise ValueError("max_replay_batch must be positive")
++    samples_per_class = min(
++        num_samples,
++        max(1, max_replay_batch // len(class_ids)),
++    )
+ 
+-    sample_shape = (len(class_ids), num_samples, *cur_mu.shape[1:])
++    sample_shape = (len(class_ids), samples_per_class, *cur_mu.shape[1:])
+     z_current = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+         sample_shape, device=compute_device, dtype=cur_mu.dtype
+     )
+diff --git a/tests/test_phase0_effects.py b/tests/test_phase0_effects.py
+index bdfe391f112e365fcbb2a22b8d6e44f40b62712d..3214428b78662e59184c45a13e094e50cbe4dabe
+--- a/tests/test_phase0_effects.py
++++ b/tests/test_phase0_effects.py
+@@ -165,6 +165,31 @@
+         self.assertEqual(representation.calls, 2)
+         self.assertEqual(representation.linear.weight.grad.shape, (2, 2))
+ 
++    def test_prc_bounds_large_replay_graph_and_keeps_trainable_gradient(self):
++        class RecordingRepresentation(torch.nn.Module):
++            def __init__(self):
++                super().__init__()
++                self.linear = torch.nn.Linear(2, 2, bias=False)
++                self.batch_sizes = []
++
++            def forward(self, inputs):
++                self.batch_sizes.append(inputs.shape[0])
++                return self.linear(inputs)
++
++        representation = RecordingRepresentation()
++        current = {class_id: torch.ones(2) for class_id in range(100)}
++        memory = {class_id: torch.zeros(2) for class_id in range(100)}
++        stds = {class_id: torch.zeros(2) for class_id in current}
++        loss = prototype_replay_consistency_loss(
++            current, stds, memory, stds, representation, num_samples=16,
++            device=torch.device("cpu"), max_replay_batch=128,
++        )
++        loss.backward()
++
++        self.assertEqual(representation.batch_sizes, [100, 100])
++        self.assertGreater(loss.item(), 0.0)
++        self.assertGreater(representation.linear.weight.grad.norm().item(), 0.0)
++
+     def test_dropout_changes_active_client_ids_when_enabled(self):
+         active = {client_id: object() for client_id in range(5)}
+         dropout = PrototypeDropout(rate=1.0, seed=17)
+
+tokens used
+44,178
+Implemented a bounded PRC replay graph while preserving trainable PRC gradients.
+
+- [ehsfp/losses.py:14](/home/jackson/Desktop/Split-Federated-Merging-Learning/ehsfp/losses.py:14)
+  - Added `max_replay_batch=128`.
+  - CIFAR-100 now uses one replay pair per shared class instead of 16, reducing each PRC branch from 1,600 to 100 edge-model examples.
+  - Detached current/memory prototype statistics before sampling, preventing accidental retention of upstream extraction graphs.
+  - Both current and memory representations still pass through the trainable model and contribute MSE gradients.
+
+- [tests/test_phase0_effects.py:168](/home/jackson/Desktop/Split-Federated-Merging-Learning/tests/test_phase0_effects.py:168)
+  - Added a 100-class regression test confirming bounded forward batches, nonzero PRC loss, and nonzero model parameter gradients.
+
+Identified mechanism: an oversized combined autograd graph, not an autocast/scaler mismatch. Both edge PRC and SSL already execute under the same autocast context, and the summed loss is scaled once. Multiple forwards through the same module are valid, and no `retain_graph` or relevant in-place operation exists. The problematic scale was two retained 1,600-example edge-model PRC graphs plus the SSL graphs in every minibatch.
+
+Validation:
+
+```text
+Ran 24 tests in 1.795s
+OK
+```
+
+`git diff --check` passed. The full proxy verification requires CUDA (`require_cuda: true`), so it was not run locally. Unrelated uncommitted changes were preserved.
