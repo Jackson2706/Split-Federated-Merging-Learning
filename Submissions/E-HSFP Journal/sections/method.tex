@@ -3,7 +3,6 @@
 
 \subsection{Overview}
 \ehsfp extends \hsfp by treating each upper-tier invocation as a stateless learning episode that may receive incomplete, stale, or partial prototype packets. The framework keeps the class-wise prototype statistics interface from \hsfp, namely $(\pmu_{k,t}^{(j)},\psigma_{k,t}^{(j)},n_{k,t}^{(j)})$, but augments the edge and cloud learners with five stability-oriented modules. Episodic prototype memory bounds the error induced by missing-update replacement; reliability-aware prototype aggregation reduces variance and stale prototype updates by down-weighting unreliable packets; prototype replay consistency controls the prototype-induced distributional drift in Definition~\ref{def:proto_drift}; prototype dropout regularization trains upper tiers to tolerate missing packets as a learning augmentation; and the optional residual prototype generator reduces synthesis bias while preserving the original client communication payload. The resulting update path is: receive available packets, read memory, aggregate with reliability weights, synthesize current and replayed features, optimize the upper-tier objective, and write refreshed statistics back to memory.
-% TODO(figure): E-HSFP overview diagram
 
 \subsection{Episodic Prototype Memory}
 For edge server $\edgeidx$ and class $j$, \ehsfp stores a bounded episodic prototype memory

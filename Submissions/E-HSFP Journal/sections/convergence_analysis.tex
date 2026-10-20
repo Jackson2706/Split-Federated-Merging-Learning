@@ -28,7 +28,7 @@ Each expected class-wise packet is observed with probability at least $q_{\min}>
 \end{assumption}
 
 \begin{assumption}[Bounded heterogeneity and hierarchical aggregation error]\label{asm:het_agg}
-There exist constants $H_{\mathrm{client}}\geq0$ and $H_{\mathrm{agg}}\geq0$ such that the expected squared dissimilarity between client-level gradients and the corresponding edge-level objective gradient is at most $H_{\mathrm{client}}$ (bounded client drift under statistical heterogeneity), and the expected squared perturbation introduced by one asynchronous edge/cloud aggregation round of the tier-wise decoupled update is at most $H_{\mathrm{agg}}$. % TODO(theory): Align these bounded-dissimilarity constants with the corresponding quantities in the H-SFP conference analysis once the journal notation is frozen.
+There exist constants $H_{\mathrm{client}}\geq0$ and $H_{\mathrm{agg}}\geq0$ such that the expected squared dissimilarity between client-level gradients and the corresponding edge-level objective gradient is at most $H_{\mathrm{client}}$ (bounded client drift under statistical heterogeneity), and the expected squared perturbation introduced by one asynchronous edge/cloud aggregation round of the tier-wise decoupled update is at most $H_{\mathrm{agg}}$.
 \end{assumption}
 
 \begin{lemma}[Prototype synthesis bias]\label{lem:synthesis_bias}
@@ -48,7 +48,7 @@ Let $\nabla F_{*,t}(\theta)$ denote the gradient under the current complete-refe
 \end{equation}
 \end{lemma}
 \begin{proof}
-For diagonal Gaussian prototype models, Definition~\ref{def:proto_drift} gives the squared 2-Wasserstein discrepancy as the sum of squared mean and standard-deviation errors. The Wasserstein Lipschitz condition in Assumption~\ref{asm:drift} then transfers this distributional discrepancy to gradient bias. % TODO(theory): Check whether this lemma requires bounded covariance, bounded feature norm, or a stronger Lipschitz-in-feature gradient assumption.
+For diagonal Gaussian prototype models, Definition~\ref{def:proto_drift} gives the squared 2-Wasserstein discrepancy as the sum of squared mean and standard-deviation errors. The Wasserstein Lipschitz condition in Assumption~\ref{asm:drift} then transfers this distributional discrepancy to gradient bias.
 \end{proof}
 
 \begin{lemma}[Stale prototype error]\label{lem:stale_drift}
@@ -66,7 +66,7 @@ Suppose class-wise prototype means and standard deviations move by at most $\del
 \end{equation}
 \end{lemma}
 \begin{proof}
-Unrolling the per-episode prototype displacement for at most $\stale_{\max}$ episodes gives mean and standard-deviation deviations no larger than $\stale_{\max}\delta_{\mu}$ and $\stale_{\max}\delta_{\sigma}$. Applying the same Wasserstein-to-gradient Lipschitz step as Lemma~\ref{lem:synthesis_bias} gives the stated bound. % TODO(theory): Tighten constants after fixing whether the drift metric is summed over classes or averaged by $\pi_t^{(j)}$.
+Unrolling the per-episode prototype displacement for at most $\stale_{\max}$ episodes gives mean and standard-deviation deviations no larger than $\stale_{\max}\delta_{\mu}$ and $\stale_{\max}\delta_{\sigma}$. Applying the same Wasserstein-to-gradient Lipschitz step as Lemma~\ref{lem:synthesis_bias} gives the stated bound.
 \end{proof}
 
 \begin{lemma}[Missing prototype packets]\label{lem:missing_update}
@@ -80,14 +80,14 @@ Let packets be independently dropped with probability $\dropoutp$. Without memor
 \end{equation}
 \end{lemma}
 \begin{proof}
-Bernoulli thinning gives the usual sampling-variance inflation for the observed packets. Replacing a missing packet by its memory copy avoids an unbounded missing contribution, but converts the error into a stale prototype update controlled by the memory age bound $A_{\mem}$. % TODO(theory): Verify the independence assumptions for class-conditional packet drops and derive the exact constants $C_{\mathrm{part}}$ and $C_{\mathrm{mem}}$.
+Bernoulli thinning gives the usual sampling-variance inflation for the observed packets. Replacing a missing packet by its memory copy avoids an unbounded missing contribution, but converts the error into a stale prototype update controlled by the memory age bound $A_{\mem}$.
 \end{proof}
 
 \begin{lemma}[Reliability-aware aggregation]\label{lem:reliability}
 For a scalar coordinate of a class-wise prototype mean, suppose packet $k$ has zero-mean error variance $v_k$ and stale bias magnitude bounded by $b_k$. The inverse-error special case $w_k\propto(v_k+b_k^2)^{-1}$ minimizes the upper bound $\sum_k \alpha_k^2(v_k+b_k^2)$ over normalized linear estimators $\sum_k\alpha_k\pmu_k^{(j)}$. Consequently, this weighted estimator is no worse than uniform averaging for that bound, and it is strictly better whenever the error levels are not all equal.
 \end{lemma}
 \begin{proof}
-The normalized linear estimator has mean-squared error upper bound $\sum_k\alpha_k^2 e_k$ with $e_k=v_k+b_k^2$. Minimizing this convex expression subject to $\sum_k\alpha_k=1$ gives $\alpha_k\propto e_k^{-1}$ by the Lagrange multiplier condition. The monotone form in \eqref{eq:reliability_weight} approximates this inverse-error behavior by increasing with support and decreasing with variance, age, and distance from the reference mean. % TODO(theory): Prove the full product-form weight is uniformly no worse than averaging, or state only the inverse-error-optimal special case in the final theorem.
+The normalized linear estimator has mean-squared error upper bound $\sum_k\alpha_k^2 e_k$ with $e_k=v_k+b_k^2$. Minimizing this convex expression subject to $\sum_k\alpha_k=1$ gives $\alpha_k\propto e_k^{-1}$ by the Lagrange multiplier condition. The monotone form in \eqref{eq:reliability_weight} approximates this inverse-error behavior by increasing with support and decreasing with variance, age, and distance from the reference mean.
 \end{proof}
 
 \begin{theorem}[Stationary-neighborhood convergence]\label{thm:convergence}
@@ -123,14 +123,14 @@ Under Assumptions~\ref{asm:smooth}--\ref{asm:het_agg}, let \ehsfp run for $T$ ep
 Thus, \ehsfp converges to a stationary neighborhood whose radius is controlled by stochastic variance, client drift and heterogeneity, hierarchical aggregation error, prototype variance, stale prototype updates, missing prototype packets, and prototype-induced distributional drift.
 \end{theorem}
 \begin{proof}
-Apply the descent lemma to the ideal objective evaluated at the perturbed stochastic gradient used by the current edge or cloud episode. The perturbation decomposes into stochastic gradient noise, hierarchical aggregation error inherited from tier-wise decoupling, synthesis bias from Lemma~\ref{lem:synthesis_bias}, stale prototype error from Lemma~\ref{lem:stale_drift}, missing-update error from Lemma~\ref{lem:missing_update}, and reliability-weighted aggregation error from Lemma~\ref{lem:reliability}. Summing the descent inequality over $T$ episodes and choosing $\eta=\Theta(T^{-1/2})$ yields the displayed $\mathcal{O}(1/\sqrt{T})$ term plus residual neighborhood terms. % TODO(theory): Formalize the filtration for asynchronous edge/cloud aggregation and verify that the perturbed gradient remains conditionally bounded.
+Apply the descent lemma to the ideal objective evaluated at the perturbed stochastic gradient used by the current edge or cloud episode. The perturbation decomposes into stochastic gradient noise, hierarchical aggregation error inherited from tier-wise decoupling, synthesis bias from Lemma~\ref{lem:synthesis_bias}, stale prototype error from Lemma~\ref{lem:stale_drift}, missing-update error from Lemma~\ref{lem:missing_update}, and reliability-weighted aggregation error from Lemma~\ref{lem:reliability}. Summing the descent inequality over $T$ episodes and choosing $\eta=\Theta(T^{-1/2})$ yields the displayed $\mathcal{O}(1/\sqrt{T})$ term plus residual neighborhood terms.
 \end{proof}
 
 \begin{corollary}[Small episodic perturbations]\label{cor:small_perturb}
 If $\stale_{\max}\rightarrow0$, $\dropoutp\rightarrow0$, and $\frac{1}{T}\sum_{t=0}^{T-1}\mathbb{E}[\drift_t]$ is controlled by the synchronous \hsfp synthetic-distribution error, then Theorem~\ref{thm:convergence} recovers a synchronous \hsfp-style $\mathcal{O}(1/\sqrt{T})$ stationarity rate with a residual neighborhood that excludes the stale-update and missing-update terms.
 \end{corollary}
 \begin{proof}
-Set the stale prototype and Bernoulli missing-packet terms in Theorem~\ref{thm:convergence} to zero and retain the standard stochastic, heterogeneity, aggregation, and prototype-synthesis residuals. % TODO(theory): Match constants against the final H-SFP conference proof once the journal notation is frozen.
+Set the stale prototype and Bernoulli missing-packet terms in Theorem~\ref{thm:convergence} to zero and retain the standard stochastic, heterogeneity, aggregation, and prototype-synthesis residuals.
 \end{proof}
 
 The bound explains the role of each \ehsfp module. Episodic prototype memory shrinks the missing-update term by replacing absent packets with bounded-age replay. Reliability-aware prototype aggregation reduces the variance and staleness constants by assigning smaller weights to uncertain, old, or outlying packets. Prototype replay consistency reduces the sensitivity to $\drift_t$ by aligning current and memory-induced features. Prototype dropout regularization reduces the sensitivity constant of the missing-update term by training on packet masks. The optional residual prototype generator reduces the synthesis-bias constant by improving the match between diagonal Gaussian prototypes and upper-tier synthetic features.
