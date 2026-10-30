@@ -16,8 +16,3 @@ m(v+\mu^2)&=a v_a+b v_b+a(\mu_a-\mu)^2\\
 \end{align*}
 The vector result follows coordinate-wise. Floating-point serialization can perturb this algebra, which is why empirical audits compare both pre-wire float64 and received values.
 
-\subsection{Result records and validation}
-The canonical scalar record contains method, dataset, partition, seed, round/checkpoint, extraction mode, budgets, metric, value, unit, and source-run id. Component summaries and visualization features have separate schemas. The generator rejects duplicate scalar keys, mixed units, incomparable configuration hashes within an aggregate, and seeds outside the manifest. Missing values remain missing; failed runs are not silently dropped. With one completed seed, a mean may be shown but SD stays unavailable and completion is reported as $1/3$.
-
-\section{Additional Empirical Templates}\label{app:templates}
-\Cref{fig:empirical,fig:diagnostics} are regenerated from validated run records only (\texttt{Sources/scripts/campaign/collect\_misfp.py}); each series states its number of completed seeds $n$, and a panel without any completed run is rendered as results pending. The exact required records are enumerated in \texttt{RESULTS\_TO\_FILL.md}.
