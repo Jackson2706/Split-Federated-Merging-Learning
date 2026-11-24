@@ -1,0 +1,115 @@
+\section{Analysis}
+\label{sec:analysis}
+
+We analyze moment preservation, the distributional change caused by an individual merge, packet and computational costs, and the sensitivity of a fixed predictor to feature-distribution approximation.
+
+\begin{proposition}[Exact pooled diagonal moments]
+\label{prop:moments}
+Let $a,b\geq0$ with $m=a+b>0$, and let the components have finite means and finite, nonnegative population diagonal variances. In exact arithmetic, the merge defined by \cref{eq:poolmean,eq:poolvar} preserves total mass, the first moment, and coordinate-wise second moments. Consequently, any finite sequence of same-class merges preserves the class mass, mean, and coordinate-wise second moments of the unmerged mixture.
+\end{proposition}
+
+\begin{proof}
+The merged mass is $m=a+b$, and $m\bm\mu=a\bm\mu_a+b\bm\mu_b$. For coordinate $j$, substituting \cref{eq:poolvar} and using $m\mu_j=a\mu_{a,j}+b\mu_{b,j}$ gives
+$
+m(v_j+\mu_j^2)
+=
+a(v_{a,j}+\mu_{a,j}^2)
++
+b(v_{b,j}+\mu_{b,j}^2).
+$
+Each merge therefore preserves the unnormalized first and coordinate-wise second moments. Repeated application establishes the class-level result.
+\end{proof}
+
+These identities concern the represented mixture with unfloored variances in exact arithmetic. They do not imply preservation of its density, modes, or full covariance. Rounding, serialization, and sampling floors introduce additional discrepancies. The next proposition relates the merge score to a local transport bound before those operations.
+
+\begin{proposition}[Per-merge transport bound]
+\label{prop:merge_transport}
+Let $Q_c^-$ and $Q_c^+$ be the normalized class mixtures immediately before and after merging two diagonal Gaussian components $G_a$ and $G_b$ into their moment-pooled component $G_m$. Let $N_c>0$ be the total class support mass and let $a,b>0$ be the merged masses. With unfloored variances and exact arithmetic,
+\begin{equation}
+\label{eq:merge_transport}
+\begin{aligned}
+W_2^2(Q_c^-,Q_c^+)
+&\leq
+\frac{a}{N_c}W_2^2(G_a,G_m)+
+\frac{b}{N_c}W_2^2(G_b,G_m)\\
+&\leq
+\frac{2\Delta(a,b)}{N_c}.
+\end{aligned}
+\end{equation}
+\end{proposition}
+
+\begin{proof}
+Couple unchanged components identically and couple each merged input component to $G_m$ using a Gaussian optimal coupling. This gives the first inequality. For the second, set $m=a+b$, $\alpha=a/m$, $\beta=b/m$, and $\sigma_{a,j}=\sqrt{v_{a,j}}$, with analogous notation for $b$ and $m$. Define $\bar\sigma_j=\alpha\sigma_{a,j}+\beta\sigma_{b,j}$ and
+$
+D_j=\alpha\beta\left[
+(\mu_{a,j}-\mu_{b,j})^2+
+(\sigma_{a,j}-\sigma_{b,j})^2
+\right].
+$
+Moment pooling gives $\sigma_{m,j}^2=\bar\sigma_j^2+D_j$. The weighted Gaussian transport cost in coordinate $j$ is therefore
+$
+D_j+
+\left(\sqrt{\bar\sigma_j^2+D_j}-\bar\sigma_j\right)^2
+\leq 2D_j,
+$
+because $\bar\sigma_j,D_j\geq0$. Summing over coordinates and using $m\sum_jD_j=\Delta(a,b)$ proves the result.
+\end{proof}
+
+Within a fixed class, minimizing $\Delta$ also minimizes this upper bound. The result supplies a local rationale for the pair score; it does not make $\Delta$ the exact mixture distance or establish optimal allocation across classes. Subsequent merges change the available pairs, so greedy minimization does not guarantee a globally optimal merge sequence.
+
+\subsection{Packet and Computational Cost}
+
+Consider a packet with feature dimension $d$, precision $p\in\{2,4\}$ bytes per moment entry, $C$ represented classes, and $R=\sum_cR_c$ components. Each class record contains a 32-bit class identifier and a 32-bit component count. Each component record contains a 32-bit identifier, a float32 mass, and two length-$d$ vectors for its mean and variance. The numeric body occupies
+\begin{equation}
+\label{eq:bytes}
+S_{\mathrm{body}}
+=
+8C+R(8+2pd)
+\quad\text{bytes}.
+\end{equation}
+A four-byte magic value, a four-byte header-length field, and a JSON header of measured byte length $H$ give the complete size $S=8+H+S_{\mathrm{body}}$. Removing one component saves $8+2pd$ body bytes; any header change must also be included when computing the actual reduction. Budget feasibility is determined from the complete serialized packet. Cumulative communication sums transmitted packet lengths and model-synchronization traffic.
+
+For a class with $n_c$ valid features, let $n_{\mathrm{fit},c}\leq n_c$ denote the number used to fit centers. With $K_c$ clusters, $I$ Lloyd iterations, and $q$ initializations, center fitting costs $\mathcal O(qI n_{\mathrm{fit},c}K_cd)$. Full-data reassignment costs $\mathcal O(n_cK_cd)$, followed by $\mathcal O(n_cd)$ moment accumulation. Adaptive selection sums fitting and validation costs over its feasible candidates before the final refit; validation scoring costs $\mathcal O(|\mathcal V_c|K_cd)$ per candidate. The current implementation stores class features using $\mathcal O(n_cd)$ memory, while component parameters require $\mathcal O(K_cd)$.
+
+Naively recomputing all admissible pair scores after every merge incurs $\mathcal O(dR^3)$ pair-score work in the worst case. Given sampled component indices, generating $M_c$ Gaussian feature vectors costs $\mathcal O(M_cd)$. Boundary re-estimation additionally requires forward evaluations of $h$: a fixed sample count per retained component in \emph{propagate} mode, or per-class sampling followed by output-space clustering in \emph{refit} mode. Feature extraction, model optimization, and parameter synchronization contribute separate costs. These expressions describe scaling and do not replace isolated runtime measurements.
+
+\subsection{Conditional Loss Discrepancy}
+
+We consider a pointwise predictive loss, such as cloud cross entropy, with all model parameters held fixed.
+
+\begin{assumption}
+\label{ass:lip}
+For fixed parameters $\theta$ and class $c$, $\ell_\theta(\cdot,c)$ is $L_c$-Lipschitz with respect to Euclidean distance in the feature space under consideration. The distributions $P_c$ and $Q_c$ have finite first moments.
+\end{assumption}
+
+Under Assumption~\ref{ass:lip},
+\begin{equation}
+\label{eq:lossbound}
+\left|
+\E_{z\sim P_c}\ell_\theta(z,c)
+-
+\E_{z\sim Q_c}\ell_\theta(z,c)
+\right|
+\leq
+L_c\Wone(P_c,Q_c).
+\end{equation}
+For any coupling of $P_c$ and $Q_c$, the Lipschitz property bounds the loss difference by $L_c\E\|z-z'\|_2$. Taking the infimum over couplings gives \cref{eq:lossbound}.
+
+The assumption includes any normalization within the predictor. For the stabilized normalized linear cloud head in \cref{sec:method}, an admissible cross-entropy Lipschitz constant is $\sqrt{2}\|W_g\|_2/\epsilon_n$, where $W_g$ is the classifier weight matrix and $\|\cdot\|_2$ denotes its spectral norm. This follows from the $1/\epsilon_n$ Lipschitz constant of \eqref{eq:normalization} and the $\sqrt{2}$ bound on the cross-entropy gradient with respect to logits. The resulting constant can be loose.
+
+For a common class prior $\rho_c\geq0$ with $\sum_c\rho_c=1$, the class-weighted loss discrepancy is bounded by $\sum_c\rho_cL_c\Wone(P_c,Q_c)$. A difference between synthetic training and test priors requires separate treatment. For the ideal pre- and post-merge mixtures in Proposition~\ref{prop:merge_transport}, the inequality $W_1\leq W_2$ additionally bounds the class-conditional loss change by $L_c\sqrt{2\Delta(a,b)/N_c}$. This local statement excludes subsequent quantization and sampling floors.
+
+To connect the split boundaries, fix an edge map $h$ with Lipschitz constant $L_h$. Let $P_c^{ce}$ denote its target input distribution and define $P_c^{ec}=h_\#P_c^{ce}$, where $h_\#$ denotes pushforward through $h$. Conditioned on the estimated and decoded packet parameters, let $Q_c^{ce}$ and $Q_c^{ec}$ denote the actual synthetic-feature sampling distributions, including serialization effects and variance floors. The triangle inequality and Lipschitz propagation give
+\begin{equation}
+\label{eq:boundarybound}
+\begin{aligned}
+\Wone(P_c^{ec},Q_c^{ec})
+&\leq
+L_h\Wone(P_c^{ce},Q_c^{ce})\\
+&\quad+
+\Wone(h_\#Q_c^{ce},Q_c^{ec}).
+\end{aligned}
+\end{equation}
+The first term propagates input approximation through the fixed edge map. The second captures discrepancy introduced by output re-estimation, compression, quantization, and output sampling floors. Each distance compares distributions within one feature space. Finite synthetic datasets subsequently drawn from these distributions introduce an additional empirical sampling discrepancy.
+
+For a fixed predictor on $\mathcal Z_{ec}$, combining \cref{eq:lossbound,eq:boundarybound} bounds its class-conditional loss discrepancy by $L_c$ times the right-hand side of \cref{eq:boundarybound}. These statements require compatible feature coordinates and do not establish that the approximation errors are small, prove optimization convergence, or guarantee improvement with increasing component count. The batch-dependent contrastive objective and mask-level IoU and Dice require separate analysis or empirical evaluation.

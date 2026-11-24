@@ -1,0 +1,44 @@
+\section{Related Work}
+\label{sec:related}
+\begin{table*}[t]
+\caption{Comparison of representative prototype and feature-distribution transfer methods. The representation column summarizes information used for transfer; additional model-parameter exchange may occur.}
+\label{tab:extension}
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}p{2.05cm}XXp{2.55cm}@{}}
+\toprule
+Method & Class or feature representation & Main role in training & Organization\\
+\midrule
+FedProto~\cite{tan2022fedproto} & Class-mean prototypes & Regularization of local representations & Client--server\\
+FedGen~\cite{zhu2021data} & Learned class-conditional feature generator & Synthetic features guide local training & Client--server\\
+CCVR~\cite{luo2021ccvr} & Gaussian feature-distribution estimates & Virtual features recalibrate the classifier after federated training & Client--server; post-training calibration\\
+FedImpro~\cite{tang2024fedimpro} & Shared Gaussian feature statistics & Reconstructed features augment high-level local training & Iterative client--server\\
+FedPFT~\cite{beitollahi2025fedpft} & Parametric feature distributions, including Gaussian mixtures & Synthetic-feature classifier training with frozen feature extractors & One-shot federation\\
+FedGMKD~\cite{zhang2024fedgmkd} & Mixture-derived prototype features and soft predictions & Knowledge alignment and discrepancy-aware aggregation & Iterative client--server\\
+H-SFP~\cite{tran2026h} & Class means and diagonal standard deviations; one Gaussian per class & Synthetic inputs train successive upper-tier segments & Client--edge--cloud\\
+MiSFP & Support-weighted mixtures of diagonal Gaussians & Mixture synthesis, output-space re-estimation, and moment-preserving compression & Client--edge--cloud; optional boundary byte budgets\\
+\bottomrule
+\end{tabularx}
+\end{table*}
+\subsection{Federated and Hierarchical Split Learning}
+
+FedAvg combines local optimization with weighted parameter aggregation~\cite{pmlr-v54-mcmahan17a}. FedProx, FedNova, and SCAFFOLD address heterogeneous local training through proximal regularization, update normalization, and control variates, respectively~\cite{li2020federated,10.5555/3495724.3496362,pmlr-v119-karimireddy20a}. Device capacity and communication remain important constraints~\cite{MAL-083,9084352}. HeteroFL and selective-kernel approaches accommodate weaker clients by adapting the computation assigned to them~\cite{diao2021heterofl,niu2023overcoming}.
+
+HierFL organizes aggregation across clients, edges, and the cloud~\cite{9148862,9488756,rana2022hierarchical}. SL partitions network computation between devices and servers~\cite{GUPTA20181,vepakomma2019split}; SplitFed and hierarchical split-learning methods combine partitioned execution with federated synchronization~\cite{thapa2022splitfed,quan2023hiersfl,10980018}. Conventional split execution exchanges activations and corresponding gradients, with communication-efficient variants reducing their payload and storage costs~\cite{11091500,zhang2025amperecommunicationefficienthighaccuracysplit}. H-SFP instead communicates class means and diagonal standard deviations to synthesize training inputs for successive segments, keeping gradients within each tier~\cite{tran2026h}. MiSFP examines how multiple components can be retained and compressed within this form of statistical interface.
+
+\subsection{Prototype and Feature-Distribution Transfer}
+
+FedProto exchanges class-mean prototypes to regularize local representations~\cite{tan2022fedproto}, while subsequent methods refine prototype alignment and personalization under non-IID data~\cite{10660707,bensiah2025feddpa}. Representation-sharing methods distinguish common features from personalized prediction components~\cite{collins2021exploiting}. Knowledge-transfer approaches provide complementary signals: FedDF uses ensemble distillation~\cite{lin2020ensemble}, FedGen learns a class-conditional feature generator~\cite{zhu2021data}, and MOON uses model-level contrastive learning~\cite{9578660}. Contrastive and supervised contrastive objectives provide broader foundations for representation learning~\cite{chen2020simple,khosla2020supervised}.
+
+Several methods directly reconstruct feature distributions. CCVR recalibrates a federated classifier after training using virtual representations sampled from estimated Gaussian models~\cite{luo2021ccvr}. FedImpro separates low-level and high-level model components and uses shared, reconstructed feature distributions to augment high-level local training~\cite{tang2024fedimpro}. These establish that synthetic features derived from communicated statistics can support both classifier calibration and ongoing FL training.
+
+Mixture-based transfer provides a particularly close comparison. FedPFT fits parametric distributions, including Gaussian mixtures, to frozen foundation-model embeddings and transfers their parameters for one-shot synthetic-feature classifier training~\cite{beitollahi2025fedpft}. FedGMKD uses mixture-derived prototype features and soft predictions for knowledge alignment and discrepancy-aware aggregation~\cite{zhang2024fedgmkd}. MiSFP studies repeated distribution transfer through spatially distributed client, edge, and cloud segments, where the intermediate nonlinear transformation requires output-space re-estimation.
+
+\subsection{Mixture Representation and Compression}
+
+Gaussian mixtures are an established representation for distributions with multiple components~\cite{mclachlan2000finite}. Pairwise moment-matching reduction replaces components with fewer Gaussian summaries; KL-based reduction uses an upper bound to guide pair selection~\cite{runnalls2007kl}. Moment pooling and greedy component reduction therefore have substantial prior foundations.
+
+Optimal transport provides tools for comparing probability distributions and Gaussian components~\cite{villani2009optimal}. Wasserstein-type mixture distances also use restricted couplings to obtain tractable transport formulations between Gaussian mixtures~\cite{delon2020wasserstein}. A distance between individual components, a transport bound, and the exact distance between complete mixtures are distinct quantities. MiSFP uses a support-weighted diagonal-Gaussian pair score and analyzes its local effect without claiming globally optimal mixture reduction.
+
+MiSFP coordinates mixture construction, support weighting, nonlinear-boundary re-estimation, and class-preserving compression across two split boundaries. Locally updated encoders make coordinate compatibility relevant, while component caps and optional serialized-byte budgets constrain retention. Its contribution concerns this repeated statistical interface for synthetic upper-tier training. \Cref{tab:extension} summarizes the distinctions.

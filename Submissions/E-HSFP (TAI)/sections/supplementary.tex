@@ -1,0 +1,460 @@
+\section{Supplementary Implementation Details}
+\label{supp:implementation}
+
+These details specify the reference implementation described in the main paper. Numerical defaults are distinct from retained experimental settings. Historical run-specific overrides and software-environment records were not retained, so the defaults do not establish the configuration of every reported run.
+
+\subsection{Record Banks and Moment Retrieval}
+
+One shared bank stores client-output summaries and another stores edge-output summaries. Each record contains a class label, feature mean, coordinate-wise standard deviation, support count, source identifier, generation round, age, and retrieval score. Incoming summaries are inserted before replay. Delayed arrivals preserve their generation round and arrival age.
+
+Global capacity enforcement favors lower-age records. An optional per-class cap removes a highest-age record within that class. Aging and retention-based expiry occur at round end, after upper-tier phases, rather than as a pre-use expiry check on every delayed arrival. The reference settings are 500 records per bank, a 20-round retention limit, and no additional per-class cap.
+
+Replay retrieves up to $K_{\mathrm{mem}}=5$ records per class by stored score. Normalized scores weight the feature means and diagonal variances using the law of total variance, with a $10^{-8}$ variance guard. Uniform weights are used when the score sum is too small. Insertion sets retrieval scores to one, and reliability-network predictions do not overwrite these scores in the executed path. Ties therefore follow the retained ordering, and retrieved records can include arrivals from the current round. The configurable current-moment coefficient has reference default $\alpha=0.3$. A class present only in a current or memory summary uses the available side.
+
+The optional classification accumulator stores decayed effective counts, first and second moments, and available within-class scatter at each edge. It reconstructs one effective source, removing relative source-weighting choices at that edge. An invoked accumulator can reuse retained statistics. Its historical contributions have no hard expiry, so record-bank retention does not establish a finite-age bound on every synthesis contribution.
+
+\subsection{Reliability Features and Bootstrap Training}
+
+For each class, the arithmetic mean of current transformed source means defines the center used by the distance feature, including the first phase. The six inputs are normalized log support, standard-deviation norm, age, distance to that center, a constant one, and a duplicate normalized log-support coordinate. Missing support counts are represented by zero.
+
+For source support $n$ and class maximum support $n_{\max}$, normalization uses
+\begin{equation}
+ \frac{\log(1+n)}
+ {\log(1+\max\{1,n_{\max}\})}.
+\label{eq:supp_support_normalization}
+\end{equation}
+Spread and center-distance features are divided by their class maxima guarded below by $10^{-8}$. Age is divided by a class maximum guarded below by one. The network has widths $6$--$32$--$32$--$1$, ReLU hidden layers, a sigmoid output, and default linear-layer initialization.
+
+After bank maintenance, each client-memory class with at least two records supplies a bootstrap step. For positive support $n$, raw spread norm $s$, and age $a$, the target is
+\begin{equation}
+ y_{\mathrm{rel}}
+ =\frac{\min(n/100,1)+(1+s)^{-1}+(1+a)^{-1}}{3}.
+\label{eq:supp_reliability_target}
+\end{equation}
+The support contribution is replaced by $0.5$ when $n\le0$. Each step minimizes mean squared error over that class's records using Adam with learning rate $10^{-3}$ and weight decay $10^{-4}$. The resulting shared network supplies source scores at both upper tiers. These heuristic targets do not establish optimality of learned source weights.
+
+Sample-count aggregation uses the same total-variance construction as learned aggregation, with normalized counts and a uniform fallback when all counts are zero. The legacy uniform rule averages means and coordinate-wise variances without the between-source mean term. Comparisons involving that rule therefore change variance construction as well as source weights.
+
+\subsection{Covariance Estimation and Factorization}
+
+For sources reporting within-class scatter $S_\ell$, let $N_\ell$ count the samples used and $C_\ell$ their represented classes. The pooled degrees of freedom and covariance estimate are
+\begin{equation}
+ \nu=\sum_\ell(N_\ell-C_\ell),\qquad
+ \Sigma_0=\frac{\sum_\ell S_\ell}{\nu},
+ \quad \nu>1.
+\label{eq:supp_pooled_covariance}
+\end{equation}
+An instantaneous pool with $\nu<2d$ is shrunk toward its diagonal with coefficient $1-\nu/(2d)$. For $\nu\ge2d$, this shrinkage is not applied. The accumulated-scatter path instead uses its retained scatter-to-degrees-of-freedom ratio without the instantaneous shrinkage rule.
+
+For a supplied covariance estimate $\Sigma$, factorization attempts use
+\begin{equation}
+ \Sigma+\epsilon_{\mathrm{chol}}s_\Sigma I_d,
+ \qquad
+ s_\Sigma=\max\{\operatorname{tr}(\Sigma)/d,10^{-8}\}.
+\label{eq:supp_cholesky_jitter}
+\end{equation}
+The initial coefficient is $\epsilon_{\mathrm{chol}}=10^{-4}$, followed by retries at $10^{-3}$, $10^{-2}$, and $10^{-1}$. The first successful Cholesky factor $L$ determines the sampler's covariance $LL^\top$, shared across classes in the pool. Missing covariance, incompatible dimensions, or failed factorization triggers diagonal fallback. The covariance estimate is refreshed before each pool is drawn.
+
+Full covariance replaces the main classification pool's diagonal sampling covariance. Coordinate-wise deviations still enter metadata and the independent PRC construction. Segmentation retains diagonal synthesis. Finite-pool sampling and subsequent view augmentation remain separate from the conditional Gaussian population law.
+
+\subsection{Base-Loss Reductions and Transformations}
+
+Classification clients and edges use supervised contrastive training~\cite{khosla2020supervised}. A batch of $B$ examples yields $2B$ views through independent transformations. Let $u_i$ be a pooled, $\ell_2$-normalized output. Labels repeat across the two views, $P(i)$ contains other views with the anchor's class, and $\mathcal I_+=\{i:|P(i)|>0\}$. Ignoring numerical guards,
+\begin{equation}
+\begin{split}
+ q_{ia}
+ &=\frac{\exp(u_i^\top u_a/T_{\mathrm{temp}})}
+ {\sum_{b\ne i}\exp(u_i^\top u_b/T_{\mathrm{temp}})},
+ \qquad a\ne i,\\
+ \ell_i
+ &=-\frac{1}{|P(i)|}\sum_{p\in P(i)}\log q_{ip},\\
+ \mathcal L_{\mathrm{SupCon}}
+ &=\frac{1}{|\mathcal I_+|}\sum_{i\in\mathcal I_+}\ell_i.
+\end{split}
+\label{eq:base_supcon}
+\end{equation}
+Every non-anchor view enters the denominator. The implementation subtracts each row's maximum and uses $10^{-8}$ guards. Spatial feature maps use crop, flip, and blur transformations; pooled edge features use additive noise and feature dropout. A client-local supervised auxiliary is configurable.
+
+\subsection{Supervised-Contrastive Gradient Sensitivity}
+\label{supp:supcon_sensitivity}
+
+The following argument gives a sufficient condition for the batch-size scaling used after Assumption~\ref{asm:drift}; it is not a replacement for that assumption. Let $b=2B$ be the number of independently transformed views in a batch and let $T_{\mathrm{temp}}\ge T_0>0$ be fixed independently of $b$. Assume that (i) every anchor has a positive view, (ii) the normalized embedding maps and their first two derivatives with respect to both parameters and input features are uniformly bounded, including a lower bound away from zero before normalization, and (iii) the batch computation outside the contrastive loss does not couple different views. The coupling used for the distribution comparison draws the per-view inputs independently conditional on their labels.
+
+Because $u_i^\top u_a\in[-1,1]$, the softmax weights in~\eqref{eq:base_supcon} obey
+\begin{equation}
+ q_{ia}\le \frac{\exp(2/T_0)}{b-1}=O(b^{-1}).
+ \label{eq:supp_supcon_weight_bound}
+\end{equation}
+Fix a view $j$. In the derivative of the batch-averaged parameter gradient with respect to the input of view $j$, its own anchor term is multiplied by the outer factor $1/b$. Its appearances as a positive have total positive-pair weight at most one before that outer average, because each anchor averages its positives. Its appearances in denominators have total weight $O(1)$ before the outer average: there are $O(b)$ anchors and each corresponding $q_{ij}$ is $O(1/b)$ by~\eqref{eq:supp_supcon_weight_bound}. The assumed derivative bounds therefore give a constant $C$, independent of $b$, such that every input block satisfies
+\begin{equation}
+ \left\|\frac{\partial}{\partial z_j}
+ \nabla_\theta\mathcal L_{\mathrm{SupCon}}\right\|_{\mathrm{op}}
+ \le \frac{C}{b}.
+ \label{eq:supp_supcon_block_bound}
+\end{equation}
+For two coupled batches $z,z'$, the mean-value theorem and Cauchy--Schwarz then yield
+\begin{equation}
+ \|\nabla_\theta\mathcal L(z)-\nabla_\theta\mathcal L(z')\|_2
+ \le \frac{C}{b}\sum_{j=1}^{b}\|z_j-z'_j\|_2
+ \le \frac{C}{\sqrt b}\|z-z'\|_2.
+ \label{eq:supp_supcon_joint_bound}
+\end{equation}
+Thus $K_b=O(b^{-1/2})$ in the joint-feature norm under these conditions. Batch normalization, attention across views, a temperature approaching zero, unbounded normalization derivatives, or other batch-dependent network operations need not satisfy the block bound; those cases remain covered only when the explicit distribution-sensitive-gradient assumption can be justified independently.
+
+For cloud logits $h_g(z_i)$ in a classification batch,
+\begin{equation}
+ \mathcal L_{\mathrm{CE}}
+ =-\frac1B\sum_{i=1}^{B}
+ \log[\operatorname{softmax}(h_g(z_i))]_{y_i}.
+\label{eq:base_ce}
+\end{equation}
+ISIC-2018 additionally trains a supervised cloud decoder from image-specific features produced by frozen upstream components and target masks using a Dice--focal loss. That stage entails sample-specific feature and mask transfers.
+
+\subsection{PRC Dictionaries, Sampling, and Interpretation}
+
+The input-side PRC dictionary uses the legacy uniform mean/RMS-deviation rule on source outputs that have already undergone moment replay. Edge PRC uses cluster inputs before local masking and optional accumulation; cloud PRC uses edge outputs remaining after its mask. Memory-side summaries use all records in the corresponding bank, aggregated by stored-score moments. The dictionaries can therefore contain overlapping information.
+
+Let $\mathcal C$ be the shared classes and $C=|\mathcal C|>0$. The number of independent diagonal-Gaussian pairs per class is
+\begin{equation}
+ s=\min\{s_{\mathrm{req}},\max(1,\lfloor128/C\rfloor)\}.
+\label{eq:supp_prc_draw_count}
+\end{equation}
+This construction remains diagonal when the main pool uses full covariance. The term is zero without shared classes. Both forwards contribute gradients to the local model, with detached statistics. The edge uses pooled representations and the classification cloud uses logits. Dictionaries remain fixed within a phase, while draws are refreshed at enabled optimizer steps. Reference defaults are $s_{\mathrm{req}}=16$ and $\lambda_{\mathrm{prc}}=0.1$ at both upper tiers.
+
+Let $d_h$ be the output dimension and $\mathcal L_{\mathrm{PRC}}$ the normalized mean squared output difference defined in the main paper. For a fixed deterministic output map $h$, let $m_{\mathrm c}^{(j)},m_{\mathrm m}^{(j)}$ and $V_{\mathrm c}^{(j)},V_{\mathrm m}^{(j)}$ be the output means and covariances under the corresponding independent draws. Then
+\begin{equation}
+\begin{split}
+ \mathbb E\mathcal L_{\mathrm{PRC}}
+ =\frac{1}{Cd_h}\sum_{j\in\mathcal C}
+ \bigl(&\|m_{\mathrm c}^{(j)}-m_{\mathrm m}^{(j)}\|_2^2\\
+ &+\operatorname{tr}V_{\mathrm c}^{(j)}
+ +\operatorname{tr}V_{\mathrm m}^{(j)}\bigr).
+\end{split}
+\label{eq:supp_prc_decomp}
+\end{equation}
+This follows by expanding the squared difference and using independence to factor the cross term. The identity includes output-variance penalties as well as differences between output means; its interpretation is conditional on the stated fixed-map model.
+
+\subsection{Source Masking and Local Update Budgets}
+
+For $K_{\mathrm s}>1$ source-output keys, initial keep indicators are independent Bernoulli draws with success probability $1-\dropoutp_{\mathrm{train}}$. A uniformly chosen key is restored if all are removed. A single key is retained deterministically, while an empty collection remains empty. For a final indicator $R_\ell$ and $K_{\mathrm s}\ge1$,
+\begin{equation}
+\begin{split}
+ \Pr(R_\ell=1\mid K_{\mathrm s})
+ &=1-\dropoutp_{\mathrm{train}}
+ +\frac{\dropoutp_{\mathrm{train}}^{K_{\mathrm s}}}{K_{\mathrm s}},\\
+ \sum_{\ell=1}^{K_{\mathrm s}}R_\ell&\ge1.
+\end{split}
+\label{eq:drop_loss}
+\end{equation}
+For $K_{\mathrm s}>1$, final keep indicators are generally dependent. Retaining a key guarantees neither class coverage nor a valid minibatch. Because masking follows record insertion and replay, a removed output may already have contributed to memory. The executed loops contain no paired KL masking loss.
+
+A phase draws a labeled pool with $n_{\mathrm{syn}}$ examples per active class and reuses it over $E$ shuffled local epochs. Classification loaders discard incomplete final batches, giving nominal budget $E\lfloor Jn_{\mathrm{syn}}/B\rfloor$ updates before execution truncation. Pool sizes and budgets can differ by tier. An empty loader performs no optimizer update; a nonempty edge pool can still yield output statistics. Edge-output extraction can use a separate configured draw without adding optimizer updates.
+
+At round end, banks are aged and expired, then the shared reliability network receives bootstrap updates. Model, optimizer, synthesis, bank, and optional accumulator state persist across rounds. Model synchronization is scheduled separately from prototype processing.
+
+\subsection{Accounting Conventions}
+
+The basic mean/std/count payload has $2d+1$ scalar entries per represented class. Full shared covariance adds source-level within-class scatter. A float32 upper-triangle encoding uses $4d(d+1)/2$ bytes, while a dense matrix uses $4d^2$ bytes. The scatter counter uses the upper-triangle count; this accounting convention is not a measurement of the transmitted serialization.
+
+Dense covariance factors use $O(d^2)$ storage; a full-covariance feature draw costs $O(d^2)$ and factorization costs $O(d^3)$. A bank containing $R$ records uses $O(Rd)$ storage. Metadata, model synchronization, and segmentation feature/mask transfers incur additional traffic. Tensor-size accounting does not measure serialized network traffic, factorization runtime, peak memory, or deployment overhead.
+
+
+
+\section{Supplementary Analysis}
+\label{supp:analysis}
+
+This section supplies the detailed stationarity proof, the auxiliary age conditions, and the scalar aggregation benchmark. All statements concern the stated SGD-type update model. They do not establish the analytical assumptions from the reported task metrics or extend the result to Adam.
+
+\subsection{Conditional Objectives and Update Model}
+
+Consider valid updates $\theta_{u+1}=\theta_u-\eta g_u$ of one upper-tier learner, for $u=0,\ldots,T-1$. Population minibatches are constructed from class-wise laws $Q$, using the episode's active classes $\mathcal J_u$, normalized nonnegative class weights $\pi_u^{(j)}$, and common sampling and augmentation rules. The batch objective accommodates supervised contrastive losses as well as pointwise task losses. Let $F_u$ and $F_{*,u}$ denote the actual and fresh-reference base objectives, respectively, and let
+\begin{equation}
+ \drift_u=\sum_{j\in\mathcal J_u}\pi_u^{(j)}
+ W_2^2(Q_u^{(j)},Q_{*,u}^{(j)}).
+\end{equation}
+This is exact conditional distributional drift, using the covariance of the sampler, rather than an aggregate mean/std proxy.
+
+The filtration $\mathcal F_u$ includes current parameters, episode inputs, the generated pool, reference statistics, and the history preceding the current stochastic draw. The conditional model is
+\begin{equation}
+ g_u=\nabla F_u(\theta_u)+b_u^{\mathrm{sys}}
+ +b_u^{\mathrm{reg}}+\xi_u,
+\end{equation}
+where the biases are $\mathcal F_u$-measurable,
+$\mathbb E[\xi_u\mid\mathcal F_u]=0$, and
+$\mathbb E[\|\xi_u\|_2^2\mid\mathcal F_u]\le\sigma_g^2$.
+The regularizer term is its conditional mean contribution. Any other conditional mean error, including finite-pool reuse or shuffled-sampling bias relative to the population objective, belongs to $b_u^{\mathrm{sys}}$. Remaining noise includes randomness in minibatch and regularizer sampling.
+
+The additional-error condition is
+\begin{equation}
+ \mathbb E\|b_u^{\mathrm{sys}}\|_2^2
+ \le2(H_{\mathrm{het}}+H_{\mathrm{agg}}).
+\end{equation}
+These constants exclude effects already represented in the actual synthesized law. Separate synchronization operations are covered only if their effects fit the stated update/error model and its bounds.
+
+Assume that every $F_{*,u}$ is $L$-smooth with common lower bound $F_{\inf}$. For objectives with the same active classes, weights, and batch rule, assume
+\begin{equation}
+\begin{split}
+ \|\nabla F_{u,Q}(\theta)-\nabla F_{u,Q'}(\theta)\|_2
+ \le L_z\Bigl(&\sum_{j\in\mathcal J_u}\pi_u^{(j)}\\
+ &\cdot W_2^2(Q^{(j)},Q'^{(j)})\Bigr)^{1/2}.
+\end{split}
+\end{equation}
+The reference-variation condition is
+\begin{equation}
+ \mathbb E\sum_{u=1}^{T-1}\sup_\theta
+ |F_{*,u}(\theta)-F_{*,u-1}(\theta)|\le V_T.
+ \label{eq:supp_reference_variation}
+\end{equation}
+This budget includes changes in lower-tier representations, synthesis parameters, active classes, weights, and batch construction.
+
+\begin{lemma}[Synthesis bias]
+\label{lem:synthesis_bias}
+Under the distribution-sensitivity condition,
+\begin{equation}
+ \|\nabla F_u(\theta)-\nabla F_{*,u}(\theta)\|_2
+ \le L_z\sqrt{\drift_u}.
+\end{equation}
+\end{lemma}
+\begin{proof}
+Apply the condition to $Q_u,Q_{*,u}$ using their common active classes, weights, and batch rule.
+\end{proof}
+
+\subsection{Detailed Stationarity Proof}
+
+Let
+\begin{equation*}
+\begin{split}
+ a_u&=\nabla F_{*,u}(\theta_u),\\
+ b_u&=\nabla F_u(\theta_u)-a_u
+      +b_u^{\mathrm{sys}}+b_u^{\mathrm{reg}}.
+\end{split}
+\end{equation*}
+Then $g_u=a_u+b_u+\xi_u$. Conditional smoothness gives
+\begin{equation}
+\begin{split}
+ \mathbb E_uF_{*,u}(\theta_{u+1})
+ \le{}&F_{*,u}(\theta_u)-\eta\langle a_u,a_u+b_u\rangle\\
+ &+\frac{L\eta^2}{2}
+       \bigl(\|a_u+b_u\|_2^2+\sigma_g^2\bigr),
+\end{split}
+\label{eq:supp_smooth_descent}
+\end{equation}
+where $\mathbb E_u$ conditions on $\mathcal F_u$. Cross terms involving $\xi_u$ vanish by its conditional zero mean. Using
+\begin{equation*}
+ -2\langle a,a+b\rangle
+ =-\|a\|_2^2-\|a+b\|_2^2+\|b\|_2^2
+\end{equation*}
+and $L\eta\le1$ yields
+\begin{equation}
+\begin{split}
+ \mathbb E_uF_{*,u}(\theta_{u+1})
+ \le{}&F_{*,u}(\theta_u)-\frac{\eta}{2}\|a_u\|_2^2\\
+ &+\frac{\eta}{2}\|b_u\|_2^2
+ +\frac{L\eta^2}{2}\sigma_g^2.
+\end{split}
+\label{eq:supp_biased_descent}
+\end{equation}
+
+The changing-objective telescoping identity is
+\begin{equation}
+\begin{split}
+ &\sum_{u=0}^{T-1}
+   \bigl[F_{*,u}(\theta_u)-F_{*,u}(\theta_{u+1})\bigr]\\
+ &=F_{*,0}(\theta_0)-F_{*,T-1}(\theta_T)\\
+ &\quad+\sum_{u=1}^{T-1}
+   \bigl[F_{*,u}(\theta_u)-F_{*,u-1}(\theta_u)\bigr].
+\end{split}
+\label{eq:supp_telescoping}
+\end{equation}
+The common lower bound and variation budget bound the expectation of the right-hand side by $\Delta_F+V_T$, where
+$\Delta_F=\mathbb E F_{*,0}(\theta_0)-F_{\inf}$.
+Summing the descent inequality and dividing by $\eta T/2$ gives
+\begin{equation}
+\begin{split}
+ \frac1T\sum_{u=0}^{T-1}\mathbb E\|a_u\|_2^2
+ \le{}&\frac{2(\Delta_F+V_T)}{\eta T}
+       +L\eta\sigma_g^2\\
+ &+\frac1T\sum_{u=0}^{T-1}\mathbb E\|b_u\|_2^2.
+\end{split}
+\label{eq:supp_average_descent}
+\end{equation}
+
+The three-term squared-norm inequality, synthesis-bias lemma, and additional-error condition imply
+\begin{equation}
+\begin{split}
+ \mathbb E\|b_u\|_2^2
+ \le{}&3L_z^2\mathbb E[\drift_u]
+ +6(H_{\mathrm{het}}+H_{\mathrm{agg}})\\
+ &+3\mathbb E\|b_u^{\mathrm{reg}}\|_2^2 .
+\end{split}
+\label{eq:supp_total_bias}
+\end{equation}
+No independence among the three bias components is used. Define
+\begin{equation*}
+ \bar D_T=\frac1T\sum_{u=0}^{T-1}\mathbb E[\drift_u],
+ \qquad
+ \bar R_T=\frac1T\sum_{u=0}^{T-1}
+                  \mathbb E\|b_u^{\mathrm{reg}}\|_2^2.
+\end{equation*}
+Substituting the bias bound and $\eta=\eta_0/\sqrt T$ gives
+\begin{equation}
+\begin{split}
+ \frac1T\sum_{u=0}^{T-1}
+ \mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2
+ \le{}&\frac{2(\Delta_F+V_T)}{\eta_0\sqrt T}\\
+ &+\frac{L\eta_0\sigma_g^2}{\sqrt T}
+ +3L_z^2\bar D_T\\
+ &+6(H_{\mathrm{het}}+H_{\mathrm{agg}})
+ +3\bar R_T,
+\end{split}
+\label{eq:supp_stationarity_bound}
+\end{equation}
+which proves the main theorem. Relevant expectations and displayed averages are assumed finite.
+
+\subsection{Fresh References and Vanishing Bounds}
+
+If complete fresh delivery, with replay, accumulation, and masking disabled, gives $Q_u=Q_{*,u}$, then $\drift_u=0$. Disabling PRC gives $b_u^{\mathrm{reg}}=0$. If no additional mean update error remains, $H_{\mathrm{het}}$ and $H_{\mathrm{agg}}$ can both be set to zero. With $V_T=O(1)$, the average squared fresh-reference gradient norm then has an $O(T^{-1/2})$ upper bound.
+
+More generally, a vanishing displayed bound requires $V_T=o(\sqrt T)$ and vanishing residual terms. A bounded but nonzero drift or regularizer contribution leaves a residual in this estimate. The result is an average-gradient statement, not a guarantee of monotonic task accuracy, parameter convergence, class coverage, or a positive frequency of valid updates. Adam's adaptive dynamics and stationarity of the composed end-to-end prediction risk require separate analysis.
+
+\subsection{Auxiliary Age and Pipeline Conditions}
+
+For a vector $v$ and matrix $B$, define the product norm
+\begin{equation}
+ \|(v,B)\|_\oplus^2=\|v\|_2^2+\|B\|_F^2.
+\end{equation}
+For a Gaussian law, its moment pair is $(\mu,\Sigma^{1/2})$, with the positive semidefinite covariance square root.
+
+\begin{assumption}[Finite contribution ages and pipeline sensitivity]
+\label{asm:supp_staleness}
+Received packets have age at most $\stale_{\max}$ and record retention is bounded by $A_{\mem}$. In addition, every underlying moment contribution used at the analyzed interface has age at most $A=\stale_{\max}+A_{\mem}$ logical rounds. This includes contributions retained through replay or an accumulator.
+
+Per round, source means move by at most $\delta_\mu$ in Euclidean norm and covariance square roots by at most $\delta_\sigma$ in Frobenius norm. Set $\delta^2=\delta_\mu^2+\delta_\sigma^2$.
+
+Hold source coverage, support counts, replay/reconstruction coefficients, realized aggregation weights, and synthesis hyperparameters fixed. If each contributing source moment pair is perturbed by at most $\epsilon$ in the product norm, the final generated pair changes by at most $L_{\mathrm{agg}}\epsilon$. This condition concerns the full pipeline, including moment transformation, accumulation, covariance estimation, regularization, and numerical fallback.
+\end{assumption}
+
+Let $\widetilde Q_u^{(j)}$ replace the underlying moment contributions by their current values under these fixed non-moment quantities. The complete reference may recompute weights, counts, covariance estimates, and other input-dependent decisions. The discrepancy remaining after this auxiliary freshening is
+\begin{equation}
+ \varepsilon_{\mathrm{pipe},u}
+ =\sum_{j\in\mathcal J_u}\pi_u^{(j)}
+ W_2^2(\widetilde Q_u^{(j)},Q_{*,u}^{(j)}).
+\end{equation}
+It includes missing-source effects and differences from the complete reference within represented classes. It does not measure losses on absent classes.
+
+To prove the age bound, couple two Gaussian laws through one standard normal vector:
+\begin{equation}
+\begin{split}
+ &W_2^2\bigl(\mathcal N(\mu,\Sigma),\mathcal N(\mu',\Sigma')\bigr)\\
+ &\quad\le
+ \mathbb E\|(\mu-\mu')+
+       (\Sigma^{1/2}-(\Sigma')^{1/2})\epsilon\|_2^2\\
+ &\quad=
+ \|\mu-\mu'\|_2^2+
+ \|\Sigma^{1/2}-(\Sigma')^{1/2}\|_F^2.
+\end{split}
+\label{eq:supp_gaussian_coupling}
+\end{equation}
+An age of at most $A$ and per-round motion of at most $\delta$ imply a maximum source-pair perturbation of $A\delta$. Full-pipeline sensitivity therefore gives
+\begin{equation}
+ W_2^2(Q_u^{(j)},\widetilde Q_u^{(j)})
+ \le L_{\mathrm{agg}}^2A^2\delta^2.
+\end{equation}
+By the triangle inequality,
+\begin{equation*}
+\begin{split}
+ W_2^2(Q_u^{(j)},Q_{*,u}^{(j)})
+ \le{}&2W_2^2(Q_u^{(j)},\widetilde Q_u^{(j)})\\
+ &+2W_2^2(\widetilde Q_u^{(j)},Q_{*,u}^{(j)}).
+\end{split}
+\end{equation*}
+Weighting over active classes and taking expectations yields
+\begin{equation}
+ \mathbb E[\drift_u]\le
+ 2L_{\mathrm{agg}}^2A^2\delta^2
+ +2\mathbb E[\varepsilon_{\mathrm{pipe},u}].
+ \label{eq:supp_age_bound}
+\end{equation}
+
+These auxiliary conditions are not consequences of record retention alone. An untruncated statistics accumulator can contain contributions older than the record-bank limit. Covariance estimation and fallback must also satisfy the assumed sensitivity. The main stationarity theorem retains realized drift and does not require this age decomposition.
+
+\subsection{Delivery Model and Scalar Aggregation Benchmark}
+
+\begin{assumption}[Optional packet-delivery scenario]
+\label{asm:participation}
+At a fixed episode, each expected packet from a participating source is available independently with probability $1-\dropoutp$, where $0\le\dropoutp<1$.
+\end{assumption}
+This scenario does not assert independence across episodes and is not used by the general stationarity theorem. The implemented forced-retention source mask has a different final keep distribution. Packet randomness enters through the realized distributions and their discrepancies; this delivery model does not establish the conditional optimizer-noise assumptions.
+
+\begin{lemma}[Fixed-weight aggregation benchmark]
+\label{lem:reliability}
+Consider $K$ scalar estimates of a common target with errors $e_k$ satisfying
+$\operatorname{Var}(e_k)\le v_k$ and
+$|\mathbb E e_k|\le b_k$.
+Let $c_k=v_k+b_k^2>0$.
+For deterministic nonnegative weights with $\sum_k\omega_k=1$,
+\begin{equation}
+ \mathbb E\Bigl(\sum_k\omega_ke_k\Bigr)^2
+ \le K\sum_k\omega_k^2c_k.
+ \label{eq:supp_reliability_bound}
+\end{equation}
+The right-hand side is minimized by
+\begin{equation}
+ \omega_k=\frac{c_k^{-1}}{\sum_qc_q^{-1}}.
+\end{equation}
+\end{lemma}
+\begin{proof}
+Cauchy--Schwarz gives
+$(\sum_k\omega_ke_k)^2\le K\sum_k\omega_k^2e_k^2$.
+Since $\mathbb E e_k^2=\operatorname{Var}(e_k)+(\mathbb E e_k)^2\le c_k$, taking expectations proves the bound without assuming unbiased or independent errors.
+
+A second application of Cauchy--Schwarz yields
+\begin{equation*}
+ 1=\Bigl(\sum_k\omega_k\Bigr)^2
+ \le\Bigl(\sum_kc_k\omega_k^2\Bigr)
+       \Bigl(\sum_kc_k^{-1}\Bigr).
+\end{equation*}
+Equality holds for weights proportional to $c_k^{-1}$, proving the minimizer.
+\end{proof}
+The optimum concerns the displayed scalar fixed-weight bound. It need not minimize true error for correlated estimates and does not establish optimality of data-dependent network scores, bootstrap targets, or multivariate prototype aggregation.
+
+\subsection{Scope and Implementation Evidence}
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\caption{Scope of the conditional analysis. Implementation properties and reported task metrics do not establish the unmeasured analytical bounds.}
+\label{tab:analysis_assumptions}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.21\textwidth}p{0.33\textwidth}p{0.40\textwidth}@{}}
+\toprule
+Condition & Analytical role & Implementation evidence and limitation \\
+\midrule
+Smoothness and common lower bound
+& Support descent and telescoping.
+& Uniform smoothness is assumed; task accuracy does not verify it. \\
+Conditional update and noise
+& Separate prototype bias, PRC, additional mean error, and zero-mean noise.
+& Adam and finite-pool reuse do not establish the SGD model. Synchronization effects must fit its error assumptions. \\
+Distribution-sensitive gradients
+& Convert exact feature-distribution drift into gradient bias.
+& The sensitivity constant is assumed, not estimated from reported task metrics. \\
+Finite ages and full-pipeline sensitivity
+& Support the optional age-dependent drift bound.
+& Record retention does not enforce finite ages of untruncated accumulated contributions. Covariance and fallback behavior require sensitivity. \\
+Packet delivery
+& Define an optional independent-loss scenario.
+& Forced-retention masking has a different law. Independence is not needed by the main theorem. \\
+Additional mean-error bounds
+& Control error beyond that already represented in $Q_u$.
+& Constants are assumed; finite-pool and synchronization biases require coverage when present. \\
+Reference variation
+& Account for changing objectives, classes, weights, and sampling.
+& $V_T$ is not measured. Bounded total variation gives the stated inverse-square-root transient. \\
+Fixed update state and active classes
+& Define conditional actual and fresh-reference objectives.
+& The bound excludes absent classes and phases without optimizer updates, and gives no positive update-frequency guarantee. \\
+\bottomrule
+\end{tabular}
+\end{table*}
+

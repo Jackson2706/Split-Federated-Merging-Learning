@@ -1,0 +1,58 @@
+\section{System Model and Problem Formulation}
+\label{sec:problem}
+
+We consider a three-tier system comprising clients, edge servers, and a cloud server. Client $i\in\mathcal C_e$ is assigned to edge $e\in\mathcal E$ and holds $\mathcal D_i=\{(x_j,y_j)\}$. The network comprises a client encoder $u_{\theta_i}$, an edge segment $h_{\theta_e}$, and a cloud head $g_{\theta_g}$, yielding $f_{i,e}=g_{\theta_g}\circ h_{\theta_e}\circ u_{\theta_i}$. Raw examples and per-example annotations remain local; communicated summaries contain class identifiers and aggregate feature statistics. Upper-tier segments train on synthetic features without backpropagation across split boundaries.
+
+At round $t$, individual feature vectors at the client--edge and edge--cloud boundaries belong to $\mathcal Z_{ce}\subseteq\R^{d_{ce}}$ and $\mathcal Z_{ec}\subseteq\R^{d_{ec}}$, respectively. For classification, $z=u_{\theta_i^t}(x)$ is an image embedding and $s=h_{\theta_e^t}(z)$ is its edge-output representation. For segmentation, the encoder retains a spatial map, with $z_p=[u_{\theta_i^t}(x)]_p$ at location $p$. The upper-tier mappings operate pointwise, with $s_p=h_{\theta_e^t}(z_p)$. The same statistical interface therefore supports image embeddings and labeled spatial embeddings, as detailed in \cref{sec:method}.
+
+For each class $c$ represented by valid features at client $i$, let $P_{ic}$ denote its client--edge feature distribution at the current round. Round indices are omitted from distributions and mixture parameters for readability. MiSFP approximates $P_{ic}$ using a support-weighted mixture of diagonal Gaussians:
+\begin{equation}
+\label{eq:mixture}
+\begin{aligned}
+Q_{ic}
+&=
+\sum_{r=1}^{R_{ic}}
+\pi_{icr}\mathcal N
+\bigl(\bm\mu_{icr},\mathrm{diag}(\bm v_{icr})\bigr),\\
+\pi_{icr}
+&=
+\frac{n_{icr}}{n_{ic}},
+\qquad
+n_{ic}=\sum_{r=1}^{R_{ic}}n_{icr}.
+\end{aligned}
+\end{equation}
+Here, $R_{ic}$ is the component count, $n_{icr}>0$ is the empirical number of valid features assigned to component $r$, and $\bm\mu_{icr}$ and $\bm v_{icr}$ are its mean and unfloored population diagonal variance. Support counts image embeddings for classification and labeled spatial embeddings for segmentation.
+
+Edge--cloud summaries use the same mixture form in $\mathcal Z_{ec}$. Their component masses carry incoming class support and may become noninteger effective estimates after output-space refitting. These masses are distinct from the Monte Carlo sample counts used to estimate output statistics. Component probabilities remain support-weighted, whereas the upper-tier class sampling prior is uniform over represented classes.
+
+Pooling requires consistent class labels and compatible feature definitions. Each packet records its split boundary, feature dimension and shape, extraction regime, and model version. Compatible metadata establishes structural consistency, but independently updated model segments may still express features in different coordinates. Source separation can therefore reflect both population structure and coordinate mismatch. Mixture moments and distributional discrepancies are defined in the raw, unnormalized space at each boundary. Relating discrepancies across boundaries requires accounting for the intervening map $h_{\theta_e}$.
+
+When byte budgets are enabled, $B_{ce}$ and $B_{ec}$ limit the complete serialized sizes of outgoing client and edge packets, including metadata and component statistics. Component caps provide additional retention constraints. Compression retains at least one component for every represented class; if the minimum class-preserving packet exceeds its budget, infeasibility is reported. Model-synchronization traffic is accounted for separately and included in total training communication.
+
+The design problem is to allocate and compress class-conditional components that support prediction while satisfying the configured retention and communication constraints. This requires balancing representation fidelity, available class support, and packet cost. \Cref{tab:notation} summarizes the notation.
+
+\begin{table}[t]
+\caption{Principal notation used throughout the paper.}
+\label{tab:notation}
+\centering
+\small
+\begin{tabularx}{\columnwidth}{@{}lX@{}}
+\toprule
+Symbol & Meaning\\
+\midrule
+$t$ & Communication round\\
+$i,e,c,r$ & Client, edge, class, and component indices\\
+$\mathcal C_e,\mathcal E$ & Clients assigned to edge $e$ and set of edge servers\\
+$u,h,g$ & Client encoder, edge segment, and cloud head\\
+$\mathcal Z_{ce},\mathcal Z_{ec}$ & Boundary feature spaces of dimensions $d_{ce},d_{ec}$\\
+$P,Q$ & Target and represented class-conditional distributions\\
+$n_{icr},\pi_{icr}$ & Component support mass and within-class weight\\
+$\bm\mu,\bm v$ & Mean and unfloored population diagonal variance\\
+$R_{ic},R_c$ & Local and pooled retained component counts for class $c$\\
+$N_c$ & Total class support mass in a pooled mixture\\
+$K_{\max}$ & Maximum candidate local component count\\
+$M_c,M_c^{\mathrm{bd}}$ & Per-class synthetic training and boundary-estimation sample counts\\
+$B_{ce},B_{ec}$ & Optional serialized-packet budgets at the two boundaries\\
+\bottomrule
+\end{tabularx}
+\end{table}

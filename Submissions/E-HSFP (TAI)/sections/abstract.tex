@@ -1,0 +1,15 @@
+\begin{abstract}
+\begin{reviewblueblock}
+Hierarchical split-federated learning partitions a model across clients, edge servers, and the cloud. When the tiers coordinate through class-wise feature summaries instead of per-sample activations, each upper-tier learner trains on synthetic features whose distribution is set by whichever summaries are available. Missing, delayed, or masked summaries therefore perturb the training distribution itself, an effect that analyses of delayed model updates leave implicit. We propose Episodic Hierarchical Split-Federated Prototyping (E-HSFP), which combines timestamped moment replay, learned source weighting, training-time source masking, and prototype replay consistency, with optional shared full-covariance synthesis for classification. We model synthesis as a composition of replay, masking, aggregation, and sampling operators and measure its effect by the 2-Wasserstein drift from a fresh-prototype reference. In closed form, replay adds drift at most linearly in the weight placed on memory, masking removes a class with a probability set by the number of sources that hold it, and learned weighting shifts the synthetic mean away from the pooled mean only when sources disagree. For one upper-tier learner under a stochastic gradient model, we bound the average squared gradient norm of the fresh-reference objective. With bounded reference variation, the optimization and noise terms decay as $O(T^{-1/2})$, while residual terms for drift, systematic error, and regularization remain. In five-run, 200-round Adam experiments, E-HSFP reaches 56.07\% mean accuracy on CIFAR-100, and a 50-client ISIC-2018 pipeline attains 69.12\% mean intersection over union and 80.23\% mean Dice. Baselines are reproduced from an earlier study under its protocols. Severe statistical heterogeneity remains a limitation.
+\end{reviewblueblock}
+\end{abstract}
+
+\begin{IEEEImpStatement}
+\begin{reviewblueblock}
+Devices with limited computing resources can train the early layers of a model while edge and cloud servers train the remaining layers. When these tiers coordinate through feature summaries, missing or outdated summaries silently change the data on which the upper layers are trained. This work characterizes that change, bounds its effect on upper-tier training, and evaluates stored summaries as a supplement to intermittent inputs in simulation. The results suggest that summary freshness and class coverage should be monitored alongside prediction quality, and that communication should be accounted for across the full training pipeline. Potential applications include shared edge infrastructure and intermittently connected devices. Measurements on a deployed system are still needed to assess latency, cost, and operational benefit.
+\end{reviewblueblock}
+\end{IEEEImpStatement}
+
+\begin{IEEEkeywords}
+Distributed optimization, distributional drift, episodic learning, hierarchical split-federated learning, prototype learning, statistical replay\reviewblue{, Wasserstein distance}.
+\end{IEEEkeywords}
