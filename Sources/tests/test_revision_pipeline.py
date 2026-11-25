@@ -104,11 +104,29 @@ def test_resume_is_exact(tmp_path):
 
 
 def test_queue_dry_run():
-    q = os.path.join(ROOT, "run_queue.py")
-    if not os.path.exists(q):
-        pytest.skip("run_queue.py not in the repository yet")
-    r = subprocess.run([sys.executable, q, "--dry-run"], cwd=ROOT, capture_output=True, text=True)
-    assert r.returncode == 0 and "main.py" in r.stdout
+    r = subprocess.run([sys.executable, "run_queue.py", "--dry-run"], cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    cmds = [l for l in r.stdout.splitlines() if "main.py" in l]
+    assert len(cmds) == len(list(csv.DictReader(open(os.path.join(ROOT, "runs.csv")))))
+
+
+def test_queue_flags_exist_in_main():
+    sys.path.insert(0, ROOT)
+    import run_queue
+    helptext = subprocess.run([sys.executable, "main.py", "--help"], cwd=ROOT, capture_output=True,
+                              text=True).stdout
+    for flag in run_queue.KEY_MAP.values():
+        assert flag in helptext, flag
+
+
+def test_queue_runs_debug_job_to_done(tmp_path):
+    man = tmp_path / "runs.csv"
+    man.write_text("run_id,exp,priority,dataset,partition,method,seed,overrides\n"
+                   "Q_debug_s0,EQ,1,debug,iid,ehsfp,0,alpha=0.5 oracle=1\n")
+    r = subprocess.run([sys.executable, "run_queue.py", "--manifest", str(man), "--out-root",
+                        str(tmp_path / "out"), "--jobs", "1"], cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert (tmp_path / "out" / "Q_debug_s0" / "DONE").exists(), r.stdout
 
 
 def test_gpu_data_cache_matches_on_the_fly(tmp_path):
