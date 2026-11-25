@@ -19,7 +19,7 @@ CMD_TEMPLATE = ("{python} main.py --task classification --method h-sfp --cfg {cf
 # dataset -> paper reference config ("debug" is the CPU test config)
 CONFIGS = {"cifar100": "configs/revision/cifar100_reference.yaml",
            "ham10000": "configs/revision/ham10000_reference.yaml",
-           "debug": "configs/debug.yaml"}
+           "debug": "configs/debug_reference.yaml"}
 ROUNDS = {"debug": 3}  # everything else: 200 (paper)
 PARTITIONS = {"iid": "",
               "dir0.7": "--set partition=dirichlet --set dirichlet_alpha=0.7",
@@ -29,7 +29,7 @@ KEY_MAP = {"alpha": "--alpha", "tau": "--max-delay", "p_train": "--p-train",
            "loss": "--packet-loss", "oracle": "--oracle", "sampler": "--sampler",
            "scatter_fix": "--scatter-fix", "lambda_prc": "--lambda-prc",
            "prc": "--prc", "M_M": "--retention", "weighting": "--weighting",
-           "accum": "--accum-gamma"}
+           "accum": "--accum-gamma", "oracle_every": "--oracle-every"}
 OUT_ROOT = "results/revision"
 # Relative run cost for longest-first ordering (update after benchmarking).
 DATASET_COST = {"cifar10": 1.0, "cifar100": 1.0, "ham10000": 0.5, "isic2018": 2.0}

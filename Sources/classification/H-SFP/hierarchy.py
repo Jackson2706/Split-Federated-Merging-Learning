@@ -356,10 +356,10 @@ class DatasetSplit(Dataset):
 
 
 METRICS_COLUMNS = ["round", "accuracy", "macro_f1", "cloud_loss", "edge_loss", "client_loss",
-                   "no_valid_minibatch", "round_time_s"]
+                   "no_valid_minibatch", "episodes", "round_time_s"]
 ORACLE_COLUMNS = ["round", "tier", "learner", "n_active", "n_ref_classes", "kappa", "delta_proto",
                   "mean_term", "cov_term", "cov_type", "shared_classes", "eps_ref", "no_valid_round",
-                  "restored", "masked_removed", "n_ref_sources", "n_used_sources"]
+                  "restored", "replay_classes", "masked_removed", "n_ref_sources", "n_used_sources"]
 MASK_COLUMNS = ["round", "tier", "learner", "class_id", "S", "S_j", "removed", "p"]
 DISPERSION_COLUMNS = ["round", "edge", "n_sources", "n_classes", "mean_dispersion"]
 
@@ -1144,6 +1144,7 @@ class HierarchicalFL:
 
     def _edge_ssl_extraction_phase(self, eid, cids, client_outputs, ssl_epochs, syn_samples_per_class):
         """(Phase 2) Run SSL and extract (proto, dist) for one edge."""
+        self._rs["episodes"] = self._rs.get("episodes", 0) + 1
         model = self.structure[0][eid]
         opt_dict = self.optimizers[0][eid]
         optimizer = opt_dict['optimizer']
@@ -1376,6 +1377,7 @@ class HierarchicalFL:
 
     def _cloud_supervised_phase(self, cloud_id, edge_outputs, syn_epochs, syn_samples_per_class):
         """(Phase 3) Run supervised training for the cloud."""
+        self._rs["episodes"] = self._rs.get("episodes", 0) + 1
         model = self.structure[len(self.args["mid_server"])][cloud_id]
         opt_dict = self.optimizers[len(self.args["mid_server"])][cloud_id]
         optimizer = opt_dict['optimizer']
@@ -1842,6 +1844,7 @@ class HierarchicalFL:
         row = {"round": epoch, "tier": tier, "learner": node,
                "no_valid_round": self._rs.get("no_valid", 0),
                "restored": self._rs["restored"].get((tier, node), 0),
+               "replay_classes": self._rs.get("replay_classes", {}).get((tier, node), 0),
                "masked_removed": self._rs.get("masked", {}).get((tier, node), 0),
                "n_ref_sources": n_ref_sources, "n_used_sources": 0 if actual is None else actual[2]}
         if reference is None:
@@ -2154,6 +2157,7 @@ class HierarchicalFL:
 
             for e, o in self._group_by_edge(client_outputs, _edge_of).items():
                 self._rs["restored"][("edge", e)] = len(class_set(o) - _pre_replay.get(e, set()))
+                self._rs.setdefault("replay_classes", {})[("edge", e)] = len(class_set(o))
             # Free cache after the client phase
             torch.cuda.empty_cache()
             gc.collect()
@@ -2250,6 +2254,7 @@ class HierarchicalFL:
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
             self._rs["restored"][("cloud", 0)] = len(class_set(edge_outputs) - _pre_replay_cloud)
+            self._rs.setdefault("replay_classes", {})[("cloud", 0)] = len(class_set(edge_outputs))
             # Important: delete client_outputs once edges finish to free RAM
             del client_outputs
             torch.cuda.empty_cache()
@@ -2478,7 +2483,8 @@ class HierarchicalFL:
                     "macro_f1": "" if round_f1 is None else round_f1, "cloud_loss": cloud_loss,
                     "edge_loss": _mean(self._rs.get("edge_loss", [])),
                     "client_loss": _mean(self._rs.get("client_loss", [])),
-                    "no_valid_minibatch": self._rs["no_valid"], "round_time_s": epoch_time,
+                    "no_valid_minibatch": self._rs["no_valid"], "episodes": self._rs.get("episodes", 0),
+                    "round_time_s": epoch_time,
                 })
                 if epoch % int(self.args.get("ckpt_every", 10) or 10) == 0:
                     self._save_ckpt(_ckpt, epoch, (
