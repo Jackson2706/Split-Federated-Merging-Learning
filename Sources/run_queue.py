@@ -28,7 +28,8 @@ PARTITIONS = {"iid": "",
 KEY_MAP = {"alpha": "--alpha", "tau": "--max-delay", "p_train": "--p-train",
            "loss": "--packet-loss", "oracle": "--oracle", "sampler": "--sampler",
            "scatter_fix": "--scatter-fix", "lambda_prc": "--lambda-prc",
-           "prc": "--prc", "M_M": "--retention", "weighting": "--weighting"}
+           "prc": "--prc", "M_M": "--retention", "weighting": "--weighting",
+           "accum": "--accum-gamma"}
 OUT_ROOT = "results/revision"
 # Relative run cost for longest-first ordering (update after benchmarking).
 DATASET_COST = {"cifar10": 1.0, "cifar100": 1.0, "ham10000": 0.5, "isic2018": 2.0}

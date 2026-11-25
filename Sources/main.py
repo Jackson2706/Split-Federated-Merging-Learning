@@ -188,6 +188,10 @@ def _revision_overrides(args):
           "max_prototype_age": args.retention, "lambda_prc": args.lambda_prc,
           "aggregation_mode": WEIGHTING.get(args.weighting)}
     out = {k: v for k, v in top.items() if v is not None}
+    if args.accum_gamma is not None:
+        out["stat_accumulation_decay"] = args.accum_gamma
+        if args.accum_gamma == 0:
+            out["memory_mode"] = "records"  # memory_mode=statistics would re-enable gamma=0.8
     if args.out:
         out["revision_out"] = os.path.abspath(args.out)
         out["output_dir"] = os.path.join(out["revision_out"], "run")
@@ -353,6 +357,7 @@ def main():
     rev.add_argument("--sampler", choices=["gaussian", "mixture"])
     rev.add_argument("--scatter-fix", type=int, choices=[0, 1])
     rev.add_argument("--lambda-prc", type=float, help="PRC weight; 0 disables PRC")
+    rev.add_argument("--accum-gamma", type=float, help="Edge accumulation decay gamma; 0 turns accumulation off")
     rev.add_argument("--prc", choices=["standard", "corrected"])
     rev.add_argument("--oracle", type=int, choices=[0, 1], help="Drift/coverage diagnostics (needs --out)")
     rev.add_argument("--oracle-every", type=int)
