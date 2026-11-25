@@ -50,7 +50,7 @@ With active classes, weights, and batch construction held fixed,
 \end{equation}
 \end{assumption}
 
-If the batch sampler admits a class-wise coupling with shared labels and augmentation, a batch parameter gradient that is uniformly $K_b$-Lipschitz in the joint vector of $b$ features gives $L_z=K_b\sqrt b$ for expected class proportions $\pi_u^{(j)}$. \reviewblue{For the implemented batch-averaged supervised contrastive loss, $K_b=O(b^{-1/2})$ under the sufficient conditions in Appendix~\ref{supp:supcon_sensitivity}: a fixed positive temperature, independent per-view embeddings, normalized embeddings with bounded derivatives, and uniformly bounded first and second network derivatives. The all-pairs coupling does not change this scaling because each softmax weight is $O(1/b)$ under bounded logits. These conditions keep $L_z=O(1)$. They do not cover an arbitrary batch-dependent network, so Assumption~\ref{asm:drift} remains explicit rather than being inferred from the loss alone.}
+If the batch sampler admits a class-wise coupling with shared labels and augmentation, a batch parameter gradient that is uniformly $K_b$-Lipschitz in the joint vector of $b$ features gives $L_z=K_b\sqrt b$ for expected class proportions $\pi_u^{(j)}$. For the implemented batch-averaged supervised contrastive loss, $K_b=O(b^{-1/2})$ under the sufficient conditions in Appendix~\ref{supp:supcon_sensitivity}: a fixed positive temperature, independent per-view embeddings, normalized embeddings with bounded derivatives, and uniformly bounded first and second network derivatives. The all-pairs coupling does not change this scaling because each softmax weight is $O(1/b)$ under bounded logits. These conditions keep $L_z=O(1)$. They do not cover an arbitrary batch-dependent network, so Assumption~\ref{asm:drift} remains explicit rather than being inferred from the loss alone.
 
 \begin{assumption}[Additional mean error]
 \label{asm:het_agg}
@@ -99,6 +99,7 @@ Packet availability may be dependent.
 \end{theorem}
 
 \begin{proof}
+\iffalse
 First, write the update as a reference gradient plus bias and noise. Set $a_u=\nabla F_{*,u}(\theta_u)$ and
 $b_u=\nabla F_u(\theta_u)-a_u+
 b_u^{\mathrm{sys}}+b_u^{\mathrm{reg}}$,
@@ -159,6 +160,8 @@ The expected right-hand side is at most $\Delta_F+V_T$ by the common lower bound
 \label{eq:average_descent}
 \end{equation}
 Substituting~\eqref{eq:total_bias_bound} and $\eta=\eta_0/\sqrt T$ proves~\eqref{eq:main_bound}.
+\fi
+The detailed descent and changing-reference argument is given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
 \begin{corollary}[Fresh-prototype limit]
@@ -173,13 +176,11 @@ Only the first two terms of~\eqref{eq:main_bound} remain.
 
 \begin{remark}[Controlling the drift residual]
 \label{rem:drift_residual}
-\begin{reviewblueblock}
 The drift residual $3L_z^2\bar D_T$ links the bound to the mechanisms of Section~\ref{sec:formulation}. With fresh current packets, Proposition~\ref{prop:replay_drift} makes the replay contribution vanish linearly as $\alpha\to1$. Proposition~\ref{prop:masking_coverage} shows that masking enters mainly through coverage when classes are held by few sources, and Lemma~\ref{prop:drift_decomp} below makes the age contribution quadratic in the maximum contribution age $A$. The residual does not include the gaps $\varepsilon_{\mathrm{ref}}$ and $\varepsilon_{\mathrm{rep}}$ in~\eqref{eq:surrogate_hierarchy}, because the reference objective already incorporates them.
-\end{reviewblueblock}
 \end{remark}
 
 The optimization and noise terms in~\eqref{eq:main_bound} scale as $O((1+V_T)/\sqrt T)$ and reduce to $O(T^{-1/2})$ when $V_T=O(1)$. For the right-hand side to vanish, the reference variation must satisfy $V_T=o(\sqrt T)$ and the residual terms for drift, mean update error, and PRC must also vanish. Source masking changes $Q_u$, while PRC contributes through $b_u^{\mathrm{reg}}$.
-\reviewblue{The bound therefore does not show that replay, masking, or PRC improves stationarity. Each mechanism appears as a source of residual error, and any benefit must come from reducing class loss or the variation $V_T$, which the bound does not quantify. The step size $\eta=\eta_0/\sqrt T$ requires $T$ to be known in advance, and the experiments use Adam rather than the analyzed SGD-type update.}
+In the bound, replay, masking, and PRC appear only as sources of residual error; any benefit must come from reducing class loss or the variation $V_T$, which the bound does not quantify. The step size $\eta=\eta_0/\sqrt T$ requires $T$ to be known in advance (see Section~\ref{sec:discussion} for the relation to the Adam experiments).
 
 \subsection{Conditional Age Decomposition}
 
@@ -213,6 +214,7 @@ Under Assumption~\ref{asm:staleness},
 \end{equation}
 \end{lemma}
 \begin{proof}
+\iffalse
 For Gaussian laws with pairs $(\mu,B)$ and $(\mu',B')$, coupling through the same $\epsilon\sim\mathcal N(0,I_d)$ gives
 $W_2^2(G,G')\le\mathbb E\|(\mu-\mu')+(B-B')\epsilon\|_2^2
 =\|(\mu-\mu',B-B')\|_\oplus^2$.
@@ -223,7 +225,8 @@ The squared triangle inequality bounds each class drift by
 $2W_2^2(Q_u^{(j)},\widetilde Q_u^{(j)})
 +2W_2^2(\widetilde Q_u^{(j)},Q_{*,u}^{(j)})$.
 Weighting over classes and taking expectations proves the result.
+\fi
+The Gaussian coupling and age-decomposition algebra are given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
-An untruncated accumulator can retain contributions from expired records. Applying Lemma~\ref{prop:drift_decomp} therefore requires a separate age bound for all contributing statistics and the sensitivity condition in Assumption~\ref{asm:staleness}. Theorem~\ref{thm:convergence} can use the realized drift directly.
-The stationarity bound concerns the fresh-reference base objective for one upper-tier learner, over represented classes and valid SGD-type updates. Class coverage and update frequency describe separate aspects of the process. Equation~\eqref{eq:global_objective} describes the composed model's prediction risk, and Section~\ref{sec:experiments} reports predictive performance under Adam.
+An untruncated accumulator can retain contributions from expired records, so applying Lemma~\ref{prop:drift_decomp} requires a separate age bound for all contributing statistics and the sensitivity condition in Assumption~\ref{asm:staleness}. Theorem~\ref{thm:convergence} uses the realized drift directly and does not require this decomposition. Class coverage and update frequency are not covered by the bound.

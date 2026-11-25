@@ -1,0 +1,92 @@
+% =====================================================================
+% New Appendix B subsection: proofs of Lemma 1, Proposition 1, Proposition 2
+% Insert as the first subsection of Appendix B (before "A. Conditional
+% Objectives and Update Model"), then in the main text replace each
+% "given in the supplementary material [[TODO ...]]" with
+% "given in Appendix~\ref{app:mech_proofs}".
+% =====================================================================
+
+\subsection{Proofs of the Mechanism-Level Results}
+\label{app:mech_proofs}
+
+All squares, square roots, and absolute values of vectors below are taken
+coordinate-wise.
+
+\paragraph*{Proof of Lemma~1}
+Let $\mathcal{I}_\ell$ be the feature set of source $\ell$, with
+$|\mathcal{I}_\ell| = n_\ell$, and let $\mathcal{I} = \bigcup_\ell \mathcal{I}_\ell$,
+$|\mathcal{I}| = n$. Because the sets are disjoint,
+\begin{equation*}
+\mu_{\mathrm{pool}} = \frac{1}{n}\sum_{\ell=1}^{S}\sum_{i\in\mathcal{I}_\ell} z_i
+= \sum_{\ell=1}^{S}\frac{n_\ell}{n}\,\mu_\ell = \sum_{\ell=1}^{S} w_\ell\,\mu_\ell .
+\end{equation*}
+For the variance, decompose each deviation as
+$z_i - \mu_{\mathrm{pool}} = (z_i - \mu_\ell) + (\mu_\ell - \mu_{\mathrm{pool}})$ for
+$i \in \mathcal{I}_\ell$. Squaring and summing over $\mathcal{I}_\ell$, the
+cross term vanishes because $\sum_{i\in\mathcal{I}_\ell}(z_i - \mu_\ell) = 0$.
+With the population convention in~(1),
+\begin{equation*}
+\sum_{i\in\mathcal{I}_\ell}(z_i - \mu_{\mathrm{pool}})^2
+= n_\ell\,\sigma_\ell^2 + n_\ell\,(\mu_\ell - \mu_{\mathrm{pool}})^2 .
+\end{equation*}
+Summing over $\ell$ and dividing by $n$ gives
+$\sigma_{\mathrm{pool}}^2 = \sum_\ell w_\ell\bigl[\sigma_\ell^2 + (\mu_\ell - \mu_{\mathrm{pool}})^2\bigr]$,
+which is~(2). \hfill$\blacksquare$
+
+\paragraph*{Proof of Proposition~1}
+For diagonal Gaussians, (8) gives
+$W_2^2(\widetilde{G}, G_*) = \|\tilde\mu - \mu_*\|_2^2 + \|\tilde\sigma - \sigma_*\|_2^2$.
+Write $\Delta\mu = \mu_* - \mu_m$.
+
+\emph{Mean term.} Since $\mu_c = \mu_*$, (15) gives
+$\tilde\mu - \mu_* = (1-\alpha)(\mu_m - \mu_*)$, hence
+\begin{equation*}
+\|\tilde\mu - \mu_*\|_2^2 = (1-\alpha)^2\|\Delta\mu\|_2^2 .
+\end{equation*}
+
+\emph{Spread term.} For $a, b \ge 0$,
+$(a-b)^2 \le |a-b|\,(a+b) = |a^2 - b^2|$. Applying this to each coordinate of
+$\tilde\sigma$ and $\sigma_*$,
+\begin{equation*}
+\|\tilde\sigma - \sigma_*\|_2^2 \le \bigl\|\tilde\sigma^2 - \sigma_*^2\bigr\|_1 .
+\end{equation*}
+With $\sigma_c = \sigma_*$, (15) gives
+\begin{equation*}
+\tilde\sigma^2 - \sigma_*^2
+= (1-\alpha)(\sigma_m^2 - \sigma_*^2) + \alpha(1-\alpha)\,\Delta\mu^2 + \zeta\mathbf{1},
+\end{equation*}
+so by the triangle inequality,
+\begin{equation*}
+\bigl\|\tilde\sigma^2 - \sigma_*^2\bigr\|_1
+\le (1-\alpha)\,\|\sigma_m^2 - \sigma_*^2\|_1 + \alpha(1-\alpha)\,\|\Delta\mu\|_2^2 + d\zeta .
+\end{equation*}
+
+\emph{Combination.} Adding the two terms and using
+$(1-\alpha)^2 + \alpha(1-\alpha) = 1-\alpha$,
+\begin{equation*}
+W_2^2(\widetilde{G}, G_*) \le (1-\alpha)\bigl(\|\mu_* - \mu_m\|_2^2 + \|\sigma_m^2 - \sigma_*^2\|_1\bigr) + d\zeta,
+\end{equation*}
+which is~(11). \hfill$\blacksquare$
+
+\paragraph*{Proof of Proposition~2}
+Let $M_\ell \in \{0,1\}$ indicate that the mask initially marks output $\ell$
+for removal; the $M_\ell$ are independent with $\Pr(M_\ell = 1) = p$. Let
+$\mathcal{S}_j$ be the $S_j \ge 1$ outputs that contain class~$j$.
+
+\emph{Class loss.} Class $j$ is absent after masking if and only if every
+output in $\mathcal{S}_j$ is finally removed. This requires the event
+$A_j = \{M_\ell = 1\ \forall \ell \in \mathcal{S}_j\}$, with
+$\Pr(A_j) = p^{S_j}$, and excludes the case in which all $S$ outputs are
+marked and the uniformly restored output belongs to $\mathcal{S}_j$. That case
+has probability $p^{S}\cdot S_j/S$ and is contained in $A_j$. Therefore
+\begin{equation*}
+\Pr\bigl[j \notin \mathcal{J}_t\ \text{after masking}\bigr] = p^{S_j} - \frac{S_j}{S}\,p^{S},
+\end{equation*}
+which is~(12). For $S = 1$ the expression equals zero, consistent with the
+deterministic retention of a single output.
+
+\emph{Expected retained outputs.} Each output survives the initial marking
+with probability $1-p$, giving $S(1-p)$ in expectation. Restoration adds
+exactly one output on the event that all $S$ outputs are marked, which has
+probability $p^S$. Hence the expected number of retained outputs is
+$S(1-p) + p^S$. \hfill$\blacksquare$

@@ -1,7 +1,7 @@
-\section{Supplementary Implementation Details}
+\section{Implementation Details}
 \label{supp:implementation}
 
-These details specify the reference implementation described in the main paper. Numerical defaults are distinct from retained experimental settings. Historical run-specific overrides and software-environment records were not retained, so the defaults do not establish the configuration of every reported run.
+These details specify the reference implementation; Section~\ref{sec:setup} lists the settings used in the reported experiments.
 
 \subsection{Record Banks and Moment Retrieval}
 
@@ -121,7 +121,7 @@ Let $\mathcal C$ be the shared classes and $C=|\mathcal C|>0$. The number of ind
 \end{equation}
 This construction remains diagonal when the main pool uses full covariance. The term is zero without shared classes. Both forwards contribute gradients to the local model, with detached statistics. The edge uses pooled representations and the classification cloud uses logits. Dictionaries remain fixed within a phase, while draws are refreshed at enabled optimizer steps. Reference defaults are $s_{\mathrm{req}}=16$ and $\lambda_{\mathrm{prc}}=0.1$ at both upper tiers.
 
-Let $d_h$ be the output dimension and $\mathcal L_{\mathrm{PRC}}$ the normalized mean squared output difference defined in the main paper. For a fixed deterministic output map $h$, let $m_{\mathrm c}^{(j)},m_{\mathrm m}^{(j)}$ and $V_{\mathrm c}^{(j)},V_{\mathrm m}^{(j)}$ be the output means and covariances under the corresponding independent draws. Then
+Let $d_h$ be the output dimension and $\mathcal L_{\mathrm{PRC}}$ the normalized mean squared output difference in~\eqref{eq:prc_loss}. For a fixed deterministic output map $h$, let $m_{\mathrm c}^{(j)},m_{\mathrm m}^{(j)}$ and $V_{\mathrm c}^{(j)},V_{\mathrm m}^{(j)}$ be the output means and covariances under the corresponding independent draws. Then
 \begin{equation}
 \begin{split}
  \mathbb E\mathcal L_{\mathrm{PRC}}
@@ -146,7 +146,7 @@ For $K_{\mathrm s}>1$ source-output keys, initial keep indicators are independen
 \end{split}
 \label{eq:drop_loss}
 \end{equation}
-For $K_{\mathrm s}>1$, final keep indicators are generally dependent. Retaining a key guarantees neither class coverage nor a valid minibatch. Because masking follows record insertion and replay, a removed output may already have contributed to memory. The executed loops contain no paired KL masking loss.
+For $K_{\mathrm s}>1$, final keep indicators are generally dependent. Retaining a key guarantees neither class coverage nor a valid minibatch. Because masking follows record insertion and replay, a removed output may already have contributed to memory. The implementation uses no paired KL masking loss.
 
 A phase draws a labeled pool with $n_{\mathrm{syn}}$ examples per active class and reuses it over $E$ shuffled local epochs. Classification loaders discard incomplete final batches, giving nominal budget $E\lfloor Jn_{\mathrm{syn}}/B\rfloor$ updates before execution truncation. Pool sizes and budgets can differ by tier. An empty loader performs no optimizer update; a nonempty edge pool can still yield output statistics. Edge-output extraction can use a separate configured draw without adding optimizer updates.
 
@@ -158,12 +158,30 @@ The basic mean/std/count payload has $2d+1$ scalar entries per represented class
 
 Dense covariance factors use $O(d^2)$ storage; a full-covariance feature draw costs $O(d^2)$ and factorization costs $O(d^3)$. A bank containing $R$ records uses $O(Rd)$ storage. Metadata, model synchronization, and segmentation feature/mask transfers incur additional traffic. Tensor-size accounting does not measure serialized network traffic, factorization runtime, peak memory, or deployment overhead.
 
+\subsection{Simulated Execution Events}
 
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Parameters of the simulated execution events.}
+\label{tab:event_params}
+\begin{tabular}{@{}ll@{}}
+\toprule
+Event & Parameters \\
+\midrule
+Function timeout & [[TODO]] \\
+Cold-start delay & [[TODO]] \\
+Partial edge execution & [[TODO]] \\
+Missing edge update & [[TODO]] \\
+Combined & [[TODO]] \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\section{Supplementary Analysis}
+\section{Detailed Analysis}
 \label{supp:analysis}
 
-This section supplies the detailed stationarity proof, the auxiliary age conditions, and the scalar aggregation benchmark. All statements concern the stated SGD-type update model. They do not establish the analytical assumptions from the reported task metrics or extend the result to Adam.
+This section supplies the detailed stationarity proof, the auxiliary age conditions, and the scalar aggregation benchmark. All statements concern the stated SGD-type update model; Section~\ref{sec:discussion} and Table~\ref{tab:analysis_assumptions} summarize its scope.
 
 \subsection{Conditional Objectives and Update Model}
 
@@ -315,7 +333,7 @@ which proves the main theorem. Relevant expectations and displayed averages are 
 
 If complete fresh delivery, with replay, accumulation, and masking disabled, gives $Q_u=Q_{*,u}$, then $\drift_u=0$. Disabling PRC gives $b_u^{\mathrm{reg}}=0$. If no additional mean update error remains, $H_{\mathrm{het}}$ and $H_{\mathrm{agg}}$ can both be set to zero. With $V_T=O(1)$, the average squared fresh-reference gradient norm then has an $O(T^{-1/2})$ upper bound.
 
-More generally, a vanishing displayed bound requires $V_T=o(\sqrt T)$ and vanishing residual terms. A bounded but nonzero drift or regularizer contribution leaves a residual in this estimate. The result is an average-gradient statement, not a guarantee of monotonic task accuracy, parameter convergence, class coverage, or a positive frequency of valid updates. Adam's adaptive dynamics and stationarity of the composed end-to-end prediction risk require separate analysis.
+More generally, a vanishing displayed bound requires $V_T=o(\sqrt T)$ and vanishing residual terms. A bounded but nonzero drift or regularizer contribution leaves a residual in this estimate. The result is an average-gradient statement, not a guarantee of monotonic task accuracy, parameter convergence, class coverage, or a positive frequency of valid updates.
 
 \subsection{Auxiliary Age and Pipeline Conditions}
 

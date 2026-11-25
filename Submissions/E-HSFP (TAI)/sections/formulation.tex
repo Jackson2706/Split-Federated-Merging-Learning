@@ -1,7 +1,6 @@
 \section{Problem Formulation}
 \label{sec:formulation}
 
-\begin{reviewblueblock}
 We cast upper-tier learning as stochastic optimization over a sequence of synthetic feature distributions. A state-dependent pipeline produces these distributions from whichever summaries are available. This section (i) writes the pipeline as a composition of operators, (ii) defines a fresh-prototype reference and the drift from it, (iii) characterizes in closed form how replay, masking, and aggregation affect drift and class coverage, and (iv) states the learning problem that Section~\ref{sec:convergence} analyzes. The notation describes the client--edge interface. At the edge--cloud interface, edge servers take the role of clients.
 
 \subsection{Episodes, Participation, and Age}
@@ -41,10 +40,7 @@ bypasses replay, masking, and accumulation. To construct it, we hold the lower-t
 \label{def:proto_drift}
 For $\mathcal J_t\ne\varnothing$, define
 \begin{equation}
-\begin{split}
- \drift_t^{(j)}&=W_2^2\!\left(Q_t^{(j)},Q_{*,t}^{(j)}\right),\\
- \drift_t&=\sum_{j\in\mathcal J_t}\pi_t^{(j)}\drift_t^{(j)},
-\end{split}
+\drift_t^{(j)}=W_2^2\!\left(Q_t^{(j)},Q_{*,t}^{(j)}\right), \drift_t=\sum_{j\in\mathcal J_t}\pi_t^{(j)}\drift_t^{(j)},
  \label{eq:prototype_drift}
 \end{equation}
 where $W_2$ denotes the 2-Wasserstein distance. The drift compares the synthetic distributions, conditional on the episode state, for the classes represented in that episode.
@@ -96,7 +92,7 @@ Consider one source whose current packet for class $j$ is fresh, so that $(\pmu_
 \end{equation}
 \end{prop}
 \begin{proof}
-By~\eqref{eq:memory_mixture}, $\widetilde\pmu-\pmu_*=(1-\alpha)(\pmu_{\mathrm m}-\pmu_*)$, so the mean term equals $(1-\alpha)^2\|\pmu_*-\pmu_{\mathrm m}\|_2^2$. For each coordinate $i$, the inequality $|\sqrt a-\sqrt b|\le\sqrt{|a-b|}$ for $a,b\ge0$ gives $(\widetilde\psigma_i-\psigma_{*,i})^2\le|\widetilde\psigma_i^2-\psigma_{*,i}^2|$. By~\eqref{eq:memory_mixture}, $\widetilde\psigma_i^2-\psigma_{*,i}^2=(1-\alpha)(\psigma_{\mathrm m,i}^2-\psigma_{*,i}^2)+\alpha(1-\alpha)(\pmu_{*,i}-\pmu_{\mathrm m,i})^2+\zeta$. Summing the absolute values over $i$ and using $(1-\alpha)^2+\alpha(1-\alpha)=1-\alpha$ yields~\eqref{eq:replay_drift_bound}.
+Apply the diagonal-Gaussian Wasserstein formula to~\eqref{eq:memory_mixture}; the coordinate-wise algebra is given in the supplementary material [[TODO: confirm that a separate supplementary file exists; otherwise move this derivation to Appendix~\ref{supp:analysis}]].
 \end{proof}
 
 When the current packet is fresh, replay can only add drift. That drift is at most linear in $1-\alpha$ and proportional to the discrepancy between memory and current moments. Replay also inflates the variance by $\alpha(1-\alpha)(\pmu_{\mathrm c}-\pmu_{\mathrm m})^2$, which widens the synthetic distribution when memory and current moments disagree. When a class is absent from the current packet but present in memory, replay restores coverage instead, at a drift cost of $W_2^2(\mathcal N(\pmu_{\mathrm m},\operatorname{diag}\psigma_{\mathrm m}^2),G_*)$. Under the assumptions of Lemma~\ref{prop:drift_decomp}, this cost is bounded by a term quadratic in the age of the stored records. The mixing coefficient $\alpha$ and the retention limit $A_{\mathcal M}$ therefore set a trade-off between coverage and fidelity. Proposition~\ref{prop:replay_drift} concerns a single source; Assumption~\ref{asm:staleness} describes how such perturbations propagate through aggregation.
@@ -112,7 +108,7 @@ Consider a nonempty collection of $S$ source outputs, of which $S_j\ge1$ contain
 and the expected number of retained outputs is $S(1-p)+p^S$.
 \end{prop}
 \begin{proof}
-Class $j$ is lost exactly when all $S_j$ outputs containing it are marked and the restoration step does not return one of them. Restoration occurs only if all $S$ outputs are marked, which happens with probability $p^S$, and it then returns an output containing $j$ with probability $S_j/S$. Subtracting this from $p^{S_j}$ gives~\eqref{eq:masking_class_loss}. Each output survives marking with probability $1-p$, and restoration adds one output with probability $p^S$.
+Count the all-marked event and subtract the uniform restoration event; the detailed calculation is given in the supplementary material [[TODO: confirm that a separate supplementary file exists; otherwise move this derivation to Appendix~\ref{supp:analysis}]].
 \end{proof}
 
 If every retained source holds class $j$ ($S_j=S$), masking never removes it. If only one source holds it, the loss probability is $p(1-p^{S-1}/S)$. The coverage effect of masking therefore depends on heterogeneity. Under IID partitions, where most classes are held by every source, masking acts mainly on the aggregated moments. Under label-skewed partitions, it acts mainly on rare classes. Classes added to existing outputs by replay count toward $S_j$, because masking follows replay. With accumulation enabled, a masked class can reappear through the decayed totals in~\eqref{eq:accumulated_moments}.
@@ -127,7 +123,7 @@ Let $w_\ell=n_\ell/n$ be the count weights of Lemma~\ref{lem:exact_pooling}, and
 \end{equation}
 \end{prop}
 \begin{proof}
-Since $\sum_\ell(\omega_\ell-w_\ell)=0$, the left-hand side equals $\|\sum_\ell(\omega_\ell-w_\ell)(\pmu_\ell-\pmu_{\mathrm{pool}})\|_2$. The triangle inequality completes the proof.
+Center the weighted sum at $\pmu_{\mathrm{pool}}$ and apply the triangle inequality.
 \end{proof}
 
 When the source means agree, the choice of weights does not affect the aggregated mean, whatever the scorer outputs. Learned weighting can change the synthetic mean only under disagreement between sources, for example because of label skew or staleness. In that regime, the departure can be beneficial, as when it down-weights stale or outlying sources, or harmful, as when it concentrates weight on a subset. The reference~\eqref{eq:fresh_reference} uses the same weights, so this departure enters $\varepsilon_{\mathrm{ref},t}$ in~\eqref{eq:surrogate_hierarchy} rather than $\drift_t$. When the safeguard in~\eqref{eq:reliability_weight} is active, the weights sum to less than one and the aggregated mean is additionally shrunk toward the origin.
@@ -145,18 +141,15 @@ For ideal shared model components $W_c,W_e,W_g$ and $N=\sum_{k\in\clients}|\math
 \end{split}
  \label{eq:global_objective}
 \end{equation}
-where each expectation is uniform over the local dataset. This risk describes prediction by the composed model and is the quantity reported in Section~\ref{sec:experiments}. Because the tiers are trained stage-wise on local objectives (Section~\ref{sec:preliminary}), \ehsfp{} does not perform descent on~\eqref{eq:global_objective}. A guarantee for $F$ would additionally require a link between tier-wise stationarity and the composed risk, which we do not establish.
+where each expectation is uniform over the local dataset. This risk describes prediction by the composed model and is the quantity reported in Section~\ref{sec:experiments}. Because the tiers are trained stage-wise on local objectives (Section~\ref{sec:preliminary}), \ehsfp{} does not perform descent on~\eqref{eq:global_objective}. Linking tier-wise stationarity to this risk remains open (Section~\ref{sec:discussion}).
 
 \noindent\textbf{Upper-tier problem.}~
 Let $F_u$ and $F_{*,u}$ denote the population base objectives of one upper-tier learner under $Q_u$ and $Q_{*,u}$, respectively (formalized in~\eqref{eq:tier_objective}).
 \begin{problem}[Upper-tier learning from perturbed prototypes]
 \label{prob:upper_tier}
 Using only samples from the actual laws $Q_u$, generate iterates $\theta_0,\ldots,\theta_{T-1}$ for which
-\[
- \frac1T\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2
-\]
+$\frac1T\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2$
 is small, where $u$ indexes valid optimizer updates.
 \end{problem}
 
 Related online nonconvex work measures stationarity through local regret over sliding-window losses~\cite{hazan2017efficient}. Our criterion is different and is defined explicitly as the average current-reference quantity $T^{-1}\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2$: it does not use a sliding-window objective. The learner never samples from $Q_{*,u}$. The difficulty of Problem~\ref{prob:upper_tier} therefore lies in the drift $\drift_u$ characterized above and in the variation of $F_{*,u}$ across updates. The criterion does not account for classes outside $\mathcal J_u$, for the gaps $\varepsilon_{\mathrm{ref}}$ and $\varepsilon_{\mathrm{rep}}$ in~\eqref{eq:surrogate_hierarchy}, or for generalization of the composed model.
-\end{reviewblueblock}
