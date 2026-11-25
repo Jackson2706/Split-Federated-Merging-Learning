@@ -1,0 +1,24 @@
+# CPU debug configuration: 4 clients, 2 edges, 3 rounds, 500 synthetic images,
+# tiny model. Every revision feature must run end-to-end with it in < 2 min.
+base: classification/h-sfp/default.yaml
+strategy: "hier_fedavg"
+dataset: "synthetic"
+model: "tiny"
+num_classes: 10
+input_size: 16
+synthetic_train: 500
+synthetic_test: 200
+num_users: 4
+mid_server: [2]
+frac: 0.5
+epochs: 3
+local_bs: 8
+t1: 1
+t2: 1
+warmup_epochs: 1
+ssl_epochs_client: 1
+ssl_epochs_edge: 1
+syn_epochs_cloud: 1
+syn_samples_per_class: 16
+is_gpu: false
+num_workers: 0

@@ -112,6 +112,11 @@ def get_dataset(args):
             user_groups = ham10000_iid(train_dataset, args["num_users"])
         else:
             user_groups = mnist_noniid(train_dataset, args["num_users"])
+    elif args["dataset"] == "synthetic":
+        # CPU debug/test dataset: class-dependent image patterns plus noise.
+        train_dataset = _SyntheticImages(int(args.get("synthetic_train", 500)), args, split=0)
+        test_dataset = _SyntheticImages(int(args.get("synthetic_test", 200)), args, split=1)
+        user_groups = cifar_iid(train_dataset, args["num_users"])
     elif args["dataset"] == "imagenet":
         data_dir = args["dataset_root"]
         apply_transform = transforms.Compose(
@@ -159,6 +164,25 @@ def get_dataset(args):
         print(f"[val_from_train] {len(val_idx)} train images held out for validation")
         return train_dataset, valid_dataset, test_dataset, user_groups
     return train_dataset, test_dataset, test_dataset, user_groups
+
+
+class _SyntheticImages(torch.utils.data.Dataset):
+    """Deterministic toy images (debug config only; no download needed)."""
+
+    def __init__(self, n, args, split):
+        size = int(args.get("input_size", 16))
+        num_classes = int(args["num_classes"])
+        g = np.random.RandomState(1000 + split)
+        patterns = np.random.RandomState(7).randn(num_classes, 3, size, size).astype(np.float32)
+        self.targets = np.arange(n) % num_classes
+        noise = g.randn(n, 3, size, size).astype(np.float32)
+        self.data = torch.from_numpy(patterns[self.targets] + noise)
+
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, i):
+        return self.data[i], int(self.targets[i])
 
 
 def average_weights(w):

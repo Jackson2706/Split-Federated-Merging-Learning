@@ -6,6 +6,7 @@ from .resnet50_ham10000 import (HAM10000ClientModelResNet50,
                                     HAM10000CloudModelResNet50,
                                     HAM10000EdgeModelResNet50)
 from .vgg_ham10000 import VGGClient_Ours, VGGCloud_Ours, VGGEedge_Ours
+from .tiny_debug import TinyClient, TinyCloud, TinyEdge
 
 model_dataset_map = {
     "resnet50": {
@@ -26,6 +27,7 @@ model_dataset_map = {
         "cifar10": [AlexnetClientModel, AlexnetEdgeModel, ALexnetCloudHead]
     },
     "vgg": {"ham10000": [VGGClient_Ours, VGGEedge_Ours, VGGCloud_Ours]},
+    "tiny": {"synthetic": [TinyClient, TinyEdge, TinyCloud]},
 }
 
 
