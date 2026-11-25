@@ -62,6 +62,11 @@ except Exception:  # pragma: no cover - keeps legacy contexts working
     ProfileLog = None
 from ehsfp.synthesis import (
     SharedCovarianceGenerator, within_class_scatter, pooled_covariance, scatter_payload_MB,
+    between_source_scatter,
+)
+from ehsfp.revision import (
+    PacketLoss, mask_class_rows, class_set, between_source_dispersion, w2_report,
+    rng_guard, global_rng_state, set_global_rng_state, swap_generators,
 )
 from ehsfp.episodic_stress import (
     StalePacketQueue, PartialEdgeExecution, total_variance_aggregate,
@@ -350,11 +355,86 @@ class DatasetSplit(Dataset):
         return image.clone(), torch.tensor(label)
 
 
+METRICS_COLUMNS = ["round", "accuracy", "macro_f1", "cloud_loss", "edge_loss", "client_loss",
+                   "no_valid_minibatch", "round_time_s"]
+ORACLE_COLUMNS = ["round", "tier", "learner", "n_active", "n_ref_classes", "kappa", "delta_proto",
+                  "mean_term", "cov_term", "cov_type", "shared_classes", "eps_ref", "no_valid_round",
+                  "restored", "masked_removed", "n_ref_sources", "n_used_sources"]
+MASK_COLUMNS = ["round", "tier", "learner", "class_id", "S", "S_j", "removed", "p"]
+DISPERSION_COLUMNS = ["round", "edge", "n_sources", "n_classes", "mean_dispersion"]
+
+
+def truncate_csv_rounds(path, max_round):
+    """Drop rows logged after the checkpoint round (they will be re-logged on resume)."""
+    import csv
+    if not os.path.exists(path):
+        return
+    with open(path, newline="") as fh:
+        rows = list(csv.reader(fh))
+    keep = rows[:1] + [r for r in rows[1:] if r and int(r[0]) <= max_round]
+    with open(path, "w", newline="") as fh:
+        csv.writer(fh).writerows(keep)
+
+
+class GpuTrainData:
+    """--gpu-data: the whole (deterministically transformed) training set on the GPU.
+
+    Built from a scripts/preprocess.py cache (config gpu_data_cache) or by
+    iterating the dataset once. Random augmentation is applied later, on GPU,
+    by the existing kornia transforms, exactly as with the DataLoader path.
+    """
+
+    def __init__(self, dataset, args, device):
+        cache = args.get("gpu_data_cache")
+        if cache and os.path.exists(cache):
+            blob = torch.load(cache, weights_only=True)
+            X, Y = blob["X"], blob["Y"]
+        else:
+            tf = repr(getattr(dataset, "transform", ""))
+            if "Random" in tf:
+                raise ValueError("--gpu-data needs a deterministic dataset transform, got " + tf)
+            items = [dataset[i] for i in range(len(dataset))]
+            X = torch.stack([x for x, _ in items])
+            Y = torch.tensor([int(y) for _, y in items])
+        if len(X) != len(dataset):
+            raise ValueError(f"gpu_data_cache has {len(X)} items, dataset has {len(dataset)}")
+        self.X = X.float().to(device)
+        self.Y = Y.long().cpu()
+
+
+class GpuClientBatches:
+    """Shuffled, drop-last minibatches of one client's indices (DataLoader semantics)."""
+
+    def __init__(self, data, idxs, batch_size, shuffle=True, drop_last=True):
+        self.data, self.bs, self.shuffle, self.drop_last = data, batch_size, shuffle, drop_last
+        self.idx = torch.tensor([int(i) for i in idxs], dtype=torch.long)
+
+    def __len__(self):
+        n = len(self.idx)
+        return n // self.bs if self.drop_last else -(-n // self.bs)
+
+    def __iter__(self):
+        order = self.idx[torch.randperm(len(self.idx))] if self.shuffle else self.idx
+        for b in range(len(self)):
+            sel = order[b * self.bs:(b + 1) * self.bs]
+            yield self.data.X[sel.to(self.data.X.device)], self.data.Y[sel]
+
+
 # =============================================================================
 # SECTION 3: MAIN HIERARCHICAL FL CLASS
 # =============================================================================
 
 class HierarchicalFL:
+    # Revision defaults at class level so objects built without __init__ (unit tests) still run.
+    _oracle_round = False
+    sampler, prc_mode, scatter_fix = "gaussian", "standard", False
+    mask_writer = None
+
+    @property
+    def _rs(self):
+        """Per-round revision counters (reset each round)."""
+        return self.__dict__.setdefault("_round_stats", {})
+
     def __init__(
         self,
         args,
@@ -554,6 +634,33 @@ class HierarchicalFL:
 
         # camera-ready: fine-grained phase profiler (None unless config["profile"])
         self.profiler = ProfileLog() if (args.get("profile") and ProfileLog) else None
+
+        # --- Revision mechanisms and diagnostics (all off by default) -------
+        self.sampler = args.get("sampler", "gaussian") or "gaussian"
+        self.scatter_fix = bool(args.get("scatter_fix", False))
+        self.prc_mode = args.get("prc_mode", "standard") or "standard"
+        self.packet_loss = PacketLoss(float(args.get("packet_loss", 0.0) or 0.0), _seed)
+        self.rev_out = args.get("revision_out")
+        self.oracle_on = bool(args.get("oracle", False))
+        self.oracle_every = max(int(args.get("oracle_every", 5) or 5), 1)
+        if self.oracle_on and not self.rev_out:
+            raise ValueError("--oracle requires --out")
+        if self.oracle_on and self.prototype_space != "raw":
+            raise ValueError("the drift oracle is implemented for prototype_space=raw only")
+        self.oracle_writer = (CsvAppender(os.path.join(self.rev_out, "oracle.csv"), ORACLE_COLUMNS)
+                              if self.oracle_on else None)
+        self.mask_writer = (CsvAppender(os.path.join(self.rev_out, "oracle_mask.csv"), MASK_COLUMNS)
+                            if self.oracle_on else None)
+        self.disp_writer = (CsvAppender(os.path.join(self.rev_out, "dispersion.csv"), DISPERSION_COLUMNS)
+                            if self.rev_out else None)
+        self.metrics_writer = (CsvAppender(os.path.join(self.rev_out, "metrics.csv"), METRICS_COLUMNS)
+                               if self.rev_out else None)
+        self._oracle_round = False
+        self._oracle_actual = {}
+        self._oracle_client_states = {}
+        self._oracle_model = None
+        self.__dict__['_round_stats'] = {}
+        self._gpu_data = None
 
 
     def _prof_now(self):
@@ -880,6 +987,7 @@ class HierarchicalFL:
             for mod in model.modules():
                 if isinstance(mod, nn.modules.batchnorm._BatchNorm):
                     mod.eval()
+        _loss_sum, _n_loss = 0.0, 0
         for _ in range(ssl_epochs):
             for data, target in loader:
                 data = data.to(self.device, non_blocking=True)
@@ -929,12 +1037,20 @@ class HierarchicalFL:
                             linear_head=head, weight=self.client_objective_weight,
                         )
                 
+                _loss_sum = loss.detach().float() + (_loss_sum if _n_loss else 0.0)
+                _n_loss += 1
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
                 if head_optimizer is not None:
                     scaler.step(head_optimizer)
                 scaler.update()
 
+        if _n_loss:
+            self._rs.setdefault("client_loss", []).append(float(_loss_sum) / _n_loss)
+        if self._oracle_round and getattr(self, "client_sync", False):
+            # Oracle: this client's current (post-update) encoder.
+            self._oracle_client_states[cid] = {k: v.detach().cpu().clone()
+                                               for k, v in model.state_dict().items()}
         # 2. Extraction - avoid storing all features in a list when unnecessary
         model.eval()
         all_protos, all_stds = {}, {}
@@ -1038,7 +1154,9 @@ class HierarchicalFL:
 
         # E-HSFP: Apply prototype dropout at client level
         if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("client_prototype", "both"):
+            _pre_mask = edge_specific_client_outputs
             edge_specific_client_outputs = self.proto_dropout.apply_to_source_outputs(edge_specific_client_outputs)
+            self._log_mask("edge", eid, _pre_mask, edge_specific_client_outputs)
 
         # E-HSFP: Use reliability-weighted aggregation when enabled
         _support = {cid: getattr(self, "_client_support", {}).get(cid, {}) for cid in cids}
@@ -1048,12 +1166,15 @@ class HierarchicalFL:
             edge_specific_client_outputs, _support, _acc_cov = self._accumulate_edge_stats(
                 eid, edge_specific_client_outputs, _support)
         if self.synthesis == "shared_cov":
+            _srcs = [c for c in edge_specific_client_outputs
+                     if edge_specific_client_outputs[c] is not None and c in self._client_scatter]
             self._gen_c2e.set_covariance(_acc_cov if _acc_cov is not None else pooled_covariance(
-                self._client_scatter[c] for c in edge_specific_client_outputs
-                if edge_specific_client_outputs[c] is not None and c in self._client_scatter))
+                (self._client_scatter[c] for c in _srcs),
+                between=self._between(_srcs, self._fresh_client_outputs, self._fresh_client_support)))
             _gen = self._gen_c2e
         # Kept for the optional larger extraction draw below (statistics only).
         self._edge_agg_inputs = (edge_specific_client_outputs, _gen, _support)
+        _want_stats = self.diag_writer is not None or self._oracle_round
         _agg = reliability_weighted_aggregate(
             input_outputs=edge_specific_client_outputs,
             num_samples_per_class=syn_samples_per_class,
@@ -1066,16 +1187,22 @@ class HierarchicalFL:
             aggregation_mode=self.ecfg["aggregation_mode"],
             age_map=({cid: self._packet_age.get(cid, 0) for cid in cids} if self._stale_mode else None),
             weight_log=(self._reliability_logger("edge", eid) if self.rel_writer is not None else None),
-            return_stats=self.diag_writer is not None,
+            return_stats=_want_stats,
+            sampler=self.sampler,
         )
-        if self.diag_writer is not None:
+        if _want_stats:
             syn_features_L1, syn_labels_L1, _used_stats = _agg
-            self._log_drift("edge", eid, _used_stats, cids, edge_specific_client_outputs)
+            if self.diag_writer is not None:
+                self._log_drift("edge", eid, _used_stats, cids, edge_specific_client_outputs)
+            if self._oracle_round:
+                self._oracle_actual[("edge", eid)] = (_used_stats, getattr(_gen, "L", None), len(
+                    [v for v in edge_specific_client_outputs.values() if v is not None]))
         else:
             syn_features_L1, syn_labels_L1 = _agg
 
         if syn_features_L1.shape[0] == 0:
              print(f"Edge {eid}: no prototypes from clients, skipping.")
+             self._rs["no_valid"] = self._rs.get("no_valid", 0) + 1
              return None, {}
 
         print(f"Edge {eid}: generated {syn_features_L1.shape[0]} L1 samples (original labels). Starting SSL...")
@@ -1100,6 +1227,8 @@ class HierarchicalFL:
             # --- end ---
             drop_last=True 
         )
+        if len(syn_loader_L1) == 0:
+            self._rs["no_valid"] = self._rs.get("no_valid", 0) + 1
         
         # PRC inputs are loop-invariant within this phase (memory is only written
         # between phases); cached on first use, bit-identical to per-batch recompute.
@@ -1159,7 +1288,7 @@ class HierarchicalFL:
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 edge_repr_fn, self.ecfg["prc_num_samples"], self.device,
-                                runtime_counters=self.runtime_counters,
+                                runtime_counters=self.runtime_counters, mode=self.prc_mode,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -1174,6 +1303,7 @@ class HierarchicalFL:
                 scaler.update()
                 total_loss += loss.item()
         print(f"Edge {eid}: SSL done, final loss: {total_loss/max(len(syn_loader_L1), 1):.4f}")
+        self._rs.setdefault("edge_loss", []).append(total_loss / max(len(syn_loader_L1), 1))
 
         # --- 2c. Extract proto/dist ---
         model.to(self.device).eval()
@@ -1191,6 +1321,7 @@ class HierarchicalFL:
                     input_outputs=_outs, num_samples_per_class=_n_extract, device=self.device,
                     reliability_net=self.reliability_net, memory=self.client_memory,
                     generator=_g, support_map=_sup, aggregation_mode=self.ecfg["aggregation_mode"],
+                    sampler=self.sampler,
                 )
             syn_dataset_L1 = torch.utils.data.TensorDataset(_xf.cpu(), _yf.cpu())
             del _xf, _yf
@@ -1253,14 +1384,17 @@ class HierarchicalFL:
         # --- 3a. Collect and synthesize L2 data ---
         # E-HSFP: Apply prototype dropout at edge level
         if self.proto_dropout is not None and self.ecfg["dropout_mode"] in ("edge_prototype", "both"):
+            _pre_mask = edge_outputs
             edge_outputs = self.proto_dropout.apply_to_source_outputs(edge_outputs)
+            self._log_mask("cloud", cloud_id, _pre_mask, edge_outputs)
 
         # E-HSFP: reliability-weighted aggregation
         _gen = self.residual_generator
         if self.synthesis == "shared_cov":
+            _srcs = [e for e in edge_outputs if edge_outputs[e] is not None and e in self._edge_scatter]
             self._gen_e2c.set_covariance(pooled_covariance(
-                self._edge_scatter[e] for e in edge_outputs
-                if edge_outputs[e] is not None and e in self._edge_scatter))
+                (self._edge_scatter[e] for e in _srcs),
+                between=self._between(_srcs, self._fresh_edge_outputs, getattr(self, "_edge_support", {}))))
             _gen = self._gen_e2c
         _agg = reliability_weighted_aggregate(
             input_outputs=edge_outputs,
@@ -1273,17 +1407,23 @@ class HierarchicalFL:
             runtime_counters=self.runtime_counters,
             aggregation_mode=self.ecfg["aggregation_mode"],
             weight_log=(self._reliability_logger("cloud", cloud_id) if self.rel_writer is not None else None),
-            return_stats=self.diag_writer is not None,
+            return_stats=self.diag_writer is not None or self._oracle_round,
+            sampler=self.sampler,
         )
-        if self.diag_writer is not None:
+        if self.diag_writer is not None or self._oracle_round:
             syn_features_L2, syn_labels_L2, _used_stats = _agg
-            self._log_drift("cloud", cloud_id, _used_stats, list(edge_outputs.keys()), edge_outputs,
-                            fresh=self._fresh_edge_outputs, fresh_support=getattr(self, "_edge_support", {}))
+            if self.diag_writer is not None:
+                self._log_drift("cloud", cloud_id, _used_stats, list(edge_outputs.keys()), edge_outputs,
+                                fresh=self._fresh_edge_outputs, fresh_support=getattr(self, "_edge_support", {}))
+            if self._oracle_round:
+                self._oracle_actual[("cloud", cloud_id)] = (_used_stats, getattr(_gen, "L", None), len(
+                    [v for v in edge_outputs.values() if v is not None]))
         else:
             syn_features_L2, syn_labels_L2 = _agg
         
         if syn_features_L2.shape[0] == 0:
             print(f"Cloud {cloud_id}: no prototypes from edges, skipping.")
+            self._rs["no_valid"] = self._rs.get("no_valid", 0) + 1
             return 0.0
 
         print(f"Cloud {cloud_id}: generated {syn_features_L2.shape[0]} L2 samples (original labels). Starting supervised...")
@@ -1307,6 +1447,8 @@ class HierarchicalFL:
             # --- end ---
             drop_last=True
         )
+        if len(syn_loader_L2) == 0:
+            self._rs["no_valid"] = self._rs.get("no_valid", 0) + 1
         
         total_loss = 0
         # PRC inputs are loop-invariant within this phase (memory is only written
@@ -1334,7 +1476,7 @@ class HierarchicalFL:
                             prc = prototype_replay_consistency_loss(
                                 cur_p, cur_d, mem_p, mem_d,
                                 model, self.ecfg["prc_num_samples"], self.device,
-                                runtime_counters=self.runtime_counters,
+                                runtime_counters=self.runtime_counters, mode=self.prc_mode,
                             )
                             loss = loss + self.ecfg["lambda_prc"] * prc
 
@@ -1460,21 +1602,7 @@ class HierarchicalFL:
         a never-trained encoder. Averaging the cached (trained) clients gives a
         correct, seed-robust, baseline-fair evaluation of the trained encoder.
         """
-        client_layer = self.structure[-1]
-        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
-        if getattr(self, "client_sync", False):
-            # Global client = average of the edge-level client models.
-            global_client_state = average_state_dicts(list(self.edge_client_state.values()))
-            client_model = copy.deepcopy(self.client_model)
-            client_model.load_state_dict(global_client_state)
-        elif trained_cids:
-            global_client_state = average_state_dicts(
-                [client_layer[c].state_dict() for c in trained_cids]
-            )
-            client_model = copy.deepcopy(self.client_model)
-            client_model.load_state_dict(global_client_state)
-        else:
-            client_model = self.structure[-1][0]
+        client_model = self._global_client_model()
         eid = self.connectivity[-1][0]
         edge_model = self.structure[0][eid]
         cloud_model = self.structure[len(self.args["mid_server"])][0]
@@ -1597,6 +1725,215 @@ class HierarchicalFL:
         self.global_feature_means[boundary] = new_mean
         return outputs
 
+    # --- Revision helpers ---------------------------------------------------
+
+    def _global_client_model(self):
+        """FedAvg global client encoder (see _run_validation)."""
+        client_layer = self.structure[-1]
+        trained_cids = [c for c in dict.fromkeys(self.client_cache) if c in client_layer]
+        if getattr(self, "client_sync", False):
+            # Global client = average of the edge-level client models.
+            global_client_state = average_state_dicts(list(self.edge_client_state.values()))
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        elif trained_cids:
+            global_client_state = average_state_dicts(
+                [client_layer[c].state_dict() for c in trained_cids]
+            )
+            client_model = copy.deepcopy(self.client_model)
+            client_model.load_state_dict(global_client_state)
+        else:
+            client_model = self.structure[-1][0]
+        return client_model
+
+    def final_state(self):
+        """Cloud head, edge models and aggregated client encoder (for final.pt)."""
+        return {
+            "cloud": self.structure[len(self.args["mid_server"])][0].state_dict(),
+            "edges": {e: m.state_dict() for e, m in self.structure[0].items()},
+            "client_encoder": self._global_client_model().state_dict(),
+        }
+
+    def final_pipeline(self):
+        eid = self.connectivity[-1][0]
+        return self._full_pipeline(self._global_client_model(), self.structure[0][eid],
+                                   self.structure[len(self.args["mid_server"])][0])
+
+    @staticmethod
+    def _group_by_edge(outputs, edge_of):
+        grouped = {}
+        for k, v in outputs.items():
+            if v is not None:
+                grouped.setdefault(edge_of(k), {})[k] = v
+        return grouped
+
+    def _between(self, srcs, fresh, support):
+        """--scatter-fix: between-source term from the transmitted means and counts."""
+        if not self.scatter_fix:
+            return None
+        return between_source_scatter({k: fresh.get(k) for k in srcs}, support)
+
+    def _log_mask(self, tier, node, before, after):
+        rows = mask_class_rows(before, after)
+        self._rs.setdefault("masked", {})[(tier, node)] = sum(r[3] for r in rows)
+        if self.mask_writer is not None:
+            for c, S, S_j, removed in rows:
+                self.mask_writer.append({"round": self._current_round, "tier": tier, "learner": node,
+                                         "class_id": c, "S": S, "S_j": S_j, "removed": removed,
+                                         "p": self.proto_dropout.rate})
+
+    def _client_loader(self, cid, train_dataset, user_groups, dl_kwargs):
+        if not self.args.get("gpu_data", False):
+            return DataLoader(DatasetSplit(train_dataset, user_groups[cid]), shuffle=True, **dl_kwargs)
+        if self._gpu_data is None:
+            self._gpu_data = GpuTrainData(train_dataset, self.args, self.device)
+        return GpuClientBatches(self._gpu_data, user_groups[cid], int(self.args["local_bs"]))
+
+    # --- Drift / coverage oracle (Section VII-C) ---
+
+    def _oracle_client_packet(self, model, idxs, train_dataset):
+        """Fresh class moments of one client's full local data under its current encoder."""
+        if self._gpu_data is not None:
+            batches = GpuClientBatches(self._gpu_data, idxs, 256, shuffle=False, drop_last=False)
+        else:
+            batches = DataLoader(DatasetSplit(train_dataset, idxs), batch_size=256, shuffle=False,
+                                 num_workers=0, generator=torch.Generator())
+        feats = {}
+        amp = self.device.type == 'cuda' and int(self.args.get('client_split_depth', 2) or 2) < 4
+        with torch.amp.autocast(device_type='cuda', enabled=amp):
+            for data, target in batches:
+                out = model(data.to(self.device)).float()
+                for i, c in enumerate(target.numpy()):
+                    feats.setdefault(int(c), []).append(out[i])
+        mu = {c: torch.stack(v).mean(0).cpu() for c, v in feats.items()}
+        sd = {c: torch.stack(v).std(0, unbiased=False).cpu() for c, v in feats.items()}
+        sup = {c: len(v) for c, v in feats.items()}
+        scatter = within_class_scatter(feats) if self.synthesis == "shared_cov" and feats else None
+        return (mu, sd), sup, scatter
+
+    def _oracle_reference(self, packets, support, scatters):
+        """Q*: aggregation + synthesis on fresh packets, no replay/mask/accumulation."""
+        packets = {k: v for k, v in packets.items() if v is not None}
+        if not packets:
+            return None
+        _, _, stats = reliability_weighted_aggregate(
+            input_outputs=packets, num_samples_per_class=1, device=self.device,
+            reliability_net=self.reliability_net, support_map=support,
+            aggregation_mode=self.ecfg["aggregation_mode"], return_stats=True)
+        if stats is None:
+            return None
+        labels, mus, sigmas = stats
+        ref = ({int(l): mus[i] for i, l in enumerate(labels)}, {int(l): sigmas[i] for i, l in enumerate(labels)})
+        cov = None
+        if self.synthesis == "shared_cov":
+            srcs = [k for k in packets if scatters.get(k) is not None and scatters[k][0] is not None]
+            g = SharedCovarianceGenerator()
+            g.set_covariance(pooled_covariance((scatters[k] for k in srcs),
+                                               between=self._between(srcs, packets, support)))
+            cov = None if g.L is None else (g.L.double() @ g.L.double().T)
+        counts = {}
+        for k in packets:
+            for c, n in support.get(k, {}).items():
+                counts[int(c)] = counts.get(int(c), 0.0) + float(n)
+        pool = total_variance_aggregate(packets, support)
+        return ref, cov, counts, pool
+
+    def _oracle_row(self, epoch, tier, node, reference, actual, n_ref_sources):
+        row = {"round": epoch, "tier": tier, "learner": node,
+               "no_valid_round": self._rs.get("no_valid", 0),
+               "restored": self._rs["restored"].get((tier, node), 0),
+               "masked_removed": self._rs.get("masked", {}).get((tier, node), 0),
+               "n_ref_sources": n_ref_sources, "n_used_sources": 0 if actual is None else actual[2]}
+        if reference is None:
+            self.oracle_writer.append(row)
+            return
+        ref, cov_ref, counts, pool = reference
+        J = set(ref[0])
+        row["n_ref_classes"] = len(J)
+        if actual is None or actual[0] is None:
+            row.update({"n_active": 0, "kappa": 0.0})
+            self.oracle_writer.append(row)
+            return
+        (labels, mus, sigmas), L, _ = actual
+        act = ({int(l): mus[i] for i, l in enumerate(labels)}, {int(l): sigmas[i] for i, l in enumerate(labels)})
+        cov_act = None if (L is None or cov_ref is None) else (L.double() @ L.double().T)
+        rep = w2_report(act, ref, counts, cov_act, cov_ref if cov_act is not None else None)
+        eps = w2_report(ref, pool, counts, cov_ref if cov_act is not None else None,
+                        cov_ref if cov_act is not None else None)
+        row.update({"n_active": len(set(act[0]) & J), "kappa": len(set(act[0]) & J) / max(len(J), 1),
+                    **(rep or {}), "eps_ref": (eps or {}).get("delta_proto", "")})
+        self.oracle_writer.append(row)
+
+    def _run_oracle(self, epoch, train_dataset, user_groups):
+        """Definition 1 drift and coverage for every edge and the cloud (diagnostic only)."""
+        if self._oracle_model is None:
+            self._oracle_model = copy.deepcopy(self.client_model).to(self.device)
+        edges = sorted(self.structure[0])
+        for e in edges:
+            packets, support, scatters = {}, {}, {}
+            for cid in sorted(c for c, ee in self.connectivity[-1].items() if ee == e):
+                if getattr(self, "client_sync", False):
+                    self._oracle_model.load_state_dict(
+                        self._oracle_client_states.get(cid, self.edge_client_state[e]))
+                    model = self._oracle_model
+                else:
+                    model = self.structure[-1][cid]
+                was_training = model.training
+                model.to(self.device).eval()
+                packets[cid], support[cid], scatters[cid] = self._oracle_client_packet(
+                    model, user_groups[cid], train_dataset)
+                model.train(was_training)
+            self._oracle_row(epoch, "edge", e, self._oracle_reference(packets, support, scatters),
+                             self._oracle_actual.get(("edge", e)), len(packets))
+        fresh = {e: v for e, v in self._fresh_edge_outputs.items() if v is not None}
+        self._oracle_row(epoch, "cloud", 0,
+                         self._oracle_reference(fresh, getattr(self, "_edge_support", {}), self._edge_scatter),
+                         self._oracle_actual.get(("cloud", 0)), len(fresh))
+
+    # --- Exact checkpoint / resume ---
+
+    _CKPT_SKIP = ("test_dataset", "_gpu_data")
+
+    def _rng_holders(self):
+        return [v for v in self.__dict__.values() if isinstance(getattr(v, "rng", None), torch.Generator)
+                or type(getattr(v, "rng", None)).__name__ == "_GenState"]
+
+    def _save_ckpt(self, path, epoch, loop):
+        holders = self._rng_holders()
+        scheds = {}
+        for layer, nodes in self.optimizers.items():
+            for nid, od in nodes.items():
+                if od.get("scheduler") is not None:
+                    scheds[(layer, nid)] = od["scheduler"]
+                    od["scheduler"] = od["scheduler"].state_dict()  # LambdaLR holds a closure
+        swap_generators(holders, to_state=True)
+        try:
+            state = {k: v for k, v in self.__dict__.items() if k not in self._CKPT_SKIP}
+            torch.save({"epoch": epoch, "fl": state, "loop": loop, "rng": global_rng_state()}, path + ".tmp")
+            os.replace(path + ".tmp", path)
+        finally:
+            swap_generators(holders, to_state=False)
+            for (layer, nid), sch in scheds.items():
+                self.optimizers[layer][nid]["scheduler"] = sch
+
+    def _load_ckpt(self, path):
+        ck = torch.load(path, weights_only=False)
+        self.__dict__.update(ck["fl"])
+        swap_generators(self._rng_holders(), to_state=False)
+        for nodes in self.optimizers.values():
+            for od in nodes.values():
+                if isinstance(od.get("scheduler"), dict):
+                    lrs = [g["lr"] for g in od["optimizer"].param_groups]
+                    sch = self._build_lr_scheduler(od["optimizer"])
+                    sch.load_state_dict(od["scheduler"])
+                    for g, lr in zip(od["optimizer"].param_groups, lrs):
+                        g["lr"] = lr  # building LambdaLR resets lr; keep the saved value
+                    od["scheduler"] = sch
+        set_global_rng_state(ck["rng"])
+        for name in ("metrics.csv", "oracle.csv", "oracle_mask.csv", "dispersion.csv"):
+            truncate_csv_rounds(os.path.join(self.rev_out, name), ck["epoch"])
+        return ck["epoch"] + 1, ck["loop"]
+
     # --- Main training method (reorganized) --
 
     def train_end_to_end(
@@ -1636,6 +1973,12 @@ class HierarchicalFL:
             )
         )
         start_epoch = 1
+        _ckpt = os.path.join(self.rev_out, "ckpt.pt") if self.rev_out else None
+        if _ckpt and os.path.exists(_ckpt):
+            start_epoch, _loop = self._load_ckpt(_ckpt)
+            (validation_f1_list, validation_accuracy_list, cloud_loss_list, best_f1, best_val_top1,
+             best_pipeline_model, best_validation_result, last_round_result) = _loop
+            print(f"[Resume] restored {_ckpt}; continuing at round {start_epoch}")
 
         # --- DataLoader optimization ---
         # persistent_workers=True avoids re-creating the DataLoader each epoch
@@ -1653,6 +1996,10 @@ class HierarchicalFL:
             epoch_start_time = time.time()
             round_communication_start = communication_snapshot(self.comm_tracker)
             round_validation_accuracy = None
+            round_f1 = None
+            self._oracle_round = self.oracle_on and epoch % self.oracle_every == 0
+            self._oracle_actual, self._oracle_client_states = {}, {}
+            self.__dict__['_round_stats'] = {"no_valid": 0, "restored": {}, "masked": {}}
             self.ehsfp_logger.reset_epoch()
             self._current_round = epoch
             _tier_peaks = {}
@@ -1675,6 +2022,7 @@ class HierarchicalFL:
                 write_run_fingerprints(fingerprint_path, fingerprints)
             client_outputs = {}
             _cold_cids = set()
+            _lost_cids = set()
             # Per-round support counts feeding the reliability network
             self._client_support = {}
             self._edge_support = {}
@@ -1694,8 +2042,7 @@ class HierarchicalFL:
                     if inv.is_cold_start:
                         _cold_cids.add(cid)
 
-                local_data = DatasetSplit(train_dataset, user_groups[cid])
-                loader = DataLoader(local_data, shuffle=True, **dl_kwargs)
+                loader = self._client_loader(cid, train_dataset, user_groups, dl_kwargs)
 
                 # SSL & Extraction
                 client_outputs[cid], support_counts = self._client_ssl_extraction_phase(
@@ -1706,6 +2053,9 @@ class HierarchicalFL:
                 cost = get_proto_dist_size_MB(client_outputs[cid])
                 add_communication(self.comm_tracker, "client_to_edge_MB", mb=cost)
                 self._client_support[cid] = support_counts
+                if client_outputs[cid] is not None and self.packet_loss.lost():
+                    _lost_cids.add(cid)  # Assumption 8: never arrives, never stored
+                    continue
 
                 # E-HSFP: Store client prototypes in memory
                 if (self.prototype_space == "raw" and self.client_memory is not None
@@ -1731,6 +2081,9 @@ class HierarchicalFL:
             self._fresh_client_outputs = dict(client_outputs)
             self._fresh_client_support = dict(self._client_support)
             self._packet_age = {}
+            for cid in _lost_cids:
+                client_outputs.pop(cid, None)
+                self._client_support.pop(cid, None)
 
             # Definition 3: bounded-staleness delivery. Packets generated now are
             # delivered at round + d, d ~ U{0..tau} (+1 for a deferred cold start);
@@ -1776,6 +2129,13 @@ class HierarchicalFL:
                     if self.serverless_tracker is not None:
                         self.serverless_tracker.record_prototype_processing(len(proto_dict))
 
+            _edge_of = (lambda k: self.connectivity[-1][self._packet_cid[k] if self._stale_mode else k])
+            _pre_replay = {e: class_set(o) for e, o in self._group_by_edge(client_outputs, _edge_of).items()}
+            if self.disp_writer is not None:
+                for e, o in sorted(self._group_by_edge(client_outputs, _edge_of).items()):
+                    self.disp_writer.append({"round": epoch, "edge": e, "n_sources": len(o),
+                                             "n_classes": len(class_set(o)),
+                                             "mean_dispersion": between_source_dispersion(o)})
             # E-HSFP: Mix client outputs with memory prototypes
             if self.client_memory is not None and len(self.client_memory) > 0:
                 for cid in list(client_outputs.keys()):
@@ -1792,6 +2152,8 @@ class HierarchicalFL:
                 if self.serverless_tracker is not None:
                     self.serverless_tracker.record_memory_replay(len(client_outputs))
 
+            for e, o in self._group_by_edge(client_outputs, _edge_of).items():
+                self._rs["restored"][("edge", e)] = len(class_set(o) - _pre_replay.get(e, set()))
             # Free cache after the client phase
             torch.cuda.empty_cache()
             gc.collect()
@@ -1816,6 +2178,7 @@ class HierarchicalFL:
                 torch.cuda.reset_peak_memory_stats()
 
             edge_outputs = {}
+            _lost_eids = set()
             for eid, cids in edge_to_clients.items():
                 # E-HSFP: Simulate serverless invocation for edge
                 if self.serverless_tracker is not None:
@@ -1833,6 +2196,9 @@ class HierarchicalFL:
                 cost = get_proto_dist_size_MB(edge_outputs[eid])
                 add_communication(self.comm_tracker, "edge_to_cloud_MB", mb=cost)
                 self._edge_support[eid] = edge_support
+                if edge_outputs[eid] is not None and self.packet_loss.lost():
+                    _lost_eids.add(eid)
+                    continue
 
                 # E-HSFP: Store edge prototypes in memory
                 if (self.prototype_space == "raw" and self.edge_memory is not None
@@ -1852,6 +2218,8 @@ class HierarchicalFL:
                 "edge_to_cloud", edge_outputs, self._edge_support, self.edge_memory
             )
             self._fresh_edge_outputs = dict(edge_outputs)
+            for eid in _lost_eids:
+                edge_outputs.pop(eid, None)
 
             if self.prototype_space == "centered_cosine" and self.edge_memory is not None:
                 for eid, outputs in edge_outputs.items():
@@ -1866,6 +2234,7 @@ class HierarchicalFL:
                         "memory.writes", len(set(proto_dict) & set(dist_dict))
                     )
 
+            _pre_replay_cloud = class_set(edge_outputs)
             # E-HSFP: Mix edge outputs with memory
             if self.edge_memory is not None and len(self.edge_memory) > 0:
                 for eid in list(edge_outputs.keys()):
@@ -1880,6 +2249,7 @@ class HierarchicalFL:
                         )
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
+            self._rs["restored"][("cloud", 0)] = len(class_set(edge_outputs) - _pre_replay_cloud)
             # Important: delete client_outputs once edges finish to free RAM
             del client_outputs
             torch.cuda.empty_cache()
@@ -1905,6 +2275,10 @@ class HierarchicalFL:
                 syn_samples_per_class=config.get("syn_samples_per_class", 50)
             )
             cloud_loss_list.append(cloud_loss)
+            if self._oracle_round:
+                # Diagnostics only: no gradients, eval mode, every RNG stream restored.
+                with rng_guard(), torch.no_grad():
+                    self._run_oracle(epoch, train_dataset, user_groups)
             if torch.cuda.is_available():
                 _tier_peaks["cloud"] = (torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved())
             self._prof_add("cloud_process", _t_cloud, epoch)
@@ -1976,6 +2350,7 @@ class HierarchicalFL:
                 validation_f1_list.append(f1)
                 validation_accuracy_list.append(accuracy)
                 round_validation_accuracy = accuracy
+                round_f1 = f1
                 best_f1 = max(best_f1, f1)
 
                 if model_snapshot is not None:
@@ -2095,6 +2470,22 @@ class HierarchicalFL:
 
             # Advance the warmup+cosine LR schedule (no-op if disabled)
             self._step_lr_schedulers()
+
+            if self.rev_out:
+                _mean = lambda v: (sum(v) / len(v)) if v else ""
+                self.metrics_writer.append({
+                    "round": epoch, "accuracy": "" if round_validation_accuracy is None else round_validation_accuracy,
+                    "macro_f1": "" if round_f1 is None else round_f1, "cloud_loss": cloud_loss,
+                    "edge_loss": _mean(self._rs.get("edge_loss", [])),
+                    "client_loss": _mean(self._rs.get("client_loss", [])),
+                    "no_valid_minibatch": self._rs["no_valid"], "round_time_s": epoch_time,
+                })
+                if epoch % int(self.args.get("ckpt_every", 10) or 10) == 0:
+                    self._save_ckpt(_ckpt, epoch, (
+                        validation_f1_list, validation_accuracy_list, cloud_loss_list, best_f1,
+                        best_val_top1, best_pipeline_model, best_validation_result, last_round_result))
+                if os.environ.get("EHSFP_STOP_AFTER_ROUND") == str(epoch):
+                    raise SystemExit(f"[test hook] stopped after round {epoch}")  # resume test only
 
             print(f"Epoch {epoch} finished in {epoch_time:.2f}s")
 

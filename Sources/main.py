@@ -160,6 +160,51 @@ def _set_seed(seed: int):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
+def _set_speed_flags(cfg):
+    """Opt-in CUDA speed-ups (--bf16, --tf32, --cudnn-benchmark); results may change by seed noise."""
+    if not torch.cuda.is_available():
+        return
+    if cfg.get("bf16"):
+        torch.set_autocast_dtype("cuda", torch.bfloat16)  # every autocast(device_type='cuda') site
+    if cfg.get("tf32"):
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    if cfg.get("cudnn_benchmark"):
+        torch.backends.cudnn.deterministic = False
+        torch.backends.cudnn.benchmark = True
+
+
+WEIGHTING = {"learned": "learnable_reliability", "count": "sample_count_weighted",
+             "uniform": "average", "precision": "precision_weighted"}
+
+
+def _revision_overrides(args):
+    """Map the revision CLI flags onto config keys (None = flag not given)."""
+    top = {"epochs": args.rounds, "staleness_tau": args.max_delay, "packet_loss": args.packet_loss,
+           "sampler": args.sampler, "scatter_fix": args.scatter_fix, "prc_mode": args.prc,
+           "oracle": args.oracle, "oracle_every": args.oracle_every, "gpu_data": args.gpu_data,
+           "bf16": args.bf16, "tf32": args.tf32, "cudnn_benchmark": args.cudnn_benchmark}
+    eh = {"memory_replay_ratio": args.alpha, "prototype_dropout_rate": args.p_train,
+          "max_prototype_age": args.retention, "lambda_prc": args.lambda_prc,
+          "aggregation_mode": WEIGHTING.get(args.weighting)}
+    out = {k: v for k, v in top.items() if v is not None}
+    if args.out:
+        out["revision_out"] = os.path.abspath(args.out)
+        out["output_dir"] = os.path.join(out["revision_out"], "run")
+    eh = {k: v for k, v in eh.items() if v is not None}
+    if eh:
+        out["ehsfp_overrides"] = eh
+    return out
+
+
+def _merge_overrides(a, b):
+    out = {**a, **b}
+    eh = {**(a.get("ehsfp_overrides") or {}), **(b.get("ehsfp_overrides") or {})}
+    if eh:
+        out["ehsfp_overrides"] = eh
+    return out
+
+
 def _coerce(value: str):
     """Coerce a CLI string to bool/int/float when possible, else keep as str."""
     low = value.lower()
@@ -183,7 +228,11 @@ def _parse_overrides(pairs):
             print(f"Error: --set expects KEY=VALUE, got '{p}'")
             sys.exit(1)
         k, v = p.split("=", 1)
-        out[k.strip()] = _coerce(v.strip())
+        k = k.strip()
+        if k.startswith("ehsfp."):  # wins over --ablation presets (ehsfp/config.py)
+            out.setdefault("ehsfp_overrides", {})[k[len("ehsfp."):]] = _coerce(v.strip())
+        else:
+            out[k] = _coerce(v.strip())
     return out
 
 
@@ -221,7 +270,10 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
         cfg_data["seed"] = seed
         print(f"[Runner] Seed: {seed}")
         if overrides:
+            ehsfp_over = {**(cfg_data.get("ehsfp_overrides") or {}), **(overrides.pop("ehsfp_overrides", None) or {})}
             cfg_data.update(overrides)
+            if ehsfp_over:
+                cfg_data["ehsfp_overrides"] = ehsfp_over
             print(f"[Runner] Overrides: {overrides}")
         tmp = tempfile.NamedTemporaryFile(
             mode="w", suffix=".yaml", prefix="exp_",
@@ -233,6 +285,7 @@ def run(task, method, cfg, use_wandb=False, wandb_project="H-SFP", wandb_entity=
 
     # Set global seed before anything else
     _set_seed(seed)
+    _set_speed_flags(overrides)
 
     wandb_active = False
     if use_wandb:
@@ -287,6 +340,27 @@ def main():
         help="E-HSFP ablation mode (only applies to h-sfp method)",
     )
 
+    rev = parser.add_argument_group("revision experiments (all default to the config value)")
+    rev.add_argument("--out", help="Run directory: config.yaml, meta.json, metrics.csv, ckpt.pt (resume), "
+                                   "final.pt, summary.json, DONE")
+    rev.add_argument("--rounds", type=int, help="Global rounds (paper: 200)")
+    rev.add_argument("--alpha", type=float, help="Replay mixing coefficient; 1 disables replay")
+    rev.add_argument("--max-delay", type=int, help="Packet delays ~ U{0..tau}")
+    rev.add_argument("--p-train", type=float, help="Training-time source-mask rate")
+    rev.add_argument("--packet-loss", type=float, help="External packet loss p (Assumption 8)")
+    rev.add_argument("--retention", type=int, help="Record retention limit A_M (= M_M); 0 disables the bank")
+    rev.add_argument("--weighting", choices=list(WEIGHTING))
+    rev.add_argument("--sampler", choices=["gaussian", "mixture"])
+    rev.add_argument("--scatter-fix", type=int, choices=[0, 1])
+    rev.add_argument("--lambda-prc", type=float, help="PRC weight; 0 disables PRC")
+    rev.add_argument("--prc", choices=["standard", "corrected"])
+    rev.add_argument("--oracle", type=int, choices=[0, 1], help="Drift/coverage diagnostics (needs --out)")
+    rev.add_argument("--oracle-every", type=int)
+    rev.add_argument("--gpu-data", type=int, choices=[0, 1])
+    rev.add_argument("--bf16", type=int, choices=[0, 1])
+    rev.add_argument("--tf32", type=int, choices=[0, 1])
+    rev.add_argument("--cudnn-benchmark", type=int, choices=[0, 1])
+
     args = parser.parse_args()
 
     if args.list:
@@ -308,7 +382,7 @@ def main():
         wandb_entity=args.wandb_entity,
         ablation=args.ablation,
         seed=args.seed,
-        overrides=_parse_overrides(args.overrides))
+        overrides=_merge_overrides(_parse_overrides(args.overrides), _revision_overrides(args)))
 
 
 if __name__ == "__main__":

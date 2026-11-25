@@ -1,6 +1,11 @@
+import csv
 import json
 import os
+import socket
+import subprocess
 import time
+
+import yaml
 
 import torch
 from ehsfp import (
@@ -82,7 +87,15 @@ def run(cfg_path: str):
         )
     else:
         out_base = os.path.join(os.path.dirname(__file__), "Figure", "data", "runs")
-    run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
+    rev_out = config.get("revision_out")
+    resuming = bool(rev_out) and os.path.exists(os.path.join(rev_out, "ckpt.pt"))
+    if rev_out:
+        _write_revision_start(rev_out, config, resuming)
+    if resuming:
+        run_dir = os.path.join(out_base, arch["architecture_id"], config_hash)
+        os.makedirs(run_dir, exist_ok=True)
+    else:
+        run_dir = prepare_run_dir(out_base, arch["architecture_id"], config_hash)
     deadlock_diagnostics = None
     if os.environ.get("EHSFP_DEADLOCK_DIAG") == "1":
         from ehsfp.deadlock_diagnostics import start_deadlock_diagnostics
@@ -152,11 +165,13 @@ def run(cfg_path: str):
         best_model = best_model.to(device).eval()
         test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, drop_last=False)
 
-        all_preds, all_targets = [], []
+        all_preds, all_targets, all_logits = [], [], []
         with torch.no_grad():
             for data, target in test_loader:
                 data, target = data.to(device), target.to(device)
-                pred = best_model(data).argmax(dim=1)
+                logits = best_model(data)
+                pred = logits.argmax(dim=1)
+                all_logits.append(logits.float().cpu())
                 all_preds.extend(pred.cpu().numpy())
                 all_targets.extend(target.cpu().numpy())
 
@@ -180,6 +195,80 @@ def run(cfg_path: str):
     with open(os.path.join(run_dir, "metrics.json"), "w") as f:
         json.dump(filtered_output, f, indent=4)
 
+    if rev_out:
+        _write_revision_end(rev_out, config, output, hierarchical_fl, test_dataset, device,
+                            best_logits=(torch.cat(all_logits), torch.tensor(all_targets))
+                            if best_model is not None else None)
+
     if deadlock_diagnostics is not None:
         deadlock_diagnostics.stop()
     print("Total Run Time: {:.4f}s".format(time.time() - start_time))
+
+
+def _jsonable(obj):
+    return json.loads(json.dumps(obj, default=str))
+
+
+def _write_revision_start(out, config, resuming):
+    """--out: resolved config and run metadata (meta.json keeps every (re)start time)."""
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, "config.yaml"), "w") as fh:
+        yaml.safe_dump(_jsonable(config), fh, sort_keys=True)
+    root = os.path.join(os.path.dirname(__file__), "..", "..")
+    meta_path = os.path.join(out, "meta.json")
+    meta = json.load(open(meta_path)) if (resuming and os.path.exists(meta_path)) else {}
+    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    if not meta:
+        try:
+            dirty = bool(subprocess.check_output(["git", "status", "--porcelain", "--", "."],
+                                                 cwd=root, text=True).strip())
+            commit = git_commit(root)
+        except Exception:  # not a git checkout (e.g. rsynced copy)
+            commit, dirty = "unknown", None
+        meta = {"git_commit": commit, "git_dirty": dirty, "seed": int(config["seed"]),
+                "hostname": socket.gethostname(), "torch": torch.__version__,
+                "cuda": torch.version.cuda,
+                "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "start_time": now, "resumed_at": []}
+    else:
+        meta["resumed_at"].append(now)
+    with open(meta_path, "w") as fh:
+        json.dump(meta, fh, indent=2)
+
+
+def _eval_logits(model, dataset, device):
+    loader = DataLoader(dataset, batch_size=64, shuffle=False, drop_last=False)
+    model = model.to(device).eval()
+    logits, targets = [], []
+    with torch.no_grad():
+        for data, target in loader:
+            logits.append(model(data.to(device)).float().cpu())
+            targets.append(target.cpu())
+    return torch.cat(logits), torch.cat(targets)
+
+
+def _write_revision_end(out, config, output, hfl, test_dataset, device, best_logits):
+    """final.pt, summary.json (accuracy, F1, relative rounds, ECE/NLL, time), then DONE."""
+    from ehsfp.revision import ece_nll
+    torch.save(hfl.final_state(), os.path.join(out, "final.pt"))
+    with open(os.path.join(out, "metrics.csv"), newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    summary = {
+        "seed": int(config["seed"]), "rounds": int(config["epochs"]),
+        "final_accuracy": output["validation_accuracy"][-1] if output["validation_accuracy"] else None,
+        "final_macro_f1": output["validation_f1"][-1] if output["validation_f1"] else None,
+        "best_accuracy": output["best_val_top1"], "best_macro_f1": output["best_f1"],
+        "relative_rounds": output["rounds_to_convergence"],
+        "total_time_s": sum(float(r["round_time_s"]) for r in rows),
+        "eval_split": "train hold-out" if float(config.get("val_from_train", 0) or 0) > 0 else "test",
+    }
+    sel = output.get("selected_checkpoint") or {}
+    summary.update({k: sel.get(k) for k in ("round", "test_accuracy", "test_macro_f1")})
+    if best_logits is not None:
+        summary["selected_ece"], summary["selected_nll"] = ece_nll(*best_logits)
+    fin = _eval_logits(hfl.final_pipeline(), test_dataset, device)
+    summary["final_test_accuracy"] = float((fin[0].argmax(1) == fin[1]).double().mean())
+    summary["final_ece"], summary["final_nll"] = ece_nll(*fin)
+    with open(os.path.join(out, "summary.json"), "w") as fh:
+        json.dump(summary, fh, indent=2)
+    open(os.path.join(out, "DONE"), "w").close()
