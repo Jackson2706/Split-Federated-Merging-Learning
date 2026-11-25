@@ -1,0 +1,30 @@
+# E-HSFP paper reference condition, CIFAR-100 IID (Sec. VII-A and Appendix A).
+# Method settings follow the paper; pipeline/architecture settings are those of
+# the latest full-method runs (results/journal_v1/provenance/j3_cifar100_ehsfp_s*),
+# minus their 60-round override.
+base: ../classification/h-sfp/cifar_our_resnet50_5_10.yaml
+epochs: 200                     # paper: 200 rounds
+supcon_temperature: 0.5         # paper: T_temp = 0.5 (code default 0.1)
+ablation_mode: full_e_hsfp
+ehsfp_overrides:                # win over the preset (ehsfp/config.py)
+  use_serverless_simulation: false  # reference: no simulated execution events
+  dropout_mode: both                # mask after replay at both interfaces (Sec. V-B)
+  memory_size: 500                  # records per bank
+  max_prototype_age: 20             # A_M = M_M = 20
+  memory_top_k: 5                   # K_mem
+  memory_replay_ratio: 0.3          # alpha
+  prototype_dropout_rate: 0.2       # p_train
+  lambda_prc: 0.1
+  prc_num_samples: 16               # s_req (capped at floor(128/C) per Eq. supp_prc_draw_count)
+client_split_depth: 4
+client_sync: true
+client_global_sync: true
+t1: 1
+edge_residual: true
+client_objective: supervised
+client_objective_weight: 1.0
+edge_extract_samples_per_class: 500
+cloud_samples_per_class: 200
+cloud_head: linear
+memory_mode: statistics         # edge accumulation K_gamma with gamma = 0.8
+synthesis: shared_cov

@@ -1,0 +1,31 @@
+# E-HSFP paper reference condition, HAM10000 (see cifar100_reference.yaml).
+# Extra pipeline settings from results/journal_v1/provenance/j3_noniid_a0p3_ham10000_ehsfp_s0.
+base: ../classification/h-sfp/ham10000_our_resnet50_5_10.yaml
+epochs: 200
+local_bs: 16                    # paper: batch 16 (base config and j3 runs used 4)
+supcon_temperature: 0.5
+ablation_mode: full_e_hsfp
+ehsfp_overrides:
+  use_serverless_simulation: false
+  dropout_mode: both
+  memory_size: 500
+  max_prototype_age: 20
+  memory_top_k: 5
+  memory_replay_ratio: 0.3
+  prototype_dropout_rate: 0.2
+  lambda_prc: 0.1
+  prc_num_samples: 16
+client_split_depth: 4
+client_sync: true
+client_global_sync: true
+t1: 1
+edge_residual: true
+client_objective: supervised
+client_objective_weight: 1.0
+edge_extract_samples_per_class: 500
+cloud_samples_per_class: 200
+cloud_head: linear
+memory_mode: statistics
+synthesis: shared_cov
+client_bn_eval: true
+ssl_epochs_client: 5
