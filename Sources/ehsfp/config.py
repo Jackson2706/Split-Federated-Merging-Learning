@@ -11,6 +11,7 @@ AGGREGATION_MODES = {
     "average",
     "sample_count_weighted",
     "learnable_reliability",
+    "precision_weighted",
 }
 
 EHSFP_DEFAULTS: Dict[str, Any] = {
@@ -119,6 +120,13 @@ def get_ehsfp_config(user_config: dict) -> dict:
             raise ValueError(f"Unknown E-HSFP ablation preset: {ablation}")
         cfg.update(ABLATION_PRESETS[ablation])
         cfg["ablation_mode"] = ablation
+    # Revision CLI flags (main.py) win over presets: an explicit --weighting,
+    # --retention or --lambda-prc must not be silently replaced by an ablation.
+    cfg.update(user_config.get("ehsfp_overrides") or {})
+    if "max_prototype_age" in (user_config.get("ehsfp_overrides") or {}) and int(cfg["max_prototype_age"]) == 0:
+        cfg["use_episodic_memory"] = False  # A_M = 0 disables the record bank
+    if "lambda_prc" in (user_config.get("ehsfp_overrides") or {}) and float(cfg["lambda_prc"]) == 0.0:
+        cfg["use_prc_loss"] = False
     if cfg["aggregation_mode"] not in AGGREGATION_MODES:
         raise ValueError(f"Unknown aggregation mode: {cfg['aggregation_mode']}")
     return cfg

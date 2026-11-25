@@ -30,7 +30,36 @@ def within_class_scatter(feats_by_cls: Dict[int, Iterable[torch.Tensor]]) -> Tup
     return S, n, k
 
 
-def pooled_covariance(stats: Iterable[Tuple[torch.Tensor, int, int]]) -> Optional[torch.Tensor]:
+def between_source_scatter(outputs, support) -> Optional[torch.Tensor]:
+    """Remark 1 term: sum_l sum_j n_l^j (mu_l^j - mu_pool^j)(mu_l^j - mu_pool^j)^T.
+
+    ``outputs``: {source: (mean dict, std dict)} holding the means each source's
+    within-class scatter was centred on; ``support``: {source: {class: count}}.
+    mu_pool is the count-weighted pooled class mean, so within + between scatter
+    equals the within-class scatter of the union of the sources' samples.
+    """
+    by_cls = {}
+    for sid, out in outputs.items():
+        if out is None:
+            continue
+        for c, mu in out[0].items():
+            n = float((support.get(sid) or {}).get(c, 0))
+            if n > 0:
+                by_cls.setdefault(c, []).append((n, mu.detach().float().flatten()))
+    B = None
+    for items in by_cls.values():
+        if len(items) < 2:
+            continue
+        n = torch.tensor([a for a, _ in items], device=items[0][1].device)
+        M = torch.stack([m.to(n.device) for _, m in items])
+        D = M - (n[:, None] * M).sum(0) / n.sum()
+        b = (D * n[:, None]).T @ D
+        B = b if B is None else B + b
+    return B
+
+
+def pooled_covariance(stats: Iterable[Tuple[torch.Tensor, int, int]],
+                      between: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
     S, n, k = None, 0, 0
     for s, ni, ki in stats:
         if s is None:
@@ -40,6 +69,8 @@ def pooled_covariance(stats: Iterable[Tuple[torch.Tensor, int, int]]) -> Optiona
         k += ki
     if S is None or n - k <= 1:
         return None
+    if between is not None:
+        S = S + between.to(S.device, S.dtype)
     cov = S / float(n - k)
     d = cov.shape[0]
     if n - k < 2 * d:

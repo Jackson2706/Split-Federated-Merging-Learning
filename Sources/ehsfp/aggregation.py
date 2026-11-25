@@ -53,6 +53,7 @@ def reliability_weighted_aggregate(
     age_map: Optional[Dict] = None,
     weight_log=None,
     return_stats: bool = False,
+    sampler: str = "gaussian",
 ):
     """Aggregate prototypes under the selected rule and generate synthetic data.
 
@@ -109,12 +110,22 @@ def reliability_weighted_aggregate(
         aggregation_mode = (
             "average" if reliability_net is None else "learnable_reliability"
         )
-    valid_modes = {"average", "sample_count_weighted", "learnable_reliability"}
+    valid_modes = {"average", "sample_count_weighted", "learnable_reliability", "precision_weighted"}
+    if sampler not in ("gaussian", "mixture"):
+        raise ValueError(f"Unknown sampler: {sampler}")
+    # Per-class (source means, source stds, normalized weights) for the mixture sampler.
+    components = {}
     if aggregation_mode not in valid_modes:
         raise ValueError(f"Unknown aggregation mode: {aggregation_mode}")
 
     if aggregation_mode == "average":
         # Original simple-mean aggregation (baseline behavior)
+        if sampler == "mixture":
+            for l in final_labels:
+                k = len(merged[l]["p"])
+                components[l] = (torch.stack([p.to(device) for p in merged[l]["p"]]),
+                                 torch.stack([d.to(device) for d in merged[l]["d"]]),
+                                 torch.full((k,), 1.0 / k, device=device))
         final_protos = torch.stack([
             torch.stack([p.to(device) for p in merged[l]["p"]]).mean(0)
             for l in final_labels
@@ -123,7 +134,7 @@ def reliability_weighted_aggregate(
             torch.sqrt(torch.stack([d.to(device) ** 2 for d in merged[l]["d"]]).mean(0))
             for l in final_labels
         ])
-    elif aggregation_mode == "sample_count_weighted":
+    elif aggregation_mode in ("sample_count_weighted", "precision_weighted"):
         proto_list = []
         dist_list = []
         for l in final_labels:
@@ -139,7 +150,12 @@ def reliability_weighted_aggregate(
                 weights = torch.ones_like(counts)
             else:
                 weights = counts
+            if aggregation_mode == "precision_weighted":
+                # omega_l ~ n_l / (||sigma_l||^2 + zeta), normalized per class.
+                weights = weights / (sigmas.flatten(1).pow(2).sum(1) + 1e-8)
             w = (weights / weights.sum()).view(-1, *([1] * (mus.dim() - 1)))
+            if sampler == "mixture":
+                components[l] = (mus, sigmas, w.flatten())
 
             # Use the same weighted mean/variance definition as reliability mode.
             mu_agg = (w * mus).sum(0)
@@ -201,6 +217,8 @@ def reliability_weighted_aggregate(
                 runtime_counters.increment("reliability.weight_variance_observations")
             w_sum = weights.sum().clamp(min=1e-8)
             w = (weights / w_sum).view(-1, *([1] * (mus.dim() - 1)))
+            if sampler == "mixture":
+                components[l] = (mus, sigmas, w.flatten().detach())
 
             # Weighted mean: mu_class = sum(w_i * mu_i)
             mu_agg = (w * mus).sum(0)
@@ -217,7 +235,9 @@ def reliability_weighted_aggregate(
     del merged
 
     # Generate synthetic data
-    if generator is not None:
+    if sampler == "mixture":
+        features = _mixture_draw(final_labels, components, num_samples_per_class, generator)
+    elif generator is not None:
         features = generator.generate(final_protos, final_dists, num_samples_per_class)
     else:
         features = _generate_synthetic_data(final_protos, final_dists, num_samples_per_class)
@@ -226,6 +246,33 @@ def reliability_weighted_aggregate(
     if return_stats:
         return features, labels, (final_labels, final_protos.detach(), final_dists.detach())
     return features, labels
+
+
+@torch.no_grad()
+def _mixture_draw(labels, components, n, generator=None):
+    """Per class: pick source l with probability omega_l, draw from source l's Gaussian.
+
+    Components use N(mu_l, diag sigma_l^2), or N(mu_l, L L^T) when the shared
+    full-covariance generator holds a valid factor. A single source reduces
+    exactly (same RNG calls) to the corresponding single-Gaussian sampler.
+    """
+    L = getattr(generator, "L", None)
+    out = []
+    for l in labels:
+        mus, sigmas, w = components[l]
+        shape = mus.shape[1:]
+        d = mus[0].numel()
+        idx = None
+        if mus.shape[0] > 1:
+            idx = torch.multinomial(w.float() / w.float().sum(), n, replacement=True)
+        mu = mus[idx] if idx is not None else mus[0].expand(n, *shape)
+        if L is not None and L.shape[0] == d:
+            x = mu.float().reshape(n, d) + torch.randn(n, d, device=mu.device) @ L.to(mu.device).T
+            out.append(x.reshape(n, *shape).to(mus.dtype))
+        else:
+            sd = sigmas[idx] if idx is not None else sigmas[0].expand(n, *shape)
+            out.append(mu + sd * torch.randn(n, *shape, device=mu.device, dtype=mus.dtype))
+    return torch.cat(out, 0)
 
 
 @torch.no_grad()

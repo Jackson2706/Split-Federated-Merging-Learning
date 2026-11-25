@@ -21,6 +21,7 @@ def prototype_replay_consistency_loss(
     device: Optional[torch.device] = None,
     runtime_counters=None,
     max_replay_batch: int = 128,
+    mode: str = "standard",
 ) -> torch.Tensor:
     """Prototype Replay Consistency loss.
 
@@ -85,6 +86,18 @@ def prototype_replay_consistency_loss(
     h_current = representation_fn(z_current.reshape(flat_shape))
     h_memory = representation_fn(z_memory.reshape(flat_shape))
     total_loss = F.mse_loss(h_current, h_memory)
+    if mode == "corrected":
+        # Subtract half of each side's within-law term: the expectation is then
+        # the output-mean gap only (the tr V_c + tr V_m terms of eq. prc_decomp cancel).
+        z_current2 = cur_mu.unsqueeze(1) + cur_sigma.unsqueeze(1) * torch.randn(
+            sample_shape, device=compute_device, dtype=cur_mu.dtype)
+        z_memory2 = mem_mu.unsqueeze(1) + mem_sigma.unsqueeze(1) * torch.randn(
+            sample_shape, device=compute_device, dtype=mem_mu.dtype)
+        total_loss = (total_loss
+                      - 0.5 * F.mse_loss(h_current, representation_fn(z_current2.reshape(flat_shape)))
+                      - 0.5 * F.mse_loss(h_memory, representation_fn(z_memory2.reshape(flat_shape))))
+    elif mode != "standard":
+        raise ValueError(f"unknown PRC mode: {mode}")
 
     if runtime_counters is not None:
         # Keep instrumentation asynchronous.  Calling .item() here serialized
