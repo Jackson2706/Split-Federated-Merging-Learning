@@ -32,8 +32,15 @@ class EpisodicPrototypeMemory:
     """
 
     def __init__(self, max_size: int = 500, max_age: int = 20,
-                 per_class_capacity: Optional[int] = None):
+                 per_class_capacity: Optional[int] = None,
+                 drift_window: Optional[int] = None):
         self.max_size = max_size
+        # C1/C2: last `drift_window` received class means per (source, class).
+        # None (default) keeps the memory exactly as before.
+        self.drift_state = None
+        if drift_window:
+            from .drift_comp import DriftState
+            self.drift_state = DriftState(drift_window)
         self.max_age = max_age
         # Manuscript eq. (7): FIFO capacity M_M per class. None keeps the
         # original single global capacity (max_size) used by every earlier run.
@@ -45,6 +52,8 @@ class EpisodicPrototypeMemory:
 
     def add(self, record: PrototypeRecord) -> None:
         """Add a prototype record. Evicts oldest if at capacity."""
+        if self.drift_state is not None:
+            self.drift_state.observe(record.source_id, record.class_id, record.round_idx, record.mu)
         if self.per_class_capacity is not None:
             if self.per_class_capacity <= 0:
                 return  # M_M = 0: memory disabled
@@ -173,12 +182,23 @@ def mix_current_and_memory(
     top_k: int = 5,
     runtime_counters=None,
     device: Optional[torch.device] = None,
+    *,
+    adjuster=None,
+    support: Optional[Dict[int, float]] = None,
+    now: Optional[int] = None,
+    stats: Optional[dict] = None,
+    trace: Optional[dict] = None,
 ) -> Tuple[Dict[int, torch.Tensor], Dict[int, torch.Tensor]]:
     """Mix current-round prototypes with memory prototypes.
 
     Q_mix = alpha * Q_current + (1 - alpha) * Q_memory
 
     Returns merged (proto_dict, dist_dict) in the same format as the input.
+
+    ``adjuster`` (drift_comp.ReplayAdjuster, active) enables C1 (stale record means
+    moved to the current feature space) and/or C2 (per-class alpha*). ``stats``
+    collects alphas / fallbacks / compensation counts; ``trace`` (oracle rounds)
+    collects the actual and fixed-alpha mixed means and the compensated records.
     """
     if len(memory) == 0 or alpha >= 1.0:
         return current_proto_dict, current_dist_dict
@@ -194,6 +214,20 @@ def mix_current_and_memory(
     mixed_proto: Dict[int, torch.Tensor] = {}
     mixed_dist: Dict[int, torch.Tensor] = {}
 
+    adj = adjuster if (adjuster is not None and adjuster.active and memory.drift_state is not None) else None
+    est = {}
+    if adj is not None:
+        cls_recs = {c: memory.get_top_k_reliable(c, top_k) for c in all_classes if c in current_proto_dict}
+        flat = [r for c in sorted(cls_recs) for r in cls_recs[c]]
+        if flat:
+            h = adj.bandwidth(list(current_proto_dict.values()))
+            disp, var, ok = adj.estimate(memory.drift_state, flat, now,
+                                         h, torch.device(device) if device is not None else torch.device("cpu"))
+            i = 0
+            for c in sorted(cls_recs):
+                est[c] = (disp[i:i + len(cls_recs[c])], var[i:i + len(cls_recs[c])], ok[i:i + len(cls_recs[c])])
+                i += len(cls_recs[c])
+
     for cls_id in all_classes:
         has_current = cls_id in current_proto_dict
         mem_records = memory.get_top_k_reliable(cls_id, top_k)
@@ -204,16 +238,54 @@ def mix_current_and_memory(
             compute_device = torch.device(device) if device is not None else current_proto_dict[cls_id].device
             cur_mu = current_proto_dict[cls_id].to(compute_device)
             cur_sigma = current_dist_dict[cls_id].to(compute_device)
-            mem_p, mem_d = memory.to_proto_dist_dicts(mem_records)
+            a_cls = alpha
+            if adj is not None:
+                from .drift_comp import compensated_copy
+                disp, var, ok = est[cls_id]
+                use = list(mem_records)
+                n_comp = 0
+                for k, r in enumerate(mem_records):
+                    if bool(ok[k]) and now - r.round_idx > 0:
+                        n_comp += 1
+                        if adj.drift_comp != "off":
+                            use[k] = compensated_copy(r, r.mu.flatten().float() + disp[k])
+                            if trace is not None:
+                                trace["comp"].append((r.source_id, int(cls_id), r.mu.flatten().float().clone(),
+                                                      use[k].mu.flatten().float().clone()))
+                if stats is not None:
+                    if adj.drift_comp != "off":
+                        stats["comp"] = stats.get("comp", 0) + n_comp
+                        stats["not_comp"] = stats.get("not_comp", 0) + len(mem_records) - n_comp
+                mem_p, mem_d = memory.to_proto_dist_dicts(use)
+                mem_p_fix = mem_p[cls_id]
+                if adj.alpha_mode == "optimal":
+                    okk = [k for k in range(len(mem_records)) if bool(ok[k]) and now - mem_records[k].round_idx > 0]
+                    b2 = n_c = None
+                    if okk:
+                        if adj.drift_comp == "off":
+                            b2 = float(sum(float(disp[k].pow(2).sum()) for k in okk) / len(okk))
+                        else:
+                            b2 = float(sum(float(var[k]) for k in okk) / len(okk))
+                        n_c = (support or {}).get(cls_id)
+                    v = float(cur_sigma.double().pow(2).sum())
+                    a_cls, fb = adj.optimal_alpha(b2, v, n_c, alpha)
+                    if stats is not None:
+                        stats.setdefault("alphas", []).append(a_cls)
+                        stats["fallback"] = stats.get("fallback", 0) + int(fb)
+            else:
+                mem_p, mem_d = memory.to_proto_dist_dicts(mem_records)
             mem_mu = mem_p[cls_id].to(compute_device)
             mem_sigma = mem_d[cls_id].to(compute_device)
+            if trace is not None and adj is not None:
+                trace["classes"].append((int(cls_id), (a_cls * cur_mu + (1 - a_cls) * mem_mu).flatten().float().cpu(),
+                                         (alpha * cur_mu + (1 - alpha) * mem_mu).flatten().float().cpu()))
 
-            mixed_proto[cls_id] = alpha * cur_mu + (1 - alpha) * mem_mu
+            mixed_proto[cls_id] = a_cls * cur_mu + (1 - a_cls) * mem_mu
             # Mix variance: alpha * var_cur + (1-alpha) * var_mem + alpha*(1-alpha)*(mu_cur - mu_mem)^2
             var_mixed = (
-                alpha * cur_sigma ** 2
-                + (1 - alpha) * mem_sigma ** 2
-                + alpha * (1 - alpha) * (cur_mu - mem_mu) ** 2
+                a_cls * cur_sigma ** 2
+                + (1 - a_cls) * mem_sigma ** 2
+                + a_cls * (1 - a_cls) * (cur_mu - mem_mu) ** 2
             )
             mixed_dist[cls_id] = torch.sqrt(var_mixed + 1e-8)
             if runtime_counters is not None:

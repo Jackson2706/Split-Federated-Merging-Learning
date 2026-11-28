@@ -262,6 +262,9 @@ def _write_revision_end(out, config, output, hfl, test_dataset, device, best_log
         "total_time_s": sum(float(r["round_time_s"]) for r in rows),
         "eval_split": "train hold-out" if float(config.get("val_from_train", 0) or 0) > 0 else "test",
     }
+    summary["gpu_peak_allocated_gb"] = hfl._gpu_peak[0] / 2**30
+    summary["gpu_peak_reserved_gb"] = hfl._gpu_peak[1] / 2**30
+    summary["dc_state_mb"] = hfl.dc_state_mb()
     sel = output.get("selected_checkpoint") or {}
     summary.update({k: sel.get(k) for k in ("round", "test_accuracy", "test_macro_f1")})
     if best_logits is not None:
