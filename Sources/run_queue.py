@@ -23,7 +23,7 @@ import time
 
 # ---- the two things to edit --------------------------------------------------
 CMD_TEMPLATE = ("{python} main.py --task classification --method h-sfp --cfg {cfg} "
-                "--seed {seed} --rounds {rounds} --out {out} --set num_workers=2 "
+                "--seed {seed} --rounds {rounds} --out {out} --gpu-data 1 --set num_workers=2 "
                 "{partition_args} {overrides}")
 # dataset -> config. cifar100 loads the locked H-SFP setup (Step 1 of the C1/C2 check).
 CONFIGS = {"cifar100": "configs/revision/hsfp_setup_cifar100.yaml",
