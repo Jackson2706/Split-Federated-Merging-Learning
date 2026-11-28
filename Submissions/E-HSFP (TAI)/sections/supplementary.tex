@@ -9,13 +9,13 @@ One shared bank stores client-output summaries and another stores edge-output su
 
 Global capacity enforcement favors lower-age records. An optional per-class cap removes a highest-age record within that class. Aging and retention-based expiry occur at round end, after upper-tier phases, rather than as a pre-use expiry check on every delayed arrival. The reference settings are 500 records per bank, a 20-round retention limit, and no additional per-class cap.
 
-Replay retrieves up to $K_{\mathrm{mem}}=5$ records per class by stored score. Normalized scores weight the feature means and diagonal variances using the law of total variance, with a $10^{-8}$ variance guard. Uniform weights are used when the score sum is too small. Insertion sets retrieval scores to one, and reliability-network predictions do not overwrite these scores in the executed path. Ties therefore follow the retained ordering, and retrieved records can include arrivals from the current round. The configurable current-moment coefficient has reference default $\alpha=0.3$. A class present only in a current or memory summary uses the available side.
+Replay retrieves up to $K_{\mathrm{mem}}=5$ records per class by stored score. Normalized scores weight the feature means and diagonal variances using the law of total variance, with a $10^{-8}$ variance guard. Uniform weights are used when the score sum is too small. Insertion initializes retrieval scores to one, and reliability-network predictions do not overwrite these scores in the executed path, keeping memory retrieval decoupled from the online source-aggregation scorer of Section~\ref{sec:reliability}. Ties therefore follow the retained recency ordering, and retrieved records can include arrivals from the current round. The configurable current-moment coefficient has reference default $\alpha=0.3$. A class present only in a current or memory summary uses the available side.
 
 The optional classification accumulator stores decayed effective counts, first and second moments, and available within-class scatter at each edge. It reconstructs one effective source, removing relative source-weighting choices at that edge. An invoked accumulator can reuse retained statistics. Its historical contributions have no hard expiry, so record-bank retention does not establish a finite-age bound on every synthesis contribution.
 
 \subsection{Reliability Features and Bootstrap Training}
 
-For each class, the arithmetic mean of current transformed source means defines the center used by the distance feature, including the first phase. The six inputs are normalized log support, standard-deviation norm, age, distance to that center, a constant one, and a duplicate normalized log-support coordinate. Missing support counts are represented by zero.
+For each class, the arithmetic mean of current transformed source means defines the center used by the distance feature, including the first phase. The six inputs are normalized log support, standard-deviation norm, age, distance to that center, a constant one, and a duplicate normalized log-support coordinate (preserving a fixed six-feature metadata schema while emphasizing sample-count reliability). Missing support counts are represented by zero.
 
 For source support $n$ and class maximum support $n_{\max}$, normalization uses
 \begin{equation}
@@ -160,20 +160,23 @@ Dense covariance factors use $O(d^2)$ storage; a full-covariance feature draw co
 
 \subsection{Simulated Execution Events}
 
+To evaluate upper-tier robustness under intermittent serverless and edge execution (Table~\ref{tab:robustness}(c)), the simulator injects five disruption modes on top of the reference setting ($\dropoutp_{\mathrm{train}}=0.2$, $\stale=0$): (i) \emph{function timeout}, which drops client reports exceeding a simulated execution deadline ($\chi_{k,s,t}^{(j)}=0$); (ii) \emph{cold-start delay}, which injects initialization latency on newly invoked workers so their summaries arrive with positive staleness ($\stale_{k,s,t}>0$); (iii) \emph{partial edge execution}, which truncates the local optimizer update budget at active edge servers; (iv) \emph{missing edge update}, which drops edge-to-cloud summary transmissions in a given round; and (v) \emph{combined}, which activates all four perturbations simultaneously. Table~\ref{tab:event_params} summarizes the simulated event parameters.
+
 \begin{table}[t]
 \centering
 \footnotesize
 \caption{Parameters of the simulated execution events.}
 \label{tab:event_params}
-\begin{tabular}{@{}ll@{}}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}p{0.34\columnwidth}p{0.60\columnwidth}@{}}
 \toprule
 Event & Parameters \\
 \midrule
-Function timeout & [[TODO]] \\
-Cold-start delay & [[TODO]] \\
-Partial edge execution & [[TODO]] \\
-Missing edge update & [[TODO]] \\
-Combined & [[TODO]] \\
+Function timeout & Client packet drop probability $p_{\mathrm{to}}=\textcolor{red}{[\text{X.XX}]}$ per round \\
+Cold-start delay & Worker invocation probability $p_{\mathrm{cs}}=\textcolor{red}{[\text{X.XX}]}$, injected delay $\stale_{\mathrm{cs}}\in\{1,\ldots,\textcolor{red}{[\text{X}]}\}$ rounds \\
+Partial edge execution & Edge update budget truncated to fraction $\eta_{\mathrm{exec}}\in[\textcolor{red}{[\text{X.XX}]},\textcolor{red}{[\text{X.XX}]}]$ with probability $p_{\mathrm{pe}}=\textcolor{red}{[\text{X.XX}]}$ \\
+Missing edge update & Edge-to-cloud report drop probability $p_{\mathrm{me}}=\textcolor{red}{[\text{X.XX}]}$ per round \\
+Combined & Simultaneous application of all four events above \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -181,7 +184,54 @@ Combined & [[TODO]] \\
 \section{Detailed Analysis}
 \label{supp:analysis}
 
-This section supplies the detailed stationarity proof, the auxiliary age conditions, and the scalar aggregation benchmark. All statements concern the stated SGD-type update model; Section~\ref{sec:discussion} and Table~\ref{tab:analysis_assumptions} summarize its scope.
+This section supplies the proofs of the exact-pooling, replay-drift, and masking-coverage results, followed by the detailed stationarity proof, the auxiliary age conditions, and the scalar aggregation benchmark. All statements concern the stated SGD-type update model; Section~\ref{sec:discussion} and Table~\ref{tab:analysis_assumptions} summarize its scope.
+
+\subsection{Proof of Lemma~\ref{lem:exact_pooling} (Exact Pooling)}
+Let $\mathcal I_\ell$ denote the disjoint index set of class-$j$ features held by source $\ell \in \{1,\ldots,S\}$, with $n_\ell = |\mathcal I_\ell|$ and $n = \sum_{\ell=1}^S n_\ell > 0$. The pooled mean over $\mathcal I = \bigcup_{\ell=1}^S \mathcal I_\ell$ satisfies
+\begin{equation}
+ \pmu_{\mathrm{pool}} = \frac{1}{n}\sum_{\ell=1}^S \sum_{i\in\mathcal I_\ell} z_i = \sum_{\ell=1}^S \frac{n_\ell}{n} \pmu_\ell = \sum_{\ell=1}^S w_\ell \pmu_\ell.
+\end{equation}
+For the coordinate-wise variance, expanding $(z_i - \pmu_{\mathrm{pool}})^2 = \bigl((z_i - \pmu_\ell) + (\pmu_\ell - \pmu_{\mathrm{pool}})\bigr)^2$ within each source $\ell$ and noting that $\sum_{i\in\mathcal I_\ell}(z_i - \pmu_\ell) = 0$ yields
+\begin{align}
+ \psigma_{\mathrm{pool}}^2
+ &= \frac{1}{n}\sum_{\ell=1}^S \sum_{i\in\mathcal I_\ell} (z_i - \pmu_{\mathrm{pool}})^2 \nonumber\\
+ &= \frac{1}{n}\sum_{\ell=1}^S \Bigl[ \sum_{i\in\mathcal I_\ell}(z_i - \pmu_\ell)^2 + n_\ell(\pmu_\ell - \pmu_{\mathrm{pool}})^2 \Bigr] \nonumber\\
+ &= \sum_{\ell=1}^S w_\ell \bigl[\psigma_\ell^2 + (\pmu_\ell - \pmu_{\mathrm{pool}})^2\bigr],
+\end{align}
+where all squares are taken coordinate-wise.
+
+\subsection{Proof of Proposition~\ref{prop:replay_drift} (Replay Drift Bound)}
+When $(\pmu_{\mathrm c},\psigma_{\mathrm c})=(\pmu_*,\psigma_*)$, the replay mixture~\eqref{eq:memory_mixture} gives
+\begin{equation}
+ \widetilde\pmu - \pmu_* = -(1-\alpha)(\pmu_* - \pmu_{\mathrm m}),
+\end{equation}
+so $\|\widetilde\pmu - \pmu_*\|_2^2 = (1-\alpha)^2\|\pmu_* - \pmu_{\mathrm m}\|_2^2$. For any two nonnegative scalars $a,b\ge 0$, $(\sqrt{a}-\sqrt{b})^2 = a + b - 2\sqrt{ab} \le |a-b|$. Applying this inequality coordinate-wise to $\widetilde\psigma^2$ in~\eqref{eq:memory_mixture} and $\psigma_*^2$ gives, for each coordinate $i\in\{1,\ldots,d\}$,
+\begin{align}
+ (\widetilde\sigma_i - \sigma_{*,i})^2
+ &\le |\widetilde\sigma_i^2 - \sigma_{*,i}^2| \nonumber\\
+ &= \bigl|(1-\alpha)(\sigma_{\mathrm m,i}^2 - \sigma_{*,i}^2)
+ + \alpha(1-\alpha)(\mu_{*,i} - \mu_{\mathrm m,i})^2 + \zeta\bigr| \nonumber\\
+ &\le (1-\alpha)|\sigma_{\mathrm m,i}^2 - \sigma_{*,i}^2|
+ + \alpha(1-\alpha)(\mu_{*,i} - \mu_{\mathrm m,i})^2 + \zeta.
+\end{align}
+Summing over $i=1,\ldots,d$ yields
+\begin{equation}
+ \|\widetilde\psigma - \psigma_*\|_2^2
+ \le (1-\alpha)\|\psigma_{\mathrm m}^2 - \psigma_*^2\|_1
+ + \alpha(1-\alpha)\|\pmu_* - \pmu_{\mathrm m}\|_2^2 + d\zeta.
+\end{equation}
+Substituting both terms into the diagonal-Gaussian Wasserstein identity $W_2^2(\widetilde G,G_*)=\|\widetilde\pmu-\pmu_*\|_2^2+\|\widetilde\psigma-\psigma_*\|_2^2$ and using $(1-\alpha)^2 + \alpha(1-\alpha) = 1-\alpha$ gives~\eqref{eq:replay_drift_bound}.
+
+\subsection{Proof of Proposition~\ref{prop:masking_coverage} (Masking Class-Loss Probability)}
+Let $\mathcal S_j\subseteq\{1,\ldots,S\}$ denote the subset of $S_j = |\mathcal S_j|\ge 1$ source outputs that contain class $j$. Prior to restoration, each source output is independently marked for removal with probability $p=p_{\mathrm{train}}$. Let $E_j$ be the event that all $S_j$ outputs in $\mathcal S_j$ are initially marked, which occurs with probability $\Pr(E_j)=p^{S_j}$, and let $E_{\mathrm{all}}\subseteq E_j$ be the event that all $S$ outputs are initially marked, which occurs with probability $\Pr(E_{\mathrm{all}})=p^S$.
+
+Class $j$ is absent after masking ($j\notin\mathcal J_t$) if and only if $E_j$ occurs and the restored output (triggered exclusively on $E_{\mathrm{all}}$) does not belong to $\mathcal S_j$. Conditional on $E_{\mathrm{all}}$, the single restored output is chosen uniformly from all $S$ sources, so it belongs to $\mathcal S_j$ with probability $S_j/S$. Hence,
+\begin{equation}
+ \Pr[j\notin\mathcal J_t\text{ after masking}]
+ = \Pr(E_j) - \frac{S_j}{S}\Pr(E_{\mathrm{all}})
+ = p^{S_j} - \frac{S_j}{S}p^S.
+\end{equation}
+Finally, let $B\sim\mathrm{Binomial}(S,1-p)$ denote the number of outputs not initially marked. Because the restoration step adds exactly one output when $B=0$ and none otherwise, the final retained count is $N_{\mathrm{ret}} = B + \mathbb I\{B=0\}$, whose expectation is $\mathbb E[N_{\mathrm{ret}}] = S(1-p) + p^S$.
 
 \subsection{Conditional Objectives and Update Model}
 
@@ -438,7 +488,9 @@ The optimum concerns the displayed scalar fixed-weight bound. It need not minimi
 
 \subsection{Scope and Implementation Evidence}
 
-\begin{table*}[t]
+Table~\ref{tab:analysis_assumptions} maps each analytical condition in Theorem~\ref{thm:convergence} and Lemma~\ref{prop:drift_decomp} to its operational role in the stationarity derivation and contrasts it with the empirical setup. In particular, it distinguishes properties guaranteed directly by the synthesis pipeline from unmeasured optimization constants, optimizer preconditioning, and untruncated accumulation effects.
+
+\begin{table*}[!ht]
 \centering
 \footnotesize
 \caption{Scope of the conditional analysis. Implementation properties and reported task metrics do not establish the unmeasured analytical bounds.}
@@ -475,4 +527,3 @@ Fixed update state and active classes
 \bottomrule
 \end{tabular}
 \end{table*}
-

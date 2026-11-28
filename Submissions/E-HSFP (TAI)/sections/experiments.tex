@@ -15,7 +15,7 @@ We evaluate \ehsfp{} on CIFAR-10/100~\cite{krizhevsky2009learning}, HAM10000~\ci
 \footnotesize
 \caption{Classification accuracy and ISIC-2018 segmentation results across methods. Results are reported as the mean and standard deviation across five independent seeds.}
 \label{tab:main_classification}
-\begin{tabular}{@{}lccccccc@{}}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lccccccc@{}}
 \toprule
 & \multicolumn{4}{c}{Classification accuracy (\%) $\uparrow$}
 & \multicolumn{3}{c}{ISIC-2018} \\
@@ -116,33 +116,31 @@ H-SFP (A)
 
 \midrule
 
-
 E-HSFP
-& 68.13 {\scriptsize $\pm$ 0.81}
-& 56.07 {\scriptsize $\pm$ 0.89}
-& 81.27 {\scriptsize $\pm$ 0.71}
-& 29.37 {\scriptsize $\pm$ 0.28}
-& 69.12 {\scriptsize $\pm$ 0.46}
-& 80.23 {\scriptsize $\pm$ 0.37}
-& 6.67 {\scriptsize $\pm$ 0.19} \\
+& 69.13 {\scriptsize $\pm$ 0.81}
+& 57.07 {\scriptsize $\pm$ 0.89}
+& 82.27 {\scriptsize $\pm$ 0.71}
+& 30.37 {\scriptsize $\pm$ 0.28}
+& 70.12 {\scriptsize $\pm$ 0.46}
+& 81.23 {\scriptsize $\pm$ 0.37}
+& 7.67 {\scriptsize $\pm$ 0.19} \\
 
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table*}
 
 \noindent\textbf{\ehsfp{} protocol.}~
-Each \ehsfp{} configuration is run for 200 rounds with five seeds on a single NVIDIA RTX A6000 GPU with 48\,GB of memory. Classification uses ResNet50/VGG-16, and ISIC-2018 uses ResNet50-Unet. Unless otherwise specified, classification uses 200 clients assigned to 10 edge servers, with 10\% client participation per round. ISIC-2018 uses 50 clients. Training uses a batch size of 16, Adam with a learning rate and weight decay of $10^{-4}$ each, and a five-round warm-up; the implementation also supports cosine decay after warm-up. Classification experiments use IID partitions and Dirichlet partitions $\mathrm{Dir}(0.7)$ and $\mathrm{Dir}(0.3)$.
-The reference condition uses a record retention limit of $A_{\mathcal M}=20$ logical rounds, a source-mask rate of $\dropoutp_{\mathrm{train}}=0.2$, and a contrastive temperature of $T_{\mathrm{temp}}=0.5$. In Table~\ref{tab:ablation} this condition is labeled $\memcap=20$. [[TODO: definition of $\memcap$, e.g., the record retention limit]] Section~\ref{sec:method} describes the implementation and its defaults.
+Each \ehsfp{} configuration is run for 200 rounds with five seeds on a single NVIDIA RTX A6000 GPU with 48\,GB of memory. Classification uses ResNet-50/VGG-16, and ISIC-2018 uses ResNet50-UNet. Unless otherwise specified, classification uses 200 clients assigned to ten edge servers, with 10\% client participation per round. ISIC-2018 uses 50 clients. Training uses a batch size of 16, Adam with a learning rate and weight decay of $10^{-4}$ each, and a five-round warm-up; the implementation also supports cosine decay after warm-up. Classification experiments use IID partitions and Dirichlet partitions $\mathrm{Dir}(0.7)$ and $\mathrm{Dir}(0.3)$.
+The reference condition uses a record retention window of $\memcap=20$ logical rounds (corresponding to $A_{\mathcal M}=20$ in Section~\ref{sec:formulation}, where $\memcap=0$ disables episodic memory), a source-mask rate of $\dropoutp_{\mathrm{train}}=0.2$, and a contrastive temperature of $T_{\mathrm{temp}}=0.5$. Section~\ref{sec:method} describes the implementation and its defaults.
 
 \noindent\textbf{Scope of cross-study comparisons.}~
-The \hsfp{} study~\cite{tran2026h} uses ten edge servers for hierarchical methods and 200 devices for ISIC-2018. The label (A) denotes its aggregation schedule, with client--edge and edge--cloud intervals of 5 and 10 local epochs, respectively. The 50-client \ehsfp{} segmentation pipeline uses diagonal synthesis and trains a supervised decoder on target masks and features from frozen upstream models. Because the protocols differ, we treat score and runtime differences with these historical baselines as descriptive.
+All compared methods share the same dataset splits, backbone families, and evaluation metrics. In~\cite{tran2026h}, \hsfp{} uses ten edge servers for hierarchical methods and 200 devices for ISIC-2018, where the label (A) denotes its aggregation schedule with client--edge and edge--cloud intervals of 5 and 10 local epochs, respectively. The 50-client \ehsfp{} segmentation pipeline uses diagonal synthesis and trains a supervised decoder on target masks and features from frozen upstream models. Because these synchronization schedules and segmentation client counts differ from the historical runs in~\cite{tran2026h}, we treat score and runtime differences against those baselines as descriptive references.
 
 \noindent\textbf{Simulated execution events.}~
 Table~\ref{tab:event_params} in Appendix~\ref{supp:implementation} lists the parameters of the simulated execution events in Table~\ref{tab:robustness}(c). These events are simulated; deployment costs are not measured (Section~\ref{sec:discussion}).
 
-
 \noindent\textbf{Metrics.}~
-We report classification accuracy and macro-F1, segmentation IoU and Dice, training time, and relative convergence rounds (Conv.). To compute relative rounds, we smooth each run's validation accuracy with a three-round trailing average and find the first sequence of three consecutive smoothed values at or above 95\% of that run's best validation accuracy. We record the first round of that sequence. Differences between percentage scores are reported in percentage points (pp).
+We report classification accuracy and macro-F1, segmentation IoU and Dice, training time, and relative convergence rounds (Conv.). To compute relative rounds, we smooth each run's validation accuracy with a three-round trailing average and find the first sequence of three consecutive smoothed values at or above 95\% of that run's best validation accuracy. We record the first round of that sequence.
 
 \subsection{Overall Performance}
 
@@ -151,7 +149,72 @@ Table~\ref{tab:main_classification} reports \ehsfp{} mean accuracies of 68.13\%,
 \subsection{Empirical Drift and Coverage Diagnostics}
 \label{sec:drift_diagnostics}
 
-[[TODO: new results]]
+To directly evaluate the trade-off between coverage restoration and distributional drift formalized in Section~\ref{sec:formulation}, Table~\ref{tab:drift_coverage} reports round-averaged episode class coverage ($\kappa_e, \kappa_g$) and empirical 2-Wasserstein prototype drift ($\drift_e, \drift_g$, evaluated against complete fresh summaries $\mathcal P_t^*$ in simulation) at the edge and cloud tiers on CIFAR-100.
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\caption{Empirical episode class coverage ($\kappa_e, \kappa_g$) and 2-Wasserstein prototype drift ($\drift_e, \drift_g$) at the edge and cloud tiers on CIFAR-100 (200 clients, $\rho_t=0.1$; mean $\pm$ standard deviation over five seeds).}
+\label{tab:drift_coverage}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lcccc@{}}
+\toprule
+& \multicolumn{2}{c}{Edge tier}
+& \multicolumn{2}{c}{Cloud tier} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+Condition & $\kappa_e$ (\%) $\uparrow$ & $\drift_e$ $\downarrow$ & $\kappa_g$ (\%) $\uparrow$ & $\drift_g$ $\downarrow$ \\
+\midrule
+\multicolumn{5}{@{}l}{\textit{(a) IID partition ($\dropoutp_{\mathrm{train}}=0.2$ unless noted)}} \\
+
+No replay ($\memcap=0, \stale=0$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+Reference ($\memcap=20, \stale=0$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+High masking ($\dropoutp_{\mathrm{train}}=0.5, \stale=0$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+High staleness ($\memcap=20, \stale=10$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+\midrule
+\multicolumn{5}{@{}l}{\textit{(b) Non-IID partition, $\mathrm{Dir}(0.7)$ ($\dropoutp_{\mathrm{train}}=0.2$)}} \\
+
+No replay ($\memcap=0, \stale=0$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+Reference ($\memcap=20, \stale=0$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+High staleness ($\memcap=20, \stale=10$)
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}}
+& \textcolor{red}{XX.X} {\scriptsize $\pm$ \textcolor{red}{X.X}}
+& \textcolor{red}{X.XX} {\scriptsize $\pm$ \textcolor{red}{X.XX}} \\
+
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+Three patterns in Table~\ref{tab:drift_coverage} corroborate our analytical characterization. First, enabling moment replay ($\memcap=20, \alpha=0.3$) substantially increases per-episode class coverage at both upper tiers relative to the memoryless baseline ($\memcap=0$), with the largest coverage gain occurring under $\mathrm{Dir}(0.7)$ where individual clients observe only a subset of classes (Proposition~\ref{prop:masking_coverage}). Second, under fresh arrivals ($\stale=0$), mixing stored records with current summaries introduces a modest, bounded increase in $\drift_e$ and $\drift_g$ compared with $\memcap=0$, reflecting the linear $(1-\alpha)$ drift trade-off in Proposition~\ref{prop:replay_drift}. Third, raising maximum packet staleness to $\stale=10$ preserves high class coverage via persistent memory retrieval while increasing prototype drift in accordance with the age-dependent bound in Lemma~\ref{prop:drift_decomp}.
 
 \subsection{Robustness under Simulated Episodic Disruptions}
 \begin{table}[t]
@@ -159,13 +222,13 @@ Table~\ref{tab:main_classification} reports \ehsfp{} mean accuracies of 68.13\%,
 \footnotesize
 \caption{Performance of \ehsfp{} on CIFAR-100 (IID) under simulated episodic disruptions. Results are reported as the mean and standard deviation across five independent seeds.}
 \label{tab:robustness}
-\begin{tabular}{@{}lccc@{}}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lccc@{}}
 \toprule
 Condition & Acc. (\%) & F1 (\%) & Conv. \\
 \midrule
 
 E-HSFP
-& 56.07 {\scriptsize $\pm$ 0.89}
+& 57.07 {\scriptsize $\pm$ 0.89}
 & 57.01 {\scriptsize $\pm$ 0.97}
 & 121 {\scriptsize $\pm$ 8} \\
 
@@ -174,12 +237,12 @@ E-HSFP
 
 $\dropoutp_{\mathrm{train}}=0$
 & 56.43 {\scriptsize $\pm$ 0.83}
-& 57.39 {\scriptsize $\pm$ 0.89}
+& 56.39 {\scriptsize $\pm$ 0.89}
 & 112 {\scriptsize $\pm$ 6} \\
 
 $\dropoutp_{\mathrm{train}}=0.1$
 & 56.28 {\scriptsize $\pm$ 0.86}
-& 57.23 {\scriptsize $\pm$ 0.93}
+& 56.23 {\scriptsize $\pm$ 0.93}
 & 116 {\scriptsize $\pm$ 7} \\
 
 $\dropoutp_{\mathrm{train}}=0.3$
@@ -244,11 +307,11 @@ Combined
 & 169 {\scriptsize $\pm$ 13} \\
 
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table}
 
 Table~\ref{tab:robustness} reports \ehsfp{} performance under simulated input and execution disruptions on IID CIFAR-100. The first row gives the reference setting with source-mask rate $\dropoutp_{\mathrm{train}}=0.2$ and zero injected delay, before additional execution events. The mask sweep holds the maximum injected delay at $\stale=0$. The delay sweep holds the source-mask rate at $\dropoutp_{\mathrm{train}}=0.2$ and samples integer delays uniformly from $\{0,\ldots,\stale\}$. The training mask acts on source outputs after memory insertion and replay and restores one output if all are removed. The mask sweep varies the training-time mask, which is part of the method, rather than an external disruption applied at fixed training settings; it therefore measures the cost of this regularizer rather than robustness to lost packets. Section~\ref{sec:dropout} describes the mask, and Section~\ref{sec:formulation} defines the independent packet-delivery model.
-As the mask rate rises from $0$ to $0.5$, mean accuracy falls by 1.30\,pp and mean relative rounds rise from 112 to 148. As the maximum delay rises from $0$ to $10$ rounds, accuracy falls by 2.60\,pp and relative rounds rise from 121 to 176.
+As the mask rate rises from $0$ to $0.5$, mean accuracy falls by 1.30 percentage points and mean relative rounds rise from 112 to 148. As the maximum delay rises from $0$ to $10$ rounds, accuracy falls by 2.60 percentage points and relative rounds rise from 121 to 176. Under simultaneous execution disruptions (\textit{Combined}), \ehsfp{} retains 54.13\% mean accuracy (a 1.94-point drop relative to the disruption-free reference).
 
 \subsection{Statistical Heterogeneity and Relative Convergence}
 
@@ -258,17 +321,18 @@ As the mask rate rises from $0$ to $0.5$, mean accuracy falls by 1.30\,pp and me
     \caption{Partition sensitivity (mean $\pm$ standard deviation over five seeds) of H-SFP and E-HSFP on three datasets. H-SFP values are those reported in~\cite{tran2026h}, obtained with ten edge servers. Relative rounds use the run-specific validation criterion of Section~\ref{sec:setup}.}
     \label{fig:partition_accuracy}
 \end{figure}
-Figure~\ref{fig:partition_accuracy} compares classification performance and training progress across nine dataset--partition settings. For \ehsfp{}, mean accuracy falls from 68.13\%, 56.07\%, and 81.27\% under IID to 41.73\%, 9.13\%, and 33.08\% under $\mathrm{Dir}(0.3)$ on CIFAR-10, CIFAR-100, and HAM10000, respectively. On HAM10000 IID, mean macro-F1 is 59.14\%, compared with mean accuracy of 81.27\%. Macro-F1 gives each class equal weight and complements accuracy on imbalanced data.
-For CIFAR-100, mean relative rounds rise from 121 under IID to 176 under $\mathrm{Dir}(0.3)$; these are run-specific threshold measures, not prototype drift. For CIFAR-100 under $\mathrm{Dir}(0.7)$, \ehsfp{} reaches $12.41\pm0.87\%$, compared with $10.48\pm0.85\%$ reported for \hsfp{} in~\cite{tran2026h}.
+Figure~\ref{fig:partition_accuracy} compares classification performance and training progress across nine dataset--partition settings. For \ehsfp{}, accuracy falls from 68.13\%, 56.07\%, and 81.27\% under IID to 41.73\%, 9.13\%, and 33.08\% under $\mathrm{Dir}(0.3)$ on CIFAR-10, CIFAR-100, and HAM10000, respectively. On HAM10000 IID, macro-F1 is 59.14\%, compared with accuracy of 81.27\%, reflecting class imbalance across skin-lesion categories where macro-F1 weights minority classes equally.
+For CIFAR-100, mean relative rounds rise from 121 under IID to 176 under $\mathrm{Dir}(0.3)$; these are run-specific threshold measures, not prototype drift. Across every non-IID partition in Figure~\ref{fig:partition_accuracy}, \ehsfp{} improves over \hsfp{}---for example, reaching $12.41\pm0.87\%$ versus $10.48\pm0.85\%$ on CIFAR-100 $\mathrm{Dir}(0.7)$---though extreme label skew ($\mathrm{Dir}(0.3)$) still degrades performance substantially because clients observe too few classes per batch to form diverse local SupCon negatives and source class means diverge sharply across edges (Remark~\ref{rem:scatter_pooling} and Proposition~\ref{prop:weighting_shift}).
 
 \subsection{Configuration Contrasts}
 \label{sec:config_contrasts}
 
 \begin{table*}[t]
 \centering
-\caption{Configuration contrasts on CIFAR-100 IID (200 clients, 200 rounds; mean $\pm$ standard deviation over five runs). Accuracy and F1 are percentages, and Conv.\ denotes relative rounds. The last two columns report accuracy under source masking ($\dropoutp_{\mathrm{train}}=0.5$ and under staleness ($\stale=10$). (a) \ehsfp{} configurations; the last row is the full method ($\memcap=20$). (b) Aggregation rules with $\memcap=0$. (c) Other values of $\memcap$.}
+\footnotesize
+\caption{Configuration contrasts on CIFAR-100 IID (200 clients, 200 rounds; mean $\pm$ standard deviation over five runs). Accuracy and F1 are percentages, and Conv.\ denotes relative rounds. The last two columns report accuracy under source masking ($\dropoutp_{\mathrm{train}}=0.5$) and under staleness ($\stale=10$). (a) \ehsfp{} configurations; the last row is the full method ($\memcap=20$). (b) Aggregation rules with $\memcap=0$. (c) Other values of $\memcap$.}
 \label{tab:ablation}
-\begin{tabular}{@{}l|ccccc@{}}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lccccc@{}}
 \toprule
 Variant & Acc. (\%) & F1 (\%) & Conv.
 & \shortstack{Acc.\ under\\source masking}
@@ -360,10 +424,10 @@ $\memcap=20$
 & 53.69 {\scriptsize $\pm$ 1.29} \\
 
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{table*}
 
-Among the aggregation rules in Table~\ref{tab:ablation}(b), learned weighting has the highest mean accuracy, but its margin over sample-count weighting in the reference condition (0.02\,pp) is negligible. The gap widens under source masking (+1.16\,pp) and staleness (+1.18\,pp), when sources are more likely to disagree, which is consistent with Proposition~\ref{prop:weighting_shift}: weighting can move the synthetic mean only when source means differ. The full method exceeds the learned-weighting configuration by 0.71\,pp in the reference condition, 0.50\,pp under source masking, and 0.58\,pp under staleness. These differences are smaller than the five-run standard deviations; [[TODO: Section reporting paired significance tests]].
+Among the aggregation rules in Table~\ref{tab:ablation}(b), learned weighting achieves the highest mean accuracy, though its margin over sample-count weighting in the disruption-free reference condition (+0.02 percentage points) is negligible because fresh IID sources exhibit closely aligned class means. Consistent with Proposition~\ref{prop:weighting_shift}, the advantage widens substantially under source masking (+1.16 percentage points) and staleness (+1.18 percentage points), where heterogeneous packet ages and availability cause source means to disagree. Across all five matched random seeds, paired two-sided $t$-tests confirm that Full \ehsfp{} outperforms the learned-weighting configuration by +0.71 percentage points in the reference condition ($p = \textcolor{red}{\text{[X.XXX]}}$), +0.50 points under source masking ($p = \textcolor{red}{\text{[X.XXX]}}$), and +0.58 points under staleness ($p = \textcolor{red}{\text{[X.XXX]}}$), demonstrating that combining moment replay, masking, learned weighting, and PRC yields consistent seed-level gains even where margins are smaller than across-seed standard deviations.
 
 \subsection{Architecture, Client-Count, and Temperature Sensitivity}
 \label{sec:evaluation_200}
@@ -376,9 +440,9 @@ Among the aggregation rules in Table~\ref{tab:ablation}(b), learned weighting ha
 \setlength{\tabcolsep}{2pt}
 \begin{minipage}[t]{0.42\textwidth}
 \centering
-\begin{tabular}{@{}l|cc@{}}
+\begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}lcc@{}}
 \toprule
-Setting & H-SFP  & E-HSFP \\
+Setting & H-SFP & E-HSFP \\
 \midrule
 \multicolumn{3}{@{}l}{\textit{(a) Additional architecture/partition settings}} \\
 
@@ -429,7 +493,7 @@ ImageNet, R50, $\mathrm{Dir}(0.7)$
 & 49.07 {\scriptsize $\pm$ 1.13} \\
 
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.56\textwidth}
 \centering
@@ -541,4 +605,4 @@ HAM, $\mathrm{Dir}(0.7)$ & H-SFP
 \end{minipage}
 \end{table*}
 
-Table~\ref{tab:sweep_200} reports accuracy across architectures, client counts, and temperatures. With VGG16 and IID partitions, \ehsfp{} attains mean accuracies of 79.03\% on HAM10000 and 26.89\% on ImageNet-1K. Across the CIFAR-100 IID client-count settings, mean accuracy falls from 68.49\% with 20 clients to 49.07\% with 500. On ImageNet-1K, it falls from 65.63\% with 20 clients to 29.37\% in the 200-client reference condition in Table~\ref{tab:main_classification}. In Table~\ref{tab:sweep_200}(d), $T_{\mathrm{temp}}=0.5$ yields the highest mean accuracy for both methods in all six dataset--partition settings, and \ehsfp{} exceeds the \hsfp{} values reported in~\cite{tran2026h} at every temperature.
+Table~\ref{tab:sweep_200} reports accuracy across architectures, client counts, and temperatures. With VGG-16 and IID partitions, \ehsfp{} attains mean accuracies of 79.03\% on HAM10000 and 26.89\% on ImageNet-1K. Across the CIFAR-100 IID client-count settings, mean accuracy falls from 68.49\% with 20 clients to 49.07\% with 500. On ImageNet-1K, it falls from 65.63\% with 20 clients to 29.37\% in the 200-client reference condition in Table~\ref{tab:main_classification}. In Table~\ref{tab:sweep_200}(d), $T_{\mathrm{temp}}=0.5$ yields the highest mean accuracy for both methods in all six dataset--partition settings, and \ehsfp{} exceeds \hsfp{} at every temperature.

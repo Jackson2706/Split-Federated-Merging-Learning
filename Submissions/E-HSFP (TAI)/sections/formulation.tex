@@ -40,7 +40,9 @@ bypasses replay, masking, and accumulation. To construct it, we hold the lower-t
 \label{def:proto_drift}
 For $\mathcal J_t\ne\varnothing$, define
 \begin{equation}
-\drift_t^{(j)}=W_2^2\!\left(Q_t^{(j)},Q_{*,t}^{(j)}\right), \drift_t=\sum_{j\in\mathcal J_t}\pi_t^{(j)}\drift_t^{(j)},
+\drift_t^{(j)}=W_2^2\!\left(Q_t^{(j)},Q_{*,t}^{(j)}\right),
+\qquad
+\drift_t=\sum_{j\in\mathcal J_t}\pi_t^{(j)}\drift_t^{(j)},
  \label{eq:prototype_drift}
 \end{equation}
 where $W_2$ denotes the 2-Wasserstein distance. The drift compares the synthetic distributions, conditional on the episode state, for the classes represented in that episode.
@@ -61,18 +63,19 @@ with the Bures term $\mathfrak B^2$ defined in Remark~\ref{rem:representation_er
 In the shared case, the covariance contributes a single class-independent term. Equation~\eqref{eq:w2_gauss} gives the exact class drift only when it is evaluated with the covariances actually used for sampling. A diagnostic based only on aggregated means and standard deviations can differ when the sampler uses cross-feature correlations or different marginal variances. Computing either quantity requires the complete, fresh summaries used to construct the reference, which the learner does not observe.
 
 \noindent\textbf{A hierarchy of surrogates.}~
-Three gaps separate the upper-tier training law from the data. Let $Q_{\mathrm{pool},t}^{(j)}$ be the Gaussian built from $\mathcal P_t^*$ with the count weights of Lemma~\ref{lem:exact_pooling}, and define
+Three gaps separate the upper-tier training law from the true empirical feature distribution. Let $Q_{\mathrm{pool},t}^{(j)}$ be the Gaussian built from $\mathcal P_t^*$ with the count weights of Lemma~\ref{lem:exact_pooling}, and define
 $\varepsilon_{\mathrm{ref},t}=\sum_{j\in\mathcal J_t}\pi_t^{(j)}W_2^2(Q_{*,t}^{(j)},Q_{\mathrm{pool},t}^{(j)})$.
 Because $W_2$ is a metric, the squared triangle inequality gives, for each class,
 \begin{equation}
 \begin{split}
- W_2^2(Q_t^{(j)},P^{(j)})\le{}&3\drift_t^{(j)}
+ W_2^2(Q_t^{(j)},P^{(j)})
+ \le{}&3\drift_t^{(j)}
  +3W_2^2(Q_{*,t}^{(j)},Q_{\mathrm{pool},t}^{(j)})\\
  &+3W_2^2(Q_{\mathrm{pool},t}^{(j)},P^{(j)}),
 \end{split}
 \label{eq:surrogate_hierarchy}
 \end{equation}
-where $P^{(j)}$ is the law of the class-$j$ interface features of the assigned sources (Remark~\ref{rem:representation_error}). Under diagonal synthesis, $Q_{\mathrm{pool},t}^{(j)}$ is the Gaussian fitted to the first two moments of the union, so the last term equals the representation error $\varepsilon_{\mathrm{rep}}^{(j)}$. Under shared full-covariance synthesis, it also contains the covariance-pooling gap of Remark~\ref{rem:scatter_pooling}. The drift $\drift_t$ captures only the first gap, which is caused by availability, age, replay, masking, and accumulation. The second gap is introduced by the learned weighting itself, and the third by the Gaussian model. Section~\ref{sec:convergence} controls the first gap. The other two are design choices that the reference inherits.
+where $P^{(j)}$ is the law of the class-$j$ interface features of the assigned sources (Remark~\ref{rem:representation_error}). Under diagonal synthesis, $Q_{\mathrm{pool},t}^{(j)}$ is the Gaussian fitted to the first two moments of the union, so the last term equals the representation error $\varepsilon_{\mathrm{rep}}^{(j)}$. Under shared full-covariance synthesis, it also contains the covariance-pooling gap of Remark~\ref{rem:scatter_pooling}. This decomposition isolates dynamic packet-level distortion from static architectural choices: $\drift_t$ captures solely the discrepancy induced by partial availability, staleness, replay, masking, and accumulation, whereas $\varepsilon_{\mathrm{ref},t}$ and $\varepsilon_{\mathrm{rep}}^{(j)}$ stem from learned weighting and Gaussian parametric approximation, respectively, and are already embedded in the fresh reference $Q_{*,t}^{(j)}$. Section~\ref{sec:convergence} therefore controls $\drift_t$ directly relative to $Q_{*,t}^{(j)}$.
 
 \subsection{Mechanism-Level Characterization}
 
@@ -83,8 +86,8 @@ The next three results isolate how each operator in~\eqref{eq:synthesis_pipeline
 Consider one source whose current packet for class $j$ is fresh, so that $(\pmu_{\mathrm c},\psigma_{\mathrm c})=(\pmu_*,\psigma_*)$, and let $(\pmu_{\mathrm m},\psigma_{\mathrm m})$ be the memory moments. Under diagonal synthesis, the replayed law $\widetilde G=\mathcal N(\widetilde\pmu,\operatorname{diag}\widetilde\psigma^2)$ obtained from~\eqref{eq:memory_mixture} satisfies
 \begin{equation}
 \begin{split}
- W_2^2(\widetilde G,G_*)\le{}&
- (1-\alpha)\left(\|\pmu_*-\pmu_{\mathrm m}\|_2^2
+ W_2^2(\widetilde G,G_*)
+ \le{}&(1-\alpha)\left(\|\pmu_*-\pmu_{\mathrm m}\|_2^2
  +\|\psigma_{\mathrm m}^2-\psigma_*^2\|_1\right)\\
  &+d\zeta.
 \end{split}
@@ -92,7 +95,7 @@ Consider one source whose current packet for class $j$ is fresh, so that $(\pmu_
 \end{equation}
 \end{prop}
 \begin{proof}
-Apply the diagonal-Gaussian Wasserstein formula to~\eqref{eq:memory_mixture}; the coordinate-wise algebra is given in the supplementary material [[TODO: confirm that a separate supplementary file exists; otherwise move this derivation to Appendix~\ref{supp:analysis}]].
+Applying the diagonal-Gaussian Wasserstein identity~\eqref{eq:w2_gauss} to the moment mixture~\eqref{eq:memory_mixture} yields the bound; the coordinate-wise algebra is given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
 When the current packet is fresh, replay can only add drift. That drift is at most linear in $1-\alpha$ and proportional to the discrepancy between memory and current moments. Replay also inflates the variance by $\alpha(1-\alpha)(\pmu_{\mathrm c}-\pmu_{\mathrm m})^2$, which widens the synthetic distribution when memory and current moments disagree. When a class is absent from the current packet but present in memory, replay restores coverage instead, at a drift cost of $W_2^2(\mathcal N(\pmu_{\mathrm m},\operatorname{diag}\psigma_{\mathrm m}^2),G_*)$. Under the assumptions of Lemma~\ref{prop:drift_decomp}, this cost is bounded by a term quadratic in the age of the stored records. The mixing coefficient $\alpha$ and the retention limit $A_{\mathcal M}$ therefore set a trade-off between coverage and fidelity. Proposition~\ref{prop:replay_drift} concerns a single source; Assumption~\ref{asm:staleness} describes how such perturbations propagate through aggregation.
@@ -108,10 +111,10 @@ Consider a nonempty collection of $S$ source outputs, of which $S_j\ge1$ contain
 and the expected number of retained outputs is $S(1-p)+p^S$.
 \end{prop}
 \begin{proof}
-Count the all-marked event and subtract the uniform restoration event; the detailed calculation is given in the supplementary material [[TODO: confirm that a separate supplementary file exists; otherwise move this derivation to Appendix~\ref{supp:analysis}]].
+Subtracting the uniform restoration event from the all-marked event over the $S_j$ sources holding class $j$ yields~\eqref{eq:masking_class_loss}; the detailed counting derivation is given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
-If every retained source holds class $j$ ($S_j=S$), masking never removes it. If only one source holds it, the loss probability is $p(1-p^{S-1}/S)$. The coverage effect of masking therefore depends on heterogeneity. Under IID partitions, where most classes are held by every source, masking acts mainly on the aggregated moments. Under label-skewed partitions, it acts mainly on rare classes. Classes added to existing outputs by replay count toward $S_j$, because masking follows replay. With accumulation enabled, a masked class can reappear through the decayed totals in~\eqref{eq:accumulated_moments}.
+If every retained source holds class $j$ ($S_j=S$), masking never removes it. If only one source holds it, the loss probability is $p(1-p^{S-1}/S)$. The coverage effect of masking therefore depends on heterogeneity: under IID partitions, where most classes are held by every source, masking acts primarily as stochastic variance injection on the aggregated moments, whereas under label-skewed partitions, it disproportionately drops rare classes. Because masking is applied after replay in~\eqref{eq:synthesis_pipeline}, classes injected into existing source outputs by $\mathsf R_\alpha$ increase $S_j$ and directly reduce this dropout probability. With accumulation enabled, a masked class can also persist through the decayed totals in~\eqref{eq:accumulated_moments}.
 
 \begin{prop}[Learned weighting shifts the mean only under disagreement]
 \label{prop:weighting_shift}
@@ -135,9 +138,9 @@ For ideal shared model components $W_c,W_e,W_g$ and $N=\sum_{k\in\clients}|\math
 \begin{equation}
 \begin{split}
  F(W_c,W_e,W_g)
- =\sum_{k\in\clients}\frac{|\mathcal D_k|}{N}
+ ={}&\sum_{k\in\clients}\frac{|\mathcal D_k|}{N}
  \mathbb E_{(x,y)\sim\mathcal D_k}\Bigl[\\
- \ell\bigl((W_g\circ W_e\circ W_c)(x),y\bigr)\Bigr],
+ &\ell\bigl((W_g\circ W_e\circ W_c)(x),y\bigr)\Bigr],
 \end{split}
  \label{eq:global_objective}
 \end{equation}
@@ -152,4 +155,4 @@ $\frac1T\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2$
 is small, where $u$ indexes valid optimizer updates.
 \end{problem}
 
-Related online nonconvex work measures stationarity through local regret over sliding-window losses~\cite{hazan2017efficient}. Our criterion is different and is defined explicitly as the average current-reference quantity $T^{-1}\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2$: it does not use a sliding-window objective. The learner never samples from $Q_{*,u}$. The difficulty of Problem~\ref{prob:upper_tier} therefore lies in the drift $\drift_u$ characterized above and in the variation of $F_{*,u}$ across updates. The criterion does not account for classes outside $\mathcal J_u$, for the gaps $\varepsilon_{\mathrm{ref}}$ and $\varepsilon_{\mathrm{rep}}$ in~\eqref{eq:surrogate_hierarchy}, or for generalization of the composed model.
+Related online nonconvex work measures stationarity through local regret over sliding-window losses~\cite{hazan2017efficient}. Because lower-tier encoders evolve across rounds, the fresh-prototype target law $Q_{*,u}$ is itself non-stationary; our criterion therefore tracks the average instantaneous reference stationarity $T^{-1}\sum_{u=0}^{T-1}\mathbb E\|\nabla F_{*,u}(\theta_u)\|_2^2$ rather than a sliding-window regret. The learner never samples from $Q_{*,u}$. The difficulty of Problem~\ref{prob:upper_tier} therefore lies in the drift $\drift_u$ characterized above and in the variation of $F_{*,u}$ across updates. The criterion does not account for classes outside $\mathcal J_u$, for the gaps $\varepsilon_{\mathrm{ref}}$ and $\varepsilon_{\mathrm{rep}}$ in~\eqref{eq:surrogate_hierarchy}, or for generalization of the composed model.

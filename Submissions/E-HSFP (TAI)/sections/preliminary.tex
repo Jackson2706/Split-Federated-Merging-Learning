@@ -9,16 +9,16 @@ This section fixes the architecture, the statistical interface between tiers, an
 The tiers never exchange per-sample activations or gradients. An upper-tier learner therefore treats the features it receives as data: it minimizes a local objective over its own parameters. It never computes gradients with respect to lower-tier parameters. Training is thus stage-wise rather than end-to-end. Each tier optimizes a local surrogate, and none of them directly minimizes the composed prediction risk in~\eqref{eq:global_objective}.
 
 \noindent\textbf{Statistical interface.}~
-Let $z_i=W_c(x_i)\in\mathbb R^d$ denote the interface feature of example $i$, where $d$ is the dimension of the interface. For each class $j$ observed by client $k$, let $\mathcal I_k^{(j)}=\{i\in\mathcal D_k:y_i=j\}$ and $n_k^{(j)}=|\mathcal I_k^{(j)}|$. The client computes
+Let $z_i=W_c(x_i)\in\mathbb R^d$ denote the interface feature vector of example $i$, where $d$ is the pooled cut-layer dimension. For each class $j$ observed by client $k$, let $\mathcal I_k^{(j)}=\{i\in\mathcal D_k:y_i=j\}$ and $n_k^{(j)}=|\mathcal I_k^{(j)}|$. The client computes
 \begin{equation}
  \pmu_k^{(j)}=\frac{1}{n_k^{(j)}}\sum_{i\in\mathcal I_k^{(j)}}z_i,
- \qquad
  (\psigma_k^{(j)})^2=\frac{1}{n_k^{(j)}}\sum_{i\in\mathcal I_k^{(j)}}(z_i-\pmu_k^{(j)})^2,
  \label{eq:client_moments}
 \end{equation}
 with squares taken coordinate-wise. The classification client and edge paths and the segmentation path all compute class standard deviations with the population convention, hence the denominator is $n_k^{(j)}$ and a singleton class has zero standard deviation rather than an undefined sample estimate. The client sends the packet $P_{k,s}^{(j)}=(\pmu_k^{(j)},\psigma_k^{(j)},n_k^{(j)})$ together with its generation round $s$. Because the packet is computed from the encoder state in round $s$, a delayed packet describes an earlier representation, not only an earlier sample.
 
 A \emph{source} is a reporting client or edge server, and its \emph{source output} is the collection of class summaries it supplies. Each edge aggregates the available summaries, samples a labeled synthetic pool, and trains $W_e$. It then reports class-wise statistics of its outputs on that synthetic pool, which the cloud aggregates to synthesize its own training inputs. The cloud's interface statistics are therefore moments of the image of the edge's synthetic distribution under $W_e$.
+
 \begin{lemma}[Exact pooling]
 \label{lem:exact_pooling}
 Let sources $\ell=1,\ldots,S$ hold disjoint sets of features of class $j$ and report moments computed as in~\eqref{eq:client_moments}, with $n=\sum_\ell n_\ell>0$. Let $w_\ell=n_\ell/n$. The mean and coordinate-wise variance of the union of the features are
@@ -30,7 +30,7 @@ Let sources $\ell=1,\ldots,S$ hold disjoint sets of features of class $j$ and re
 \end{equation}
 \end{lemma}
 \begin{proof}
-The result is the coordinate-wise law of total variance; the routine derivation is given in the supplementary material [[TODO: confirm that a separate supplementary file exists; otherwise move this derivation to Appendix~\ref{supp:analysis}]].
+The result follows from the coordinate-wise law of total variance; the short derivation is given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
 With weights $\omega_\ell=w_\ell$ and before the implementation's $10^{-8}$ numerical variance guard, the aggregation rule~\eqref{eq:agg_mean_var} reproduces~\eqref{eq:exact_pooling} exactly. A packet of $2d+1$ scalars therefore suffices to recover the diagonal Gaussian fit of the pooled data up to that guard, and an edge can merge its sources before forwarding without losing information relative to that fit. Any other weighting, including the learned weighting of Section~\ref{sec:reliability}, deliberately departs from the pooled moments. Proposition~\ref{prop:weighting_shift} quantifies this departure.
@@ -39,7 +39,7 @@ With weights $\omega_\ell=w_\ell$ and before the implementation's $10^{-8}$ nume
 \label{rem:scatter_pooling}
 The within-class scatter $S_\ell$ used for shared-covariance synthesis (Section~\ref{sec:lowrank}) is centered at each source's own class means. Summing $S_\ell$ over sources therefore omits the between-source term
 $\sum_\ell\sum_j n_\ell^{(j)}(\pmu_\ell^{(j)}-\pmu_{\mathrm{pool}}^{(j)})(\pmu_\ell^{(j)}-\pmu_{\mathrm{pool}}^{(j)})^\top$
-of the pooled within-class scatter. When source class means differ, as under non-IID partitions, the pooled estimate $\Sigma_0$ in~\eqref{eq:pooled_covariance} can underestimate the within-class spread of the union. The diagonal path in~\eqref{eq:agg_mean_var} retains this term.
+of the pooled within-class scatter. We do not inject this outer-product term into $\Sigma_0$ in~\eqref{eq:pooled_covariance} because $\Sigma_0$ is shared across all classes, whereas class-specific between-source dispersion is already captured coordinate-wise by~\eqref{eq:agg_mean_var} and estimating full cross-feature outer products from a small subset of active sources can introduce rank-deficient noise. Consequently, under severe non-IID partitions where source class means diverge, $\Sigma_0$ can underestimate the within-class spread of the union.
 \end{remark}
 
 \noindent\textbf{Baseline synthesis.}~
@@ -68,4 +68,4 @@ The bound is positive whenever the features are correlated, which motivates the 
 For classification, clients and edges use supervised contrastive objectives~\cite{khosla2020supervised}, and the cloud uses cross-entropy. The client objective can include an additional supervised loss. For ISIC-2018, a separate stage trains a cloud decoder using image-specific features from frozen upstream modules, target masks, and a Dice--focal loss. Each learner computes gradients only for the component it trains.
 
 \noindent\textbf{Communication scope.}~
-A basic packet contains $2d+1$ scalars per represented class, so a client that observes $J_k$ classes uploads $J_k(2d+1)$ scalars per report. This payload does not depend on $|\mathcal D_k|$. In contrast, conventional split training exchanges an activation and a gradient of dimension $d$ for every example processed at the cut, which is $2|\mathcal D_k|d$ scalars per local epoch. Shared-covariance synthesis adds a scatter matrix of $d(d+1)/2$ scalars per source. This term exceeds the per-epoch split-training exchange when $|\mathcal D_k|<(d+1)/4$, so the communication advantage of the full-covariance option depends on the ratio of local data size to interface dimension. Total communication also includes packet metadata, model synchronization, and the feature and mask transfers for segmentation. Section~\ref{sec:processing_cost} details these costs.
+A basic packet contains $2d+1$ scalars per represented class, so a client observing $J_k$ classes uploads $J_k(2d+1)$ scalars once per reporting round, independent of both its local dataset size $|\mathcal D_k|$ and the number of local epochs $E$. In contrast, conventional split training exchanges an activation and a gradient of dimension $d$ for every example in every local epoch, totaling $2E|\mathcal D_k|d$ scalars per round. Shared-covariance synthesis adds an upper-triangular within-class scatter payload of $d(d+1)/2$ scalars per source per report. This scatter term exceeds the per-round split-training exchange when $E|\mathcal D_k| < (d+1)/4$; accordingly, the full-covariance option is advantageous when local datasets are moderately sized relative to $d$ or multiple local epochs are performed, whereas diagonal synthesis remains strictly $O(J_k d)$ and independent of $d^2$ for high-dimensional interfaces or small local datasets. Total communication also includes packet metadata, model synchronization, and the feature and mask transfers for segmentation. Section~\ref{sec:processing_cost} details these costs.

@@ -34,7 +34,7 @@ $\mathbb E[\xi_u\mid\mathcal F_u]=0$, and
 $\mathbb E[\|\xi_u\|_2^2\mid\mathcal F_u]\le\sigma_g^2$.
 The term $b_u^{\mathrm{reg}}$ is the conditional mean contribution from PRC, including its coefficient. The term $b_u^{\mathrm{sys}}$ captures additional conditional mean error relative to the population objective under $Q_u$, such as bias from reusing a finite pool or sampling from shuffled batches. The term $\xi_u$ accounts for the remaining stochastic variation.
 \end{assumption}
-Interleaved model synchronization is covered only when its effects satisfy this update model and the error bounds below.
+Periodic model synchronization between rounds is covered whenever its parameter perturbations satisfy this update decomposition and the error bounds below.
 
 \begin{assumption}[Distribution-sensitive gradients]
 \label{asm:drift}
@@ -50,7 +50,7 @@ With active classes, weights, and batch construction held fixed,
 \end{equation}
 \end{assumption}
 
-If the batch sampler admits a class-wise coupling with shared labels and augmentation, a batch parameter gradient that is uniformly $K_b$-Lipschitz in the joint vector of $b$ features gives $L_z=K_b\sqrt b$ for expected class proportions $\pi_u^{(j)}$. For the implemented batch-averaged supervised contrastive loss, $K_b=O(b^{-1/2})$ under the sufficient conditions in Appendix~\ref{supp:supcon_sensitivity}: a fixed positive temperature, independent per-view embeddings, normalized embeddings with bounded derivatives, and uniformly bounded first and second network derivatives. The all-pairs coupling does not change this scaling because each softmax weight is $O(1/b)$ under bounded logits. These conditions keep $L_z=O(1)$. They do not cover an arbitrary batch-dependent network, so Assumption~\ref{asm:drift} remains explicit rather than being inferred from the loss alone.
+If the batch sampler admits a class-wise coupling with shared labels and augmentation, a batch parameter gradient that is uniformly $K_b$-Lipschitz in the joint vector of $b$ features gives $L_z=K_b\sqrt b$ for expected class proportions $\pi_u^{(j)}$. For the implemented batch-averaged supervised contrastive loss, $K_b=O(b^{-1/2})$ under the sufficient conditions in Appendix~\ref{supp:supcon_sensitivity}: a fixed positive temperature, independent per-view embeddings, normalized embeddings with bounded derivatives, and uniformly bounded first and second network derivatives. The all-pairs coupling does not change this scaling because each softmax weight is $O(1/b)$ under bounded logits. These conditions keep $L_z=O(1)$, but they do not cover arbitrary batch-dependent layers (such as active BatchNorm layers that couple views across a minibatch); Assumption~\ref{asm:drift} therefore remains explicit rather than being inferred from the loss alone.
 
 \begin{assumption}[Additional mean error]
 \label{asm:het_agg}
@@ -179,8 +179,7 @@ Only the first two terms of~\eqref{eq:main_bound} remain.
 The drift residual $3L_z^2\bar D_T$ links the bound to the mechanisms of Section~\ref{sec:formulation}. With fresh current packets, Proposition~\ref{prop:replay_drift} makes the replay contribution vanish linearly as $\alpha\to1$. Proposition~\ref{prop:masking_coverage} shows that masking enters mainly through coverage when classes are held by few sources, and Lemma~\ref{prop:drift_decomp} below makes the age contribution quadratic in the maximum contribution age $A$. The residual does not include the gaps $\varepsilon_{\mathrm{ref}}$ and $\varepsilon_{\mathrm{rep}}$ in~\eqref{eq:surrogate_hierarchy}, because the reference objective already incorporates them.
 \end{remark}
 
-The optimization and noise terms in~\eqref{eq:main_bound} scale as $O((1+V_T)/\sqrt T)$ and reduce to $O(T^{-1/2})$ when $V_T=O(1)$. For the right-hand side to vanish, the reference variation must satisfy $V_T=o(\sqrt T)$ and the residual terms for drift, mean update error, and PRC must also vanish. Source masking changes $Q_u$, while PRC contributes through $b_u^{\mathrm{reg}}$.
-In the bound, replay, masking, and PRC appear only as sources of residual error; any benefit must come from reducing class loss or the variation $V_T$, which the bound does not quantify. The step size $\eta=\eta_0/\sqrt T$ requires $T$ to be known in advance (see Section~\ref{sec:discussion} for the relation to the Adam experiments).
+The optimization and noise terms in~\eqref{eq:main_bound} scale as $O((1+V_T)/\sqrt T)$ and reduce to $O(T^{-1/2})$ when $V_T=O(1)$. For the right-hand side to vanish, the reference variation must satisfy $V_T=o(\sqrt T)$ and the residual terms for drift, mean update error, and PRC must also vanish. Because Theorem~\ref{thm:convergence} evaluates gradients conditioned on the represented classes $\mathcal J_u$, replay, masking, and PRC appear in~\eqref{eq:main_bound} solely through their within-$\mathcal J_u$ drift and regularization residuals ($3L_z^2\bar D_T$ and $3\bar R_T$); their stabilizing benefits---preserving class coverage $\kappa_u$ against missing classes $j\notin\mathcal J_u$ and smoothing cross-round reference jumps $V_T$---operate outside this fixed-$\mathcal J_u$ residual decomposition. Finally, the constant step size $\eta=\eta_0/\sqrt T$ uses a known horizon $T$ for algebraic simplicity (an anytime schedule $\eta_u=\eta_0/\sqrt{u+1}$ yields the analogous $O((1+V_T+\log T)/\sqrt T)$ scaling; see Section~\ref{sec:discussion} for the relation to the Adam experiments).
 
 \subsection{Conditional Age Decomposition}
 
@@ -189,7 +188,7 @@ To relate drift to prototype age, we compare each synthetic distribution with on
 \begin{assumption}[Contribution ages and pipeline sensitivity]
 \label{asm:staleness}
 Every underlying statistic contributing to synthesis, including replayed and accumulated contributions, has age at most
-$A=\stale_{\max}+A_{\mathcal M}$ logical rounds.
+$A=\stale_{\max}+A_{\mathcal M}$ logical rounds (accounting for maximum arrival staleness $\stale_{\max}$ plus bank retention $A_{\mathcal M}$).
 For each source, consecutive-round mean/covariance-square-root pairs differ by at most $\delta$ in $\|\cdot\|_\oplus$.
 Holding source coverage, support counts, replay and reconstruction coefficients, realized aggregation weights, and synthesis hyperparameters fixed, perturbing every contributing source pair by at most $\epsilon$ changes each final generated pair by at most $L_{\mathrm{agg}}\epsilon$. This sensitivity condition includes covariance estimation, numerical regularization, and fallback.
 \end{assumption}
@@ -229,4 +228,4 @@ Weighting over classes and taking expectations proves the result.
 The Gaussian coupling and age-decomposition algebra are given in Appendix~\ref{supp:analysis}.
 \end{proof}
 
-An untruncated accumulator can retain contributions from expired records, so applying Lemma~\ref{prop:drift_decomp} requires a separate age bound for all contributing statistics and the sensitivity condition in Assumption~\ref{asm:staleness}. Theorem~\ref{thm:convergence} uses the realized drift directly and does not require this decomposition. Class coverage and update frequency are not covered by the bound.
+An untruncated accumulator can retain contributions from expired records, so applying Lemma~\ref{prop:drift_decomp} requires a separate age bound for all contributing statistics and the sensitivity condition in Assumption~\ref{asm:staleness}. Theorem~\ref{thm:convergence} uses the realized drift directly and does not require this decomposition. The bound does not cover class coverage and update frequency.

@@ -13,8 +13,9 @@ Figure~\ref{fig:hsfp_framework} shows how the upper tiers prepare their training
 \subsection{Prototype Memory and Moment Replay}
 \label{sec:memory}
 
-The client--edge and edge--cloud banks retain timestamped class moments, support counts, source identifiers, ages, and retrieval scores. Retrieved records form memory moments through the same total-variance rule as aggregation. Appendix~\ref{supp:implementation} specifies the capacity, retrieval, and tie-breaking defaults.
-When replay is enabled and $\alpha<1$, each existing source $\ell$ combines its current moments with the memory moments for each class represented in both sets. The combined moments are
+The client--edge and edge--cloud banks retain timestamped class moments, support counts, source identifiers, ages, and scalar retrieval scores. Each newly inserted record is initialized with a unit retrieval score; in the default execution path, these scores remain fixed so that retrieval performs recency-ordered uniform pooling over up to $K_{\mathrm{mem}}$ records per class using the total-variance rule~\eqref{eq:exact_pooling}, keeping memory retrieval decoupled from the online source-aggregation scorer of Section~\ref{sec:reliability}. Appendix~\ref{supp:implementation} specifies the capacity, retrieval, and tie-breaking defaults.
+
+When replay is enabled and $\alpha<1$, each existing source $\ell$ combines its current moments with the retrieved memory moments for each class represented in both sets. The combined moments are
 \begin{equation}
 \begin{split}
  \widetilde{\pmu}_{\ell}^{(j)}
@@ -28,7 +29,7 @@ When replay is enabled and $\alpha<1$, each existing source $\ell$ combines its 
 \end{split}
 \label{eq:memory_mixture}
 \end{equation}
-Squares are coordinate-wise. The mixing coefficient $\alpha\in[0,1]$ weights the current moments, with a default of $0.3$ and $\alpha=1$ bypassing replay. With replay active, a class represented on only one side uses that side's moments. Equation~\eqref{eq:memory_mixture} gives the mixture mean and coordinate-wise variance with added jitter $\zeta$, which we set to $\zeta=10^{-8}$ as a numerical safeguard. The generator samples from a single Gaussian with these moments. Proposition~\ref{prop:replay_drift} bounds the drift that this mixing adds when the current moments are fresh. Replay can add a class found only in memory to an existing source output. An empty packet collection gives replay no source output to augment. The controller ages records and removes expired ones at the end of the round, so a delayed arrival may be used before this.
+Squares are coordinate-wise. The mixing coefficient $\alpha\in[0,1]$ weights the current moments, with a default of $0.3$ and $\alpha=1$ bypassing replay. With replay active, a class represented on only one side uses that side's moments. Equation~\eqref{eq:memory_mixture} gives the exact mixture mean and coordinate-wise variance with added jitter $\zeta=10^{-8}$ as a numerical safeguard; the between-component term $\alpha(1-\alpha)(\pmu_{\mathrm c,\ell}^{(j)}-\pmu_{\mathrm m}^{(j)})^2$ captures inter-round dispersion when current and historical moments diverge. The generator samples from a single Gaussian with these moments. Proposition~\ref{prop:replay_drift} bounds the drift that this mixing adds when the current moments are fresh. Replay can add a class found only in memory to an existing source output, whereas an empty packet collection gives replay no source output to augment. The controller ages records and removes expired ones at the end of the round, so a delayed arrival may be used before expiry.
 
 \subsection{Source Masking and Learned Aggregation}
 \label{sec:reliability}
@@ -44,16 +45,16 @@ Optional edge accumulation combines the retained outputs into one effective sour
  \bigl(1,\pmu_\ell,\psigma_\ell^2+\pmu_\ell^2\bigr).
  \label{eq:accumulated_moments}
 \end{equation}
-Missing or zero support receives unit weight. The accumulator reconstructs the mean as $A_1/A_0$ and the coordinate-wise variance as $\max\{A_2/A_0-(A_1/A_0)^2,\zeta\}$. It rounds the effective counts for use as metadata. The same decay applies to available scatter statistics and their degrees of freedom. The edge sees one effective source after accumulation. Contributions decay without a hard age cutoff.
+Missing or zero support receives unit weight. The accumulator reconstructs the mean as $A_1/A_0$ and the coordinate-wise variance as $\max\{A_2/A_0-(A_1/A_0)^2,\zeta\}$. It rounds the effective counts for use as metadata. The same decay applies to available scatter statistics and their degrees of freedom. The edge sees one effective source after accumulation, with historical contributions decaying smoothly without a hard age cutoff.
 
-For class $j$, let $\mathcal S^{(j)}$ index the resulting sources. The scorer uses support, spread $s_\ell=\|\psigma_\ell^{(j)}\|_2$, age $a_\ell$, and distance $d_\ell$ from the arithmetic mean of the source means for that class. Its six inputs are normalized log support, normalized spread, normalized age, normalized distance, a constant one, and a second copy of normalized log support. The support feature is $\log(1+n_\ell)/\log(1+\max\{1,n_{\max}\})$, with missing support set to zero. The spread and distance denominators are their respective class maxima, each floored at $\zeta$. The age denominator is the class maximum age, floored at one. A $6$--$32$--$32$--$1$ ReLU network with sigmoid output produces the source scores $f_\phi(v_\ell^{(j)})$. The corresponding weights are
+For class $j$, let $\mathcal S^{(j)}$ index the resulting sources. The reliability scorer uses support, spread $s_\ell=\|\psigma_\ell^{(j)}\|_2$, age $a_\ell$, and distance $d_\ell$ from the arithmetic mean of the source means for that class. Its six inputs comprise normalized log support, normalized spread, normalized age, normalized center distance, a constant bias term, and a duplicate normalized log-support coordinate (included to preserve a fixed six-feature metadata schema while emphasizing sample-count reliability). The support feature is $\log(1+n_\ell)/\log(1+\max\{1,n_{\max}\})$, with missing support set to zero. The spread and distance denominators are their respective class maxima, each floored at $\zeta$. The age denominator is the class maximum age, floored at one. A $6$--$32$--$32$--$1$ ReLU network with sigmoid output produces the source scores $f_\phi(v_\ell^{(j)})$. The corresponding weights are
 \begin{equation}
  \omega_\ell^{(j)}
  =\frac{f_\phi(v_\ell^{(j)})}
  {\max\{\sum_{q\in\mathcal S^{(j)}}f_\phi(v_q^{(j)}),\zeta\}} .
  \label{eq:reliability_weight}
 \end{equation}
-The weights sum to one when the score sum is at least $\zeta$. When the floor is active, their sum is below one. The implementation uses these safeguarded weights in the class moment estimates
+The weights sum to one when the score sum is at least $\zeta$; when the floor is active, their sum is below one. The implementation uses these safeguarded weights in the class moment estimates
 \begin{equation}
 \begin{split}
  \widehat{\pmu}^{(j)}
@@ -67,7 +68,7 @@ The weights sum to one when the score sum is at least $\zeta$. When the floor is
 \end{equation}
 Count-weighted aggregation instead uses normalized support counts, with uniform weights when all counts are zero. The legacy uniform rule averages coordinate-wise variances without the between-source mean term. Comparisons with this rule therefore change both weighting and variance construction.
 
-After round-end bank maintenance, the implementation trains the shared scorer using targets computed from record metadata. Each class in the client bank with at least two records contributes one mean-squared-error training step. The target averages $\min(n/100,1)$, $(1+s)^{-1}$, and $(1+a)^{-1}$, using $0.5$ for the support term when $n\le0$. The scorer defaults to Adam with learning rate $10^{-3}$ and weight decay $10^{-4}$. Its learned scores serve as proxies for source reliability. Each of the three contributions is bounded in $[0,1]$. Their equal coefficients give support, compactness, and recency the same nominal scale, while 100 is a fixed support scale at which the count contribution saturates. These coefficients are heuristic; they are not calibrated or derived from the downstream task loss. Proposition~\ref{prop:weighting_shift} shows that its effect on the synthetic mean is confined to classes whose sources disagree.
+After round-end bank maintenance, the implementation trains the shared scorer using bootstrap targets computed from record metadata. Each class in the client bank with at least two records contributes one mean-squared-error training step. The target averages $\min(n/100,1)$, $(1+s)^{-1}$, and $(1+a)^{-1}$, using $0.5$ for the support term when $n\le0$. The scorer defaults to Adam with learning rate $10^{-3}$ and weight decay $10^{-4}$, and its learned scores serve as proxies for source reliability. Each of the three target components is bounded in $[0,1]$: equal coefficients give support, compactness, and recency the same nominal scale, $100$ sets a fixed saturation scale for sample count, and $(1+s)^{-1}$ favors compact class clusters over high-variance features from under-trained encoders while the center-distance input $d_\ell$ allows the network to down-weight tight but outlying clusters. Because these coefficients are heuristic rather than calibrated against downstream task loss, Proposition~\ref{prop:weighting_shift} bounds the resulting mean shift and confirms that it is confined to classes whose sources disagree.
 
 \subsection{Gaussian Feature Synthesis}
 \label{sec:lowrank}
@@ -84,7 +85,7 @@ The instantaneous estimate is
 $\Sigma=(1-\beta)\Sigma_0+\beta\operatorname{diag}(\Sigma_0)$,
 where $\beta=\max\{0,1-\nu/(2d)\}$.
 When accumulation is enabled, the covariance uses the ratio of accumulated scatter to the corresponding accumulated degrees of freedom.
-Shrinkage toward a diagonal covariance target is a standard stabilization strategy~\cite{schafer2005shrinkage}. Here the target is exactly $\operatorname{diag}(\Sigma_0)$, but the implemented coefficient $\beta=\max\{0,1-\nu/(2d)\}$ is a degrees-of-freedom heuristic rather than the data-estimated coefficient of~\cite{schafer2005shrinkage}. Remark~\ref{rem:scatter_pooling} notes that $\Sigma_0$ omits between-source variation of class means.
+Shrinkage toward a diagonal covariance target is a standard stabilization strategy~\cite{schafer2005shrinkage}. Here the target is exactly $\operatorname{diag}(\Sigma_0)$, and the coefficient $\beta=\max\{0,1-\nu/(2d)\}$ acts as a degrees-of-freedom regularizer when $\nu<2d$ rather than the data-estimated coefficient of~\cite{schafer2005shrinkage}. Remark~\ref{rem:scatter_pooling} notes that $\Sigma_0$ omits between-source variation of class means.
 For Cholesky factorization, the learner attempts
 $\Sigma+\epsilon_{\mathrm{chol}}s_\Sigma I_d$,
 where $s_\Sigma=\max\{\operatorname{tr}(\Sigma)/d,\zeta\}$ and the successive coefficients are $10^{-4},10^{-3},10^{-2},10^{-1}$. The first successful factor yields
@@ -92,7 +93,7 @@ where $s_\Sigma=\max\{\operatorname{tr}(\Sigma)/d,\zeta\}$ and the successive co
  z^{(j)}=\widehat{\pmu}^{(j)}+L\epsilon,\qquad \epsilon\sim\mathcal N(0,I_d).
  \label{eq:lowrank_synthesis}
 \end{equation}
-The generator refreshes the covariance before drawing each training pool. A successful factorization uses $LL^\top$ for the main classification pool. The generator uses diagonal synthesis if the full covariance is missing or incompatible. Segmentation and PRC use diagonal synthesis.
+The generator refreshes the covariance before drawing each training pool, using $LL^\top$ for the main classification pool whenever factorization succeeds and falling back to diagonal synthesis if the full covariance is missing, incompatible, or non-positive-definite. Segmentation and PRC always use diagonal synthesis.
 
 \subsection{Local Objectives and Replay Consistency}
 \label{sec:regularization}
@@ -100,7 +101,7 @@ The generator refreshes the covariance before drawing each training pool. A succ
 
 Classification clients and edges use the supervised contrastive (SupCon) loss~\cite{khosla2020supervised}. Each example supplies two independently transformed views whose outputs are pooled and $\ell_2$-normalized. Other views with the same label form the positive set, and every non-anchor view enters the denominator. Spatial feature maps use crop, flip, and blur transformations. Pooled edge features use additive noise and feature dropout. The client objective can also include a supervised loss. The cloud classification objective uses cross-entropy.
 
-PRC compares the model outputs on pairs of features sampled independently from two class-conditional Gaussians. The first Gaussian uses the replayed source outputs. It averages their means uniformly and uses the root mean square of their standard deviations. The second Gaussian uses moments aggregated from all bank records with their stored scores. At the edge, the learner prepares the first set of moments before local masking and accumulation. At the cloud, it prepares them after masking. The two sets of moments can therefore use some of the same records. For the shared class set $\mathcal C$, let $C=|\mathcal C|>0$ and
+PRC compares the model outputs on pairs of features sampled independently from two class-conditional Gaussians. The first Gaussian uses the replayed source outputs, averaging their means uniformly and taking the root mean square of their standard deviations. The second Gaussian uses moments aggregated from all bank records with their stored scores. At the edge, the learner prepares the first set of moments before local masking and accumulation; at the cloud, it prepares them after masking. The two sets of moments can therefore share some records. For the shared class set $\mathcal C$, let $C=|\mathcal C|>0$ and
 $s=\min\{s_{\mathrm{req}},\max(1,\lfloor128/C\rfloor)\}$.
 Using $s$ independent pairs from the two diagonal Gaussians for each shared class, the loss is
 \begin{equation}
@@ -122,7 +123,7 @@ The independent draws determine how PRC acts on the outputs. For a fixed determi
 \end{split}
 \label{eq:prc_decomp}
 \end{equation}
-For this fixed output map, the expected penalty includes both the discrepancy between the output means and the output variation under each sampling law. Consequently, $\mathbb E\mathcal L_{\mathrm{PRC}}$ is not minimized by matching the two output laws: even when they coincide, it equals $2(Cd_h)^{-1}\sum_j\operatorname{tr}V^{(j)}$, so PRC also contracts the output variance of $h$ on each class. This contraction may act as a class-compactness regularizer, but it also means that PRC is not a pure consistency penalty.
+For this fixed output map, the expected penalty includes both the discrepancy between the output means and the output variation under each sampling law. Consequently, $\mathbb E\mathcal L_{\mathrm{PRC}}$ is not minimized by matching the two output laws: even when they coincide, it equals $2(Cd_h)^{-1}\sum_j\operatorname{tr}V^{(j)}$, so PRC also contracts the output variance of $h$ on each class. This variance contraction acts as a class-compactness regularizer that counterbalances the variance inflation introduced by moment replay in~\eqref{eq:memory_mixture}, though it also implies that $\mathcal L_{\mathrm{PRC}}$ is not a pure distribution-matching penalty.
 
 The classification upper-tier objectives are
 \begin{align}
@@ -133,11 +134,11 @@ The classification upper-tier objectives are
  +\lambda_{\mathrm{prc}}\mathcal L_{\mathrm{PRC},g}.
  \label{eq:cloud_loss}
 \end{align}
-Source masking changes the synthetic inputs to the base objective. PRC provides the explicit output penalty. For ISIC-2018, a separate supervised stage trains the cloud decoder on image-specific features from frozen upstream modules and target masks using a Dice--focal loss.
+Source masking changes the synthetic inputs to the base objective, while PRC provides the explicit output penalty. For ISIC-2018, a separate supervised stage trains the cloud decoder on image-specific features from frozen upstream modules and target masks using a Dice--focal loss.
 
 \subsection{Processing and Cost}
 \label{sec:processing_cost}
-Each phase prepares a labeled synthetic pool, optimizes the local segment when a valid minibatch exists, and retains model, optimizer, synthesis, and bank state. Appendix~\ref{supp:implementation} gives the pool sizes, update budgets, and extraction details.
+Each phase prepares a labeled synthetic pool, optimizes the local segment when a valid minibatch exists, and retains model, optimizer, synthesis, and bank state. Storing $R$ records per interface bank requires $O(Rd)$ memory; diagonal synthesis costs $O(d)$ per generated feature, whereas optional shared full-covariance synthesis incurs $O(d^3)$ Cholesky factorization once per phase and $O(d^2)$ per generated feature. Appendix~\ref{supp:implementation} details the pool sizes, update budgets, extraction steps, and byte-level accounting conventions.
 \iffalse
 \begin{algorithm}[t]
 \caption{Preparation and training at one prototype interface}
@@ -153,4 +154,4 @@ Each phase prepares a labeled synthetic pool, optimizes the local segment when a
 \end{enumerate}
 \end{algorithm}
 \fi
-At the end of each round, after the phases at both interfaces, the controller ages the records, removes expired ones, and trains the shared reliability network once. Model synchronization follows the separate schedules in Section~\ref{sec:formulation}.
+At the end of each round, after both interfaces complete their phases, the controller ages the records, removes expired ones, and trains the shared reliability network once. Model synchronization follows the separate schedules in Section~\ref{sec:formulation}.
