@@ -356,10 +356,13 @@ class DatasetSplit(Dataset):
 
 
 METRICS_COLUMNS = ["round", "accuracy", "macro_f1", "cloud_loss", "edge_loss", "client_loss",
-                   "no_valid_minibatch", "round_time_s"]
+                   "no_valid_minibatch", "round_time_s", "gpu_peak_alloc_gb", "gpu_peak_reserved_gb"]
 ORACLE_COLUMNS = ["round", "tier", "learner", "n_active", "n_ref_classes", "kappa", "delta_proto",
                   "mean_term", "cov_term", "cov_type", "shared_classes", "eps_ref", "no_valid_round",
-                  "restored", "masked_removed", "n_ref_sources", "n_used_sources"]
+                  "restored", "masked_removed", "n_ref_sources", "n_used_sources",
+                  "comp_n", "comp_not_n", "comp_err_ratio", "mix_err_actual", "mix_err_fixed"]
+ALPHA_COLUMNS = ["round", "tier", "learner", "n_calls", "n_classes", "alpha_mean", "alpha_median",
+                 "fallback_share", "comp_n", "comp_not_n"]
 MASK_COLUMNS = ["round", "tier", "learner", "class_id", "S", "S_j", "removed", "p"]
 DISPERSION_COLUMNS = ["round", "edge", "n_sources", "n_classes", "mean_dispersion"]
 
@@ -527,6 +530,15 @@ class HierarchicalFL:
         self.runtime_counters = RuntimeCounters()
 
         # Episodic memory (client-level and edge-level)
+        from ehsfp.drift_comp import ReplayAdjuster
+        self.adjuster = ReplayAdjuster(
+            args.get("drift_comp", "off") or "off", args.get("alpha_mode", "fixed") or "fixed",
+            args.get("dc_src_bonus", 2.0), args.get("dc_min_weight", 1e-6), args.get("alpha_min", 0.05))
+        if self.adjuster.active and not self.ecfg["use_episodic_memory"]:
+            raise ValueError("drift_comp / alpha_mode=optimal need the episodic memory (retention > 0)")
+        if self.adjuster.active and (args.get("prototype_space", "raw") or "raw") != "raw":
+            raise ValueError("drift_comp / alpha_mode=optimal are implemented for prototype_space=raw only")
+        _dw = int(args.get("dc_window", 5) or 5) if self.adjuster.active else None
         if self.ecfg["use_episodic_memory"]:
             _per_class = args.get("memory_per_class")
             _per_class = None if _per_class in (None, "", "none") else int(_per_class)
@@ -534,11 +546,13 @@ class HierarchicalFL:
                 max_size=self.ecfg["memory_size"],
                 max_age=self.ecfg["max_prototype_age"],
                 per_class_capacity=_per_class,
+                drift_window=_dw,
             )
             self.edge_memory = EpisodicPrototypeMemory(
                 max_size=self.ecfg["memory_size"],
                 max_age=self.ecfg["max_prototype_age"],
                 per_class_capacity=_per_class,
+                drift_window=_dw,
             )
         else:
             self.client_memory = None
@@ -653,6 +667,10 @@ class HierarchicalFL:
                             if self.oracle_on else None)
         self.disp_writer = (CsvAppender(os.path.join(self.rev_out, "dispersion.csv"), DISPERSION_COLUMNS)
                             if self.rev_out else None)
+        self.alpha_writer = (CsvAppender(os.path.join(self.rev_out, "alpha_log.csv"), ALPHA_COLUMNS)
+                             if (self.rev_out and self.adjuster.active) else None)
+        self._dc_stats, self._dc_calls = {}, {}
+        self._gpu_peak = [0, 0]
         self.metrics_writer = (CsvAppender(os.path.join(self.rev_out, "metrics.csv"), METRICS_COLUMNS)
                                if self.rev_out else None)
         self._oracle_round = False
@@ -1773,6 +1791,76 @@ class HierarchicalFL:
             return None
         return between_source_scatter({k: fresh.get(k) for k in srcs}, support)
 
+    def _mix_kw(self, tier, node, source, support):
+        """Extra mix_current_and_memory kwargs for C1/C2 ({} when both are off)."""
+        if not self.adjuster.active:
+            return {}
+        stats = self._dc_stats.setdefault((tier, node), {})
+        stats["calls"] = stats.get("calls", 0) + 1
+        kw = {"adjuster": self.adjuster, "support": support, "now": self._current_round, "stats": stats}
+        if self._oracle_round:
+            tr = {"source": source, "classes": [], "comp": [], "support": dict(support)}
+            self._dc_calls.setdefault((tier, node), []).append(tr)
+            kw["trace"] = tr
+        return kw
+
+    def _write_alpha_log(self, epoch):
+        if self.alpha_writer is None:
+            return
+        for (tier, node), st in sorted(self._dc_stats.items()):
+            al = sorted(st.get("alphas", []))
+            n = len(al)
+            self.alpha_writer.append({
+                "round": epoch, "tier": tier, "learner": node, "n_calls": st.get("calls", 0), "n_classes": n,
+                "alpha_mean": (sum(al) / n) if n else "", "alpha_median": al[n // 2] if n else "",
+                "fallback_share": (st.get("fallback", 0) / n) if n else "",
+                "comp_n": st.get("comp", 0), "comp_not_n": st.get("not_comp", 0)})
+
+    def dc_state_mb(self):
+        out = {}
+        for name, mem in (("client", self.client_memory), ("edge", self.edge_memory)):
+            if mem is not None and getattr(mem, "drift_state", None) is not None:
+                out[name] = mem.drift_state.nbytes() / 2**20
+        return out
+
+    def _dc_extra(self, tier, node, fresh_mu, fresh_edge):
+        """Oracle columns for C1/C2: compensation error ratio and mixed-mean errors."""
+        calls = self._dc_calls.get((tier, node), [])
+        st = self._dc_stats.get((tier, node), {})
+        if not calls:
+            return {}
+        flat = lambda t: t.detach().float().flatten().cpu()
+        def star(src, cls):
+            if isinstance(src, str):
+                kind, k = src.split("_", 1)
+                k = int(k)
+            else:
+                kind, k = ("client" if tier == "edge" else "edge"), int(src)
+            tab = fresh_mu.get(k) if kind == "client" else fresh_edge.get(k)
+            return flat(tab[cls]) if tab is not None and cls in tab else None
+        num = den = 0.0
+        ma, mf, nm = 0.0, 0.0, 0
+        for tr in calls:
+            for src, cls, mrec, mcomp in tr["comp"]:
+                s = star(src, cls)
+                if s is not None:
+                    num += float((mcomp - s).pow(2).sum())
+                    den += float((mrec - s).pow(2).sum())
+            rows = []
+            for cls, mt, mt_fix in tr["classes"]:
+                s = star(tr["source"], cls)
+                if s is not None:
+                    rows.append((float(tr["support"].get(cls, 1) or 1), float((mt - s).pow(2).sum()),
+                                 float((mt_fix - s).pow(2).sum())))
+            if rows:
+                w = sum(r[0] for r in rows)
+                ma += sum(r[0] * r[1] for r in rows) / w
+                mf += sum(r[0] * r[2] for r in rows) / w
+                nm += 1
+        return {"comp_n": st.get("comp", 0), "comp_not_n": st.get("not_comp", 0),
+                "comp_err_ratio": (num / den) if den > 0 else "",
+                "mix_err_actual": (ma / nm) if nm else "", "mix_err_fixed": (mf / nm) if nm else ""}
+
     def _log_mask(self, tier, node, before, after):
         rows = mask_class_rows(before, after)
         self._rs.setdefault("masked", {})[(tier, node)] = sum(r[3] for r in rows)
@@ -1838,8 +1926,8 @@ class HierarchicalFL:
         pool = total_variance_aggregate(packets, support)
         return ref, cov, counts, pool
 
-    def _oracle_row(self, epoch, tier, node, reference, actual, n_ref_sources):
-        row = {"round": epoch, "tier": tier, "learner": node,
+    def _oracle_row(self, epoch, tier, node, reference, actual, n_ref_sources, extra=None):
+        row = {**(extra or {}),"round": epoch, "tier": tier, "learner": node,
                "no_valid_round": self._rs.get("no_valid", 0),
                "restored": self._rs["restored"].get((tier, node), 0),
                "masked_removed": self._rs.get("masked", {}).get((tier, node), 0),
@@ -1869,6 +1957,7 @@ class HierarchicalFL:
         if self._oracle_model is None:
             self._oracle_model = copy.deepcopy(self.client_model).to(self.device)
         edges = sorted(self.structure[0])
+        pending, fresh_mu = [], {}
         for e in edges:
             packets, support, scatters = {}, {}, {}
             for cid in sorted(c for c, ee in self.connectivity[-1].items() if ee == e):
@@ -1883,12 +1972,18 @@ class HierarchicalFL:
                 packets[cid], support[cid], scatters[cid] = self._oracle_client_packet(
                     model, user_groups[cid], train_dataset)
                 model.train(was_training)
-            self._oracle_row(epoch, "edge", e, self._oracle_reference(packets, support, scatters),
-                             self._oracle_actual.get(("edge", e)), len(packets))
+            for cid in packets:
+                fresh_mu[cid] = packets[cid][0]
+            pending.append((e, self._oracle_reference(packets, support, scatters),
+                            self._oracle_actual.get(("edge", e)), len(packets)))
         fresh = {e: v for e, v in self._fresh_edge_outputs.items() if v is not None}
+        fresh_edge = {e: v[0] for e, v in fresh.items()}
+        for e, ref, act, n in pending:
+            self._oracle_row(epoch, "edge", e, ref, act, n, extra=self._dc_extra("edge", e, fresh_mu, fresh_edge))
         self._oracle_row(epoch, "cloud", 0,
                          self._oracle_reference(fresh, getattr(self, "_edge_support", {}), self._edge_scatter),
-                         self._oracle_actual.get(("cloud", 0)), len(fresh))
+                         self._oracle_actual.get(("cloud", 0)), len(fresh),
+                         extra=self._dc_extra("cloud", 0, fresh_mu, fresh_edge))
 
     # --- Exact checkpoint / resume ---
 
@@ -1930,7 +2025,7 @@ class HierarchicalFL:
                         g["lr"] = lr  # building LambdaLR resets lr; keep the saved value
                     od["scheduler"] = sch
         set_global_rng_state(ck["rng"])
-        for name in ("metrics.csv", "oracle.csv", "oracle_mask.csv", "dispersion.csv"):
+        for name in ("metrics.csv", "oracle.csv", "oracle_mask.csv", "dispersion.csv", "alpha_log.csv"):
             truncate_csv_rounds(os.path.join(self.rev_out, name), ck["epoch"])
         return ck["epoch"] + 1, ck["loop"]
 
@@ -1999,6 +2094,7 @@ class HierarchicalFL:
             round_f1 = None
             self._oracle_round = self.oracle_on and epoch % self.oracle_every == 0
             self._oracle_actual, self._oracle_client_states = {}, {}
+            self._dc_stats, self._dc_calls = {}, {}
             self.__dict__['_round_stats'] = {"no_valid": 0, "restored": {}, "masked": {}}
             self.ehsfp_logger.reset_epoch()
             self._current_round = epoch
@@ -2147,6 +2243,9 @@ class HierarchicalFL:
                             top_k=self.ecfg["memory_top_k"],
                             runtime_counters=self.runtime_counters,
                             device=self.device,
+                            **self._mix_kw("edge", _edge_of(cid),
+                                           self._packet_cid[cid] if self._stale_mode else cid,
+                                           self._client_support.get(cid, {})),
                         )
                         client_outputs[cid] = (mixed_p, mixed_d)
                 if self.serverless_tracker is not None:
@@ -2246,6 +2345,7 @@ class HierarchicalFL:
                             top_k=self.ecfg["memory_top_k"],
                             runtime_counters=self.runtime_counters,
                             device=self.device,
+                            **self._mix_kw("cloud", 0, eid, self._edge_support.get(eid, {})),
                         )
                         edge_outputs[eid] = (mixed_p, mixed_d)
 
@@ -2281,6 +2381,9 @@ class HierarchicalFL:
                     self._run_oracle(epoch, train_dataset, user_groups)
             if torch.cuda.is_available():
                 _tier_peaks["cloud"] = (torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved())
+                self._gpu_peak = [max(self._gpu_peak[0], max(v[0] for v in _tier_peaks.values())),
+                                  max(self._gpu_peak[1], max(v[1] for v in _tier_peaks.values()))]
+            self._write_alpha_log(epoch)
             self._prof_add("cloud_process", _t_cloud, epoch)
             self._flush_runtime_counters(config, epoch, "cloud_complete")
 
@@ -2479,6 +2582,9 @@ class HierarchicalFL:
                     "edge_loss": _mean(self._rs.get("edge_loss", [])),
                     "client_loss": _mean(self._rs.get("client_loss", [])),
                     "no_valid_minibatch": self._rs["no_valid"], "round_time_s": epoch_time,
+                    **({"gpu_peak_alloc_gb": self._gpu_peak[0] / 2**30,
+                        "gpu_peak_reserved_gb": self._gpu_peak[1] / 2**30}
+                       if (epoch % 10 == 0 and torch.cuda.is_available()) else {}),
                 })
                 if epoch % int(self.args.get("ckpt_every", 10) or 10) == 0:
                     self._save_ckpt(_ckpt, epoch, (

@@ -183,6 +183,8 @@ def _revision_overrides(args):
     top = {"epochs": args.rounds, "staleness_tau": args.max_delay, "packet_loss": args.packet_loss,
            "sampler": args.sampler, "scatter_fix": args.scatter_fix, "prc_mode": args.prc,
            "oracle": args.oracle, "oracle_every": args.oracle_every, "gpu_data": args.gpu_data,
+           "drift_comp": args.drift_comp, "dc_window": args.dc_window, "dc_src_bonus": args.dc_src_bonus,
+           "dc_min_weight": args.dc_min_weight, "alpha_mode": args.alpha_mode, "alpha_min": args.alpha_min,
            "bf16": args.bf16, "tf32": args.tf32, "cudnn_benchmark": args.cudnn_benchmark}
     eh = {"memory_replay_ratio": args.alpha, "prototype_dropout_rate": args.p_train,
           "max_prototype_age": args.retention, "lambda_prc": args.lambda_prc,
@@ -356,6 +358,12 @@ def main():
     rev.add_argument("--prc", choices=["standard", "corrected"])
     rev.add_argument("--oracle", type=int, choices=[0, 1], help="Drift/coverage diagnostics (needs --out)")
     rev.add_argument("--oracle-every", type=int)
+    rev.add_argument("--drift-comp", choices=["off", "rate", "pair"], help="C1 drift-compensated replay")
+    rev.add_argument("--dc-window", type=int, help="C1 reports kept per (source, class); default 5")
+    rev.add_argument("--dc-src-bonus", type=float, help="C1 kernel bonus for the record's own source; default 2")
+    rev.add_argument("--dc-min-weight", type=float, help="C1 minimum total kernel weight; default 1e-6")
+    rev.add_argument("--alpha-mode", choices=["fixed", "optimal"], help="C2 replay weight")
+    rev.add_argument("--alpha-min", type=float, help="C2 lower clip of alpha*; default 0.05")
     rev.add_argument("--gpu-data", type=int, choices=[0, 1])
     rev.add_argument("--bf16", type=int, choices=[0, 1])
     rev.add_argument("--tf32", type=int, choices=[0, 1])
