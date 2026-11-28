@@ -1,0 +1,37 @@
+# H-SFP CIFAR-100 setup locked for the C1/C2 idea check (E-HSFP only changes component flags).
+# Every value has one source; the three decisions that had conflicting sources were
+# settled by the author (2026-11-28): 10 edge servers (ECCV H-SFP paper, sec/4_experiment.tex),
+# t1=5, t2=10 (H-SFP setting A, aggregation intervals "5, 10"), backbone = the pretrained
+# ResNet-18 split that the code actually builds for model "resnet50"/cifar100
+# (models/cnn_cifar.py; the "ResNet-50" label is a naming error).
+base: ../classification/h-sfp/cifar_our_resnet50_5_10.yaml   # dataset cifar100, 200 clients, frac 0.1,
+                                                            # bs 16, Adam lr 1e-4 wd 1e-4, warm-up 5 (default.yaml)
+mid_server: [10]                # 10 edge servers  (default.yaml has [5])
+t1: 5                           # client-edge aggregation interval (reference yaml had 1)
+t2: 10                          # edge-cloud aggregation interval
+epochs: 200                     # rounds (paper: 200)
+supcon_temperature: 0.5
+ablation_mode: full_e_hsfp
+ehsfp_overrides:
+  use_serverless_simulation: false
+  dropout_mode: both
+  memory_size: 500
+  max_prototype_age: 20
+  memory_top_k: 5
+  memory_replay_ratio: 0.3
+  prototype_dropout_rate: 0.2
+  lambda_prc: 0.1
+  prc_num_samples: 16
+client_split_depth: 4
+client_sync: true
+client_global_sync: true
+edge_residual: true
+client_objective: supervised
+client_objective_weight: 1.0
+edge_extract_samples_per_class: 500
+cloud_samples_per_class: 200
+cloud_head: linear
+memory_mode: statistics
+synthesis: shared_cov
+# validation_split: val_from_train is NOT set (0) -> "validation" = the CIFAR-100 test set,
+# exactly as in every existing E-HSFP/H-SFP run (runner.py eval_split="test").
