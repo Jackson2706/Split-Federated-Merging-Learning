@@ -13,16 +13,24 @@ E1_PAIR_EHSFP = False
 INCLUDE_E1 = False
 # Settings behind Table IV's "under source masking" / "under staleness" columns
 # (still TODO in the paper - fill in before running E7).
-MASK_P = 0.5       # Table IV "under source masking"
-STALE_TAU = 10     # Table IV "under staleness"
+MASK_P = 0.5       # Table IV "under source masking" (= Table V p_train=0.5 row, 55.13 +- 1.07)
+STALE_TAU = 10     # Table IV "under staleness"      (= Table V tau=10 row, 53.47 +- 1.37)
+# E5 edge accumulation (gamma=0.8 in the reference config). With it on, each edge
+# sees one effective source, so the mixture sampler and the scatter fix can act
+# only at the cloud. Pilot P5 = E5 seed 0 under the other setting; run both first
+#   python run_queue.py --max-priority 0      (16 runs)
+# then set E5_ACCUM_OFF from analysis/pilot_e5.py and regenerate runs.csv. Seed-0
+# runs keep their ids, so whichever setting wins, its 8 runs count toward E5.
+PILOT_E5 = True
+E5_ACCUM_OFF = False
 
 rows = []
-def add(exp, prio, dataset, partition, method, seed, oracle=False, **ov):
+def add(exp, prio, dataset, partition, method, seed, oracle=False, id_exp=None, **ov):
     ov = dict(ov)
     if oracle:
         ov["oracle"] = 1
     tag = "_".join(f"{k}{v}" for k, v in ov.items()) or "ref"
-    run_id = f"{exp}_{method}_{dataset}_{partition}_{tag}_s{seed}".replace(".", "p")
+    run_id = f"{id_exp or exp}_{method}_{dataset}_{partition}_{tag}_s{seed}".replace(".", "p")
     rows.append(dict(run_id=run_id, exp=exp, priority=prio, dataset=dataset,
                      partition=partition, method=method, seed=seed,
                      overrides=" ".join(f"{k}={v}" for k, v in ov.items())))
@@ -49,12 +57,16 @@ for a in [0.1, 0.3, 0.5, 0.7, 1.0]:
     for s in SEEDS:
         add("E3", 1, "cifar100", "iid", "ehsfp", s, oracle=True, alpha=a, tau=5)
 
-# E5 severe heterogeneity, pass 1 (must)
+# E5 severe heterogeneity, pass 1 (must); seed 0 of each setting runs first (pilot)
 for ds in ["cifar100", "ham10000"]:
     for var in [dict(), dict(sampler="mixture"), dict(scatter_fix=1),
                 dict(sampler="mixture", scatter_fix=1)]:
+        main = dict(var, accum=0) if E5_ACCUM_OFF else dict(var)
+        other = dict(var) if E5_ACCUM_OFF else dict(var, accum=0)
         for s in SEEDS:
-            add("E5", 1, ds, "dir0.3", "ehsfp", s, **var)
+            add("E5", 0 if (PILOT_E5 and s == 0) else 1, ds, "dir0.3", "ehsfp", s, **main)
+        if PILOT_E5:
+            add("P5", 0, ds, "dir0.3", "ehsfp", 0, id_exp="E5", **other)  # same id either way
 
 # E4 masking under real packet loss (should)
 for p in [0.0, 0.2, 0.5]:

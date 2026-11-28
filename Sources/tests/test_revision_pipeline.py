@@ -136,3 +136,12 @@ def test_gpu_data_cache_matches_on_the_fly(tmp_path):
     run(tmp_path / "a", *REF, "--gpu-data", "1")
     run(tmp_path / "b", *REF, "--gpu-data", "1", "--set", f"gpu_data_cache={cache}")
     assert training(tmp_path / "a") == training(tmp_path / "b")
+
+
+def test_accum_gamma_zero_turns_accumulation_off(tmp_path):
+    base = (*REF[:-4], "--set", "client_sync=true")  # diagonal synthesis keeps the run fast
+    run(tmp_path / "plain", *base)
+    run(tmp_path / "stats", *base, "--set", "memory_mode=statistics")
+    run(tmp_path / "off", *base, "--set", "memory_mode=statistics", "--accum-gamma", "0")
+    assert training(tmp_path / "off") == training(tmp_path / "plain")
+    assert training(tmp_path / "stats") != training(tmp_path / "plain")

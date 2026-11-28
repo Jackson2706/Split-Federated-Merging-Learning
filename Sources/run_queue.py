@@ -28,7 +28,7 @@ CMD_TEMPLATE = ("{python} main.py --task classification --method h-sfp --cfg {cf
 # dataset -> config. cifar100 loads the locked H-SFP setup (Step 1 of the C1/C2 check).
 CONFIGS = {"cifar100": "configs/revision/hsfp_setup_cifar100.yaml",
            "ham10000": "configs/revision/ham10000_reference.yaml",
-           "debug": "configs/debug.yaml"}
+           "debug": "configs/debug_reference.yaml"}
 ROUNDS = {"debug": 3}  # default when the manifest has no rounds column: 200 (paper)
 PARTITIONS = {"iid": "",
               "dir0.7": "--set partition=dirichlet --set dirichlet_alpha=0.7",
@@ -39,7 +39,8 @@ KEY_MAP = {"alpha": "--alpha", "tau": "--max-delay", "p_train": "--p-train",
            "prc": "--prc", "M_M": "--retention", "weighting": "--weighting",
            "drift_comp": "--drift-comp", "dc_window": "--dc-window",
            "dc_src_bonus": "--dc-src-bonus", "dc_min_weight": "--dc-min-weight",
-           "alpha_mode": "--alpha-mode", "alpha_min": "--alpha-min"}
+           "alpha_mode": "--alpha-mode", "alpha_min": "--alpha-min",
+           "accum": "--accum-gamma"}
 OUT_ROOT = "results"
 # -------------------------------------------------------------------------------
 
