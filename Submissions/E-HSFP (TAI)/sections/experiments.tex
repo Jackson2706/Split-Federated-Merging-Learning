@@ -131,7 +131,7 @@ E-HSFP
 \end{table*}
 
 \noindent\textbf{\ehsfp{} protocol.}~
-Each \ehsfp{} configuration is run for 200 rounds with five seeds on a single NVIDIA RTX A6000 GPU with 48\,GB of memory. Classification uses [[TODO: backbone]], and ISIC-2018 uses [[TODO: segmentation backbone]]. Unless otherwise specified, classification uses 200 clients assigned to [[TODO: five or ten]] edge servers, with 10\% client participation per round. ISIC-2018 uses 50 clients. Training uses a batch size of 16, Adam with a learning rate and weight decay of $10^{-4}$ each, and a five-round warm-up; the implementation also supports cosine decay after warm-up. Classification experiments use IID partitions and Dirichlet partitions $\mathrm{Dir}(0.7)$ and $\mathrm{Dir}(0.3)$.
+Each \ehsfp{} configuration is run for 200 rounds with five seeds on a single NVIDIA RTX A6000 GPU with 48\,GB of memory. Classification uses ResNet50/VGG-16, and ISIC-2018 uses ResNet50-Unet. Unless otherwise specified, classification uses 200 clients assigned to 10 edge servers, with 10\% client participation per round. ISIC-2018 uses 50 clients. Training uses a batch size of 16, Adam with a learning rate and weight decay of $10^{-4}$ each, and a five-round warm-up; the implementation also supports cosine decay after warm-up. Classification experiments use IID partitions and Dirichlet partitions $\mathrm{Dir}(0.7)$ and $\mathrm{Dir}(0.3)$.
 The reference condition uses a record retention limit of $A_{\mathcal M}=20$ logical rounds, a source-mask rate of $\dropoutp_{\mathrm{train}}=0.2$, and a contrastive temperature of $T_{\mathrm{temp}}=0.5$. In Table~\ref{tab:ablation} this condition is labeled $\memcap=20$. [[TODO: definition of $\memcap$, e.g., the record retention limit]] Section~\ref{sec:method} describes the implementation and its defaults.
 
 \noindent\textbf{Scope of cross-study comparisons.}~
@@ -266,7 +266,7 @@ For CIFAR-100, mean relative rounds rise from 121 under IID to 176 under $\mathr
 
 \begin{table*}[t]
 \centering
-\caption{Configuration contrasts on CIFAR-100 IID (200 clients, 200 rounds; mean $\pm$ standard deviation over five runs). Accuracy and F1 are percentages, and Conv.\ denotes relative rounds. The last two columns report accuracy under source masking ($\dropoutp_{\mathrm{train}}=$~[[TODO]]) and under staleness ($\stale=$~[[TODO]]). (a) \ehsfp{} configurations; the last row is the full method ($\memcap=20$). (b) Aggregation rules with $\memcap=0$. (c) Other values of $\memcap$.}
+\caption{Configuration contrasts on CIFAR-100 IID (200 clients, 200 rounds; mean $\pm$ standard deviation over five runs). Accuracy and F1 are percentages, and Conv.\ denotes relative rounds. The last two columns report accuracy under source masking ($\dropoutp_{\mathrm{train}}=0.5$ and under staleness ($\stale=10$). (a) \ehsfp{} configurations; the last row is the full method ($\memcap=20$). (b) Aggregation rules with $\memcap=0$. (c) Other values of $\memcap$.}
 \label{tab:ablation}
 \begin{tabular}{@{}l|ccccc@{}}
 \toprule
@@ -352,7 +352,7 @@ $\memcap=5$
 & 54.87 {\scriptsize $\pm$ 1.09}
 & 53.12 {\scriptsize $\pm$ 1.39} \\
 
-$\memcap=$~[[TODO: 10?]]
+$\memcap=20$
 & 56.02 {\scriptsize $\pm$ 0.93}
 & 56.94 {\scriptsize $\pm$ 1.01}
 & 123 {\scriptsize $\pm$ 9}
